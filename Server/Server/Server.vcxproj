@@ -134,6 +134,7 @@
     <ClCompile Include="Common.ixx" />
     <ClCompile Include="IOCompletionPort.cpp" />
     <ClCompile Include="IOCompletionPort.ixx" />
+    <ClCompile Include="Log.ixx" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Types.ixx" />
   </ItemGroup>
