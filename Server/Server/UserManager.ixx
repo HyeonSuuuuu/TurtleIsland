@@ -44,12 +44,14 @@ public:
 
 	void AddUser(uint32 sessionIndex)
 	{
+		std::unique_lock lock(m_userMapLock); // Write Lock
 		m_users[sessionIndex]->Init();
 		m_connectedUserIndex.push_back(sessionIndex);
 		return;
 	}
 	void RemoveUser(uint32 sessionIndex)
 	{
+		std::unique_lock lock(m_userMapLock); // Write Lock
 		auto pUser = m_users[sessionIndex].get();
 
 		if (pUser->GetDomainState() == User::DOMAIN_STATE::NONE)
@@ -63,6 +65,7 @@ public:
 
 	ERROR_CODE LoginUser(std::string_view userId, uint32 sessionIndex)
 	{
+		std::unique_lock lock(m_userMapLock); // Write Lock
 		// 중복 체크
 
 		uint32 userIndex = sessionIndex;
@@ -74,6 +77,7 @@ public:
 
 	std::optional<uint32> FindUserIndexById(const std::string& userId)
 	{
+		std::shared_lock lock(m_userMapLock); // Read Lock (Multi-thread safe)
 		auto ret = m_userIdToIndex.find(userId);
 		if (ret == m_userIdToIndex.end())
 			return std::nullopt;
@@ -86,6 +90,8 @@ public:
 	}
 
 	std::list<uint32> m_connectedUserIndex;
+	std::shared_mutex m_userMapLock;
+
 private:
 	uint32 m_maxUserCnt = 0;
 	uint32 m_currentUserCnt = 0;

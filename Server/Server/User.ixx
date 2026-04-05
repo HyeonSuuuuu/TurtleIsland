@@ -90,6 +90,7 @@ public:
 
 	void SetPacket(const std::span<const byte> dataSpan)
 	{
+		std::lock_guard lock(m_stateLock);
 		if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 		{
 			auto remainDataSize = m_packetDataWritePos - m_packetDataReadPos;
@@ -110,6 +111,7 @@ public:
 
 	std::optional<Packet> GetPacket()
 	{
+		std::lock_guard lock(m_stateLock);
 		uint32 remainByte = m_packetDataWritePos - m_packetDataReadPos;
 		
 		if (remainByte < PACKET_HEADER_SIZE)
@@ -135,6 +137,7 @@ public:
 	}
 
 
+	std::mutex m_stateLock;
 	float x{}, y{}, z{88};
 
 private:

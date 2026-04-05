@@ -20,106 +20,30 @@ public:
 		CreateComponent(maxClient);
 	}
 
-	bool Run()
-	{
-		Log::Success("패킷 처리 스레드 생성 성공");
-		m_isRunProcessThread = true;
-		m_processThread = std::thread([this]() { ProcessPacket(); });
-		return true;
-	}
-
-	void End()
-	{
-		m_isRunProcessThread = false;
-		if (m_processThread.joinable())
-		{
-			m_processThread.join();
-		}
-	}
+	// Thread 및 Queue 완전 제거됨 (Direct Processing 방식 변환)
 
 	void ReceivePacket(const uint32 sessionIndex, const std::span<const byte> dataSpan)
 	{
 		auto pUser = m_userManager->GetUser(sessionIndex);
 		pUser->SetPacket(dataSpan);
-		EnqueLogicPacket(sessionIndex);
-	}
-
-	void ProcessPacket()
-	{
-		while (m_isRunProcessThread)
+		
+		// 큐에 넣는 대신 Worker Thread가 즉시 패킷을 꺼내서 처리
+		while (true)
 		{
-			bool isIdle = true;
-			if (std::optional<Packet> packetOpt = DequeLogicPacket(); packetOpt.has_value())
+			if (std::optional<Packet> packetOpt = pUser->GetPacket(); packetOpt.has_value())
 			{
-				if (auto& packet = packetOpt.value(); packet.packetId > static_cast<uint16>(PACKET_ID::SYS_END))
-				{
-					isIdle = false;
-					ProcessRecvPacket(packet.sessionIndex, packet.packetId, packet.dataSpan);
-				}
+				ProcessRecvPacket(packetOpt.value().sessionIndex, packetOpt.value().packetId, packetOpt.value().dataSpan);
 			}
-			
-			if (std::optional<Packet> packetOpt = DequeSystemPacket(); packetOpt.has_value())
+			else
 			{
-				if (auto& packet = packetOpt.value(); packet.packetId != 0)
-				{
-					isIdle = false;
-					ProcessRecvPacket(packet.sessionIndex, packet.packetId, packet.dataSpan);
-				}
+				break;
 			}
-
-			if (isIdle)
-			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			}
-			
 		}
 	}
-	void EnqueLogicPacket(const uint32 sessionIndex)
+	
+	void ProcessSystemPacket(const Packet& packet)
 	{
-		std::lock_guard<std::mutex> guard(m_lock);
-		m_logicUserIdxQueue.push_back(sessionIndex);
-	}
-
-	std::optional<Packet> DequeLogicPacket()
-	{
-		uint32 userIndex = 0;
-		{
-			std::lock_guard<std::mutex> guard(m_lock);
-			if (m_logicUserIdxQueue.empty())
-			{
-				return std::nullopt;
-			}
-			userIndex = m_logicUserIdxQueue.front();
-			m_logicUserIdxQueue.pop_front();
-		}
-
-		User* pUser = m_userManager->GetUser(userIndex);
-		std::optional<Packet> packet = pUser->GetPacket();
-		if (packet.has_value())
-		{
-			packet.value().sessionIndex = userIndex;
-		}
-		return packet;
-	}
-
-	void EnqueSystemPacket(Packet packet)
-	{
-		std::lock_guard<std::mutex> guard(m_lock);
-		m_systemPacketQueue.push_back(std::move(packet));
-	}
-
-	std::optional<Packet> DequeSystemPacket()
-	{
-		std::lock_guard<std::mutex> guard(m_lock);
-		if (m_systemPacketQueue.empty())
-		{
-			return std::nullopt;
-		}
-
-		auto packet = std::move(m_systemPacketQueue.front());
-		m_systemPacketQueue.pop_front();
-
-		return packet;
+		ProcessRecvPacket(packet.sessionIndex, packet.packetId, packet.dataSpan);
 	}
 
 	std::function<void(uint32 clientIndex, std::span<const byte> dataSpan)> m_sendFunc;
@@ -196,11 +120,14 @@ private:
 		Log::Info("CS_Move({}): {}", sessionIndex, movePacket->inputFlag);
 
 		const auto& user = m_userManager->GetUser(sessionIndex);
-		// 이동처리
-		if (movePacket->inputFlag & 1) user->x += 10.0f; // W
-		if (movePacket->inputFlag & 2) user->y -= 10.0f; // A
-		if (movePacket->inputFlag & 4) user->x -= 10.0f; // S
-		if (movePacket->inputFlag & 8) user->y += 10.0f; // D
+		// 이동처리 - 멀티스레드 쓰기 락 보호
+		{
+			std::lock_guard lock(user->m_stateLock);
+			if (movePacket->inputFlag & 1) user->x += 10.0f; // W
+			if (movePacket->inputFlag & 2) user->y -= 10.0f; // A
+			if (movePacket->inputFlag & 4) user->x -= 10.0f; // S
+			if (movePacket->inputFlag & 8) user->y += 10.0f; // D
+		}
 
 		SC_MoveNotify resPkt{};
 		resPkt.id = static_cast<uint16>(PACKET_ID::SC_MOVE_NOTIFY);
@@ -211,7 +138,9 @@ private:
 		resPkt.inputFlag = movePacket->inputFlag;
 		resPkt.userIndex = sessionIndex;
 		std::span<const byte> sendSpan(reinterpret_cast<const byte*>(&resPkt), SC_MOVE_NOTIFY_PACKET_SIZE);
-		// broadcast
+		
+		// broadcast - 전체 유저맵 Shared Lock(동시 읽기) 채용
+		std::shared_lock lock(m_userManager->m_userMapLock);
 		for (uint32 index : m_userManager->m_connectedUserIndex)
 		{
 			this->m_sendFunc(index, sendSpan);
@@ -239,11 +168,6 @@ private:
 
 	std::unique_ptr<UserManager> m_userManager;
 	
-	bool m_isRunProcessThread = false;
-	std::thread m_processThread;
-	std::mutex m_lock;
-
-	std::deque<uint32> m_logicUserIdxQueue;
-	std::deque<Packet> m_systemPacketQueue;
+	// 큐와 스레드 변수 완전 제거됨
 
 };
