@@ -65,8 +65,8 @@ void UNetSubsystem::Tick(float DeltaTime)
 					// 로그인 성공
 					UE_LOG(LogTemp, Log, TEXT("로그인 성공"));
 					myId = Pkt->playerId;
-					// UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
-					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv3_Ingame")); // 테스트용
+					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
+					// UGameplayStatics::OpenLevel(GetWorld(), FName("Lv3_Ingame")); // 테스트용
 				}
 			break;
 			}
@@ -99,7 +99,6 @@ void UNetSubsystem::Tick(float DeltaTime)
 							AOpponentCharacter* TestActor = GetWorld()->SpawnActor<AOpponentCharacter>(OpponentClass, TestPos, FRotator::ZeroRotator, Params);
 							players.Emplace(Pkt->userIndex, TestActor);
 							UE_LOG(LogTemp, Log, TEXT("새로운 상대방 스폰"));
-
 						}
 					}
 				}
@@ -108,6 +107,18 @@ void UNetSubsystem::Tick(float DeltaTime)
 				UE_LOG(LogTemp, Log, TEXT("이동 패킷 수신: PlayerID=%d, InputFlag=%d"), Pkt->id, Pkt->inputFlag);
 			break;
 			}
+		case PACKET_ID::SC_ROOM_START_NOTIFY:
+			{
+				SC_RoomStart* Pkt = reinterpret_cast<SC_RoomStart*>(RecvData.GetData());
+				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
+				{
+					// Ingame
+					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv3_InGame"));
+
+				}
+				UE_LOG(LogTemp, Log, TEXT("Ingame 패킷 수신"));
+			}
+			break;
 		}
 		RecvData = Networker->DequeRecvPacket();
 	}

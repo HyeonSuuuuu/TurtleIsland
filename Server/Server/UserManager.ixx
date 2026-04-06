@@ -45,7 +45,6 @@ public:
 	void AddUser(uint32 sessionIndex)
 	{
 		m_users[sessionIndex]->Init();
-		m_connectedUserIndex.push_back(sessionIndex);
 		return;
 	}
 	void RemoveUser(uint32 sessionIndex)

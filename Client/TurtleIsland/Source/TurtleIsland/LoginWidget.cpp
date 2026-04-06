@@ -4,7 +4,6 @@
 #include "LoginWidget.h"
 #include "Network/NetSubsystem.h"
 #include "Protocol.h"
-#include "Kismet/GameplayStatics.h"
 
 void ULoginWidget::NativeConstruct()
 {

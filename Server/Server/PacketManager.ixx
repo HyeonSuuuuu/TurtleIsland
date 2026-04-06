@@ -17,6 +17,7 @@ public:
 		Register(PACKET_ID::SYS_USER_DISCONNECT, &PacketManager::ProcessUserDisConnect);
 		Register(PACKET_ID::CS_LOGIN_REQUEST, &PacketManager::ProcessLogin);
 		Register(PACKET_ID::CS_MOVE, &PacketManager::ProcessMove);
+		Register(PACKET_ID::CS_ROOM_START_REQUEST, &PacketManager::ProcessStartRoom);
 		CreateComponent(maxClient);
 	}
 
@@ -188,7 +189,6 @@ private:
 
 	void ProcessMove(uint32 sessionIndex, std::span<const byte> dataSpan)
 	{
-		static int count = 0;
 		if (CS_MOVE_PACKET_SIZE != dataSpan.size())
 			return;
 
@@ -215,6 +215,59 @@ private:
 		for (uint32 index : m_userManager->m_connectedUserIndex)
 		{
 			this->m_sendFunc(index, sendSpan);
+		}
+	}
+
+	void ProcessStartRoom(uint32 sessionIndex, std::span<const byte> dataSpan)
+	{
+		if (CS_ROOM_START_PACKET_SIZE != dataSpan.size())
+			return;
+		Log::Info("StartRoom패킷 확인");
+
+		m_userManager->m_connectedUserIndex.push_back(sessionIndex);
+		// 성공
+		SC_RoomStart roomResPacket{};
+		roomResPacket.size = SC_ROOM_START_PACKET_SIZE;
+		roomResPacket.id = static_cast<uint16>(PACKET_ID::SC_ROOM_START_NOTIFY);
+		roomResPacket.result = static_cast<uint8>(ERROR_CODE::NONE);
+		// 같이있는 룸 유저에게 전체 보내야됨 (원래는)
+		std::span<const byte> sendSpan(reinterpret_cast<const byte*>(&roomResPacket), SC_ROOM_START_PACKET_SIZE);
+		this->m_sendFunc(sessionIndex, sendSpan);
+
+		// 이전에 있었던 사람들에게 위치 알림
+		const auto& user = m_userManager->GetUser(sessionIndex);
+		SC_MoveNotify resPkt{};
+		resPkt.id = static_cast<uint16>(PACKET_ID::SC_MOVE_NOTIFY);
+		resPkt.size = SC_MOVE_NOTIFY_PACKET_SIZE;
+		resPkt.x = user->x;
+		resPkt.y = user->y;
+		resPkt.z = user->z;
+		resPkt.userIndex = sessionIndex;
+		resPkt.inputFlag = 0;
+		resPkt.userIndex = sessionIndex;
+		std::span<const byte> sendSpan2(reinterpret_cast<const byte*>(&resPkt), SC_MOVE_NOTIFY_PACKET_SIZE);
+
+		for (uint32 index : m_userManager->m_connectedUserIndex)
+		{
+			if (index == sessionIndex)
+				continue;
+			this->m_sendFunc(index, sendSpan);
+		}
+		// 다른 사람의 위치 가져옴
+		for (uint32 index : m_userManager->m_connectedUserIndex)
+		{
+			if (index == sessionIndex)
+				continue;
+			const auto& otherUser = m_userManager->GetUser(sessionIndex);
+			SC_MoveNotify resPkt{};
+			resPkt.id = static_cast<uint16>(PACKET_ID::SC_MOVE_NOTIFY);
+			resPkt.size = SC_MOVE_NOTIFY_PACKET_SIZE;
+			resPkt.x = otherUser->x;
+			resPkt.y = otherUser->y;
+			resPkt.z = otherUser->z;
+			resPkt.inputFlag = 0;
+			resPkt.userIndex = index;
+			this->m_sendFunc(sessionIndex, sendSpan);
 		}
 	}
 

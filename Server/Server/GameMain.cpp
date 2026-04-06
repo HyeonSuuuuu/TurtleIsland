@@ -12,7 +12,7 @@ int main()
 
 	server.InitEnvironment();
 	server.InitSocket();
-	server.ConnectToAIServer();
+	server.ConnectToAIServer("127.0.0.1", NetConfig::AI_SERVER_PORT);
 	server.BindandListen(SERVER_PORT);
 	server.Run(MAX_CLIENT);
 
