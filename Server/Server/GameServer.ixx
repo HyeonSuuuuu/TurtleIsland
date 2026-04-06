@@ -26,7 +26,7 @@ public:
 		std::print("[Onconnect]: Index({})\n", clientIndex);
 		
 		Packet packet{ clientIndex, (uint16)PACKET_ID::SYS_USER_CONNECT, {} };
-		m_packetManager->EnqueSystemPacket(packet);
+		m_packetManager->ProcessSystemPacket(packet);
 	}
 
 	virtual void OnClose(const uint32 clientIndex) override
@@ -34,7 +34,7 @@ public:
 		std::print("[OnClose]: Index({})\n", clientIndex);
 		
 		Packet packet{ clientIndex, (uint16)PACKET_ID::SYS_USER_DISCONNECT, {} };
-		m_packetManager->EnqueSystemPacket(packet);
+		m_packetManager->ProcessSystemPacket(packet);
 	}
 
 	virtual void OnRecv(const uint32 clientIndex, const std::span<const byte> recvData) override
@@ -53,14 +53,12 @@ public:
 
 		m_packetManager = std::make_unique<PacketManager>(maxClient);
 		m_packetManager->m_sendFunc = sendPacketFunc;
-		m_packetManager->Run();
 
 		StartServer(maxClient);
 	}
 
 	void End()
 	{
-		m_packetManager->End();
 
 		DestroyThread();
 	}
