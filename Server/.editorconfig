@@ -1,0 +1,4 @@
+root = true
+[*.{cpp,c,h,hpp,ixx}]
+# 인코딩을 'BOM이 있는 UTF-8'로 강제
+charset = utf-8-bom
