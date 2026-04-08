@@ -1,4 +1,4 @@
-#ifdef _DEBUG
+﻿#ifdef _DEBUG
 	#define assert(expression) ((void)(                                                       \
 			(!!(expression)) ||                                                               \
 			(my_assert_function(#expression, __FILE__, __LINE__), 0))                         \

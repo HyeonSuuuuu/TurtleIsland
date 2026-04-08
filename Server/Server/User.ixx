@@ -1,4 +1,4 @@
-export module User;
+﻿export module User;
 import Common;
 import Define;
 import "../../Common/Protocol.h";

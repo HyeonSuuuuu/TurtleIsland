@@ -1,4 +1,4 @@
-export module PacketManager;
+﻿export module PacketManager;
 
 import Common;
 import "../../Common/Protocol.h";

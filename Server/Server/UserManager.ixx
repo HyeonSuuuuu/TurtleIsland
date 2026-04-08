@@ -1,4 +1,4 @@
-export module UserManager;
+﻿export module UserManager;
 
 import Common;
 import User;

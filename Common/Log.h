@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <print>
 #include <chrono>
 #define WIN32_LEAN_AND_MEAN

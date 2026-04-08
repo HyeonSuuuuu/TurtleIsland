@@ -1,4 +1,4 @@
-export module SessionManager;
+﻿export module SessionManager;
 
 import Common;
 import Define;

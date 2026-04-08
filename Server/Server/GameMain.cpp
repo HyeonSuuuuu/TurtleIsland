@@ -1,4 +1,4 @@
-import GameServer;
+﻿import GameServer;
 import Common;
 import "../../Common/Protocol.h";
 
