@@ -8,6 +8,7 @@ namespace NetConfig
 {
 	inline constexpr uint16 GAME_SERVER_PORT = 11021;
 	inline constexpr uint16 AI_SERVER_PORT = 4444;
+	inline constexpr uint16 MAX_CLIENTS = 10000;
 }
 
 

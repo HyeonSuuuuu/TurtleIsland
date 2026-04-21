@@ -9,23 +9,26 @@
 export module Session;
 import Common;
 import Define;
-
+import <windows.h>;
+import "../../Common/Protocol.h";
 
 export class Session
 {
 public:
+	static constexpr uint32 PACKET_DATA_BUFFER_SIZE = 8096;
+
 	Session() = delete;
 	Session(uint32 index)
 		: m_index(index)
 	{
+		m_packetDataBuffer = new byte[PACKET_DATA_BUFFER_SIZE];
 	}
-	~Session() = default;
-
-
-	constexpr bool isConnected() const
+	virtual ~Session()
 	{
-		return m_isConnect == true;
+		delete[] m_packetDataBuffer;
 	}
+
+
 
 	constexpr uint32 GetIndex() const
 	{
@@ -42,7 +45,53 @@ public:
 		return static_cast<uint64>(m_socket);
 	}
 
-	bool OnConnect(HANDLE iocpHandle, SOCKET socket)
+	void SetPacket(const std::span<const byte> dataSpan)
+	{
+		if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
+		{
+			auto remainDataSize = m_packetDataWritePos - m_packetDataReadPos;
+			if (remainDataSize > 0)
+			{
+				CopyMemory(m_packetDataBuffer, &m_packetDataBuffer[m_packetDataReadPos], remainDataSize);
+				m_packetDataWritePos = remainDataSize;
+			}
+			else
+			{
+				m_packetDataWritePos = 0;
+			}
+			m_packetDataReadPos = 0;
+		}
+		CopyMemory(&m_packetDataBuffer[m_packetDataWritePos], dataSpan.data(), dataSpan.size());
+		m_packetDataWritePos += static_cast<uint32>(dataSpan.size());
+	}
+
+	std::optional<Packet> GetPacket()
+	{
+		uint32 remainByte = m_packetDataWritePos - m_packetDataReadPos;
+
+		if (remainByte < PACKET_HEADER_SIZE)
+		{
+			return std::nullopt;
+		}
+
+		auto pHeader = (PacketHeader*)&m_packetDataBuffer[m_packetDataReadPos];
+
+		if (pHeader->size > remainByte)
+		{
+			return std::nullopt;
+		}
+
+		Packet packet;
+		packet.sessionIndex = m_index;
+		packet.packetId = pHeader->id;
+		std::span<byte> span{ &m_packetDataBuffer[m_packetDataReadPos], pHeader->size };
+		packet.dataSpan = span;
+
+		m_packetDataReadPos += pHeader->size;
+		return packet;
+	}
+
+	virtual bool OnConnect(HANDLE iocpHandle, SOCKET socket)
 	{
 		m_socket = socket;
 		m_isConnect = true;
@@ -52,26 +101,26 @@ public:
 			Log::Error("IOCP 바인딩 실패 (Index: {})", m_index);
 			return false;
 		}
-		
-		m_uid++;
+
+		BindRecv();
+
 		return true;
 	}
 
-	void Close(bool isForce = false)
+	virtual void Close(bool isForce = false)
 	{
 		linger lingerOpt{ 0, 0 };
-
 		if (isForce)
 		{
 			lingerOpt.l_onoff = 1;
 		}
 
-
 		shutdown(m_socket, SD_BOTH);
-
 		setsockopt(m_socket, SOL_SOCKET, SO_LINGER, (char*)&lingerOpt, sizeof(lingerOpt));
 
 		m_isConnect = false;
+		m_packetDataReadPos = 0;
+		m_packetDataWritePos = 0;
 
 		closesocket(m_socket);
 		m_socket = INVALID_SOCKET;
@@ -86,15 +135,12 @@ public:
 			return false;
 		}
 		DWORD bytes = 0;
-		DWORD flags = 0;
 
 		ZeroMemory(&m_acceptOverlappedEx, sizeof(OverlappedEx));
 
-		//m_acceptOverlappedEx.m_wsaBuf.len = 0;
-		//m_acceptOverlappedEx.m_wsaBuf.buf = nullptr;
 		m_acceptOverlappedEx.m_operation = IOOperation::ACCEPT;
 		m_acceptOverlappedEx.m_sessionIndex = m_index;
-		
+
 		if (AcceptEx(listenSock, m_socket, m_acceptBuf, 0, sizeof(SOCKADDR_IN) + 16,
 			sizeof(SOCKADDR_IN) + 16, &bytes, reinterpret_cast<LPWSAOVERLAPPED>(&m_acceptOverlappedEx)) == false)
 		{
@@ -115,14 +161,6 @@ public:
 		{
 			return false;
 		}
-
-		// 주소 꺼내오기 Ex 함수 사용해야함
-/*		sockaddr_in clientAddr{};
-		int32 addrLen = sizeof(sockaddr_in);
-		char clientIP[32] = { 0 };
-		inet_ntop(AF_INET, &(clientAddr.sin_addr), clientIP, 32 - 1);
-		Log::Info("클라이언트 접속 : IP({}) SOCKET({})", clientIP, m_socket);*/
-
 		return true;
 	}
 
@@ -156,33 +194,11 @@ public:
 
 	bool SendMsg(const std::span<const byte> msg)
 	{
-
 		OverlappedEx* sendOverlappedEx = new OverlappedEx();
 		sendOverlappedEx->m_wsaBuf.len = static_cast<uint32>(msg.size());
 		sendOverlappedEx->m_wsaBuf.buf = new char[msg.size()];
 		sendOverlappedEx->m_operation = IOOperation::SEND;
 		CopyMemory(sendOverlappedEx->m_wsaBuf.buf, msg.data(), msg.size());
-		{
-			std::lock_guard<std::mutex> lock(m_sendLock);
-			m_sendDataQueue.emplace_back(sendOverlappedEx);
-			if (m_sendDataQueue.size() == 1)
-			{
-				SendIO();
-			}
-		}
-		return true;
-	}
-
-	bool SendIO()
-	{
-		// std::lock_guard<std::mutex> lock(m_sendLock);
-
-		if (m_sendDataQueue.empty())
-		{
-			return false;
-		}
-
-		OverlappedEx* sendOverlappedEx = m_sendDataQueue.front();
 
 		DWORD dwRecvNumBytes = 0;
 		int ret = WSASend(m_socket,
@@ -193,19 +209,14 @@ public:
 			reinterpret_cast<LPWSAOVERLAPPED>(sendOverlappedEx),
 			nullptr);
 
-		// 연결 실패 처리 (클라이언트 끊김)
 		if (ret == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
 		{
 			Log::ErrorDisplay("WSASend() 실패", WSAGetLastError());
+			delete[] sendOverlappedEx->m_wsaBuf.buf;
+			delete sendOverlappedEx;
 			return false;
 		}
-		m_sendDataQueue.pop_front();
 
-		if (m_sendDataQueue.empty() == false)
-		{
-			SendIO();
-		}
-		
 		return true;
 	}
 
@@ -213,7 +224,6 @@ public:
 	{
 		delete[] sendOverlappedEx->m_wsaBuf.buf;
 		delete sendOverlappedEx;
-		Log::Info("수신된 dataSize : {}", dataSize);
 	}
 
 	bool BindIOCompletionPort(HANDLE iocpHandle) const
@@ -232,26 +242,20 @@ public:
 		return true;
 	}
 
-
-	
+protected:
+	uint32 m_index = 0;
 
 private:
-	uint32 m_index = 0;
-	uint32 m_uid = 0;
-
 	bool m_isConnect = false;
-
 	SOCKET m_socket = INVALID_SOCKET;
-	
-	// Accept
-	OverlappedEx m_acceptOverlappedEx{};
-	char m_acceptBuf[64];
 
-	// Recv
+	OverlappedEx m_acceptOverlappedEx{};
+	char m_acceptBuf[64]{};
+
 	OverlappedEx m_recvOverlappedEx{};
 	byte m_recvBuf[MAX_SOCKBUF]{};
 
-	// Send (queue 사용)
-	std::mutex m_sendLock;
-	std::deque<OverlappedEx*> m_sendDataQueue;
+	byte* m_packetDataBuffer = nullptr;
+	uint32 m_packetDataWritePos = 0;
+	uint32 m_packetDataReadPos = 0;
 };

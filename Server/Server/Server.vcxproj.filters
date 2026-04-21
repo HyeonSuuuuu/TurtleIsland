@@ -7,9 +7,6 @@
     <Filter Include="02_Network">
       <UniqueIdentifier>{1c7d6802-845f-4b1a-bb55-43917e0932e6}</UniqueIdentifier>
     </Filter>
-    <Filter Include="03_Echo">
-      <UniqueIdentifier>{e6b54be2-3e61-4570-8fc1-44c86241aea2}</UniqueIdentifier>
-    </Filter>
     <Filter Include="04_Application">
       <UniqueIdentifier>{56ea910b-41de-40f2-982b-b3f24f85a09a}</UniqueIdentifier>
     </Filter>
@@ -21,35 +18,17 @@
     <ClCompile Include="IOCPNetwork.ixx">
       <Filter>02_Network</Filter>
     </ClCompile>
-    <ClCompile Include="EchoServer.ixx">
-      <Filter>03_Echo</Filter>
-    </ClCompile>
     <ClCompile Include="Define.ixx">
       <Filter>02_Network</Filter>
     </ClCompile>
     <ClCompile Include="Session.ixx">
       <Filter>02_Network</Filter>
     </ClCompile>
-    <ClCompile Include="SessionManager.ixx">
-      <Filter>02_Network</Filter>
-    </ClCompile>
-    <ClCompile Include="PacketData.ixx">
-      <Filter>03_Echo</Filter>
-    </ClCompile>
     <ClCompile Include="GameServer.ixx">
       <Filter>04_Application</Filter>
     </ClCompile>
     <ClCompile Include="User.ixx">
       <Filter>04_Application</Filter>
-    </ClCompile>
-    <ClCompile Include="UserManager.ixx">
-      <Filter>04_Application</Filter>
-    </ClCompile>
-    <ClCompile Include="PacketManager.ixx">
-      <Filter>04_Application</Filter>
-    </ClCompile>
-    <ClCompile Include="EchoMain.cpp">
-      <Filter>03_Echo</Filter>
     </ClCompile>
     <ClCompile Include="GameMain.cpp">
       <Filter>04_Application</Filter>
