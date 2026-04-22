@@ -3,7 +3,6 @@ import Common;
 import "../../Common/Protocol.h";
 
 constexpr uint16 SERVER_PORT = NetConfig::GAME_SERVER_PORT;
-constexpr uint16 MAX_CLIENT = 10000;
 
 
 int main()
@@ -14,7 +13,7 @@ int main()
 	server.InitSocket();
 	server.ConnectToAIServer("127.0.0.1", NetConfig::AI_SERVER_PORT);
 	server.BindandListen(SERVER_PORT);
-	server.Run(MAX_CLIENT);
+	server.Run();
 
 	while (true)
 	{

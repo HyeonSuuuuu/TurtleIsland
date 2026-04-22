@@ -10,10 +10,7 @@ import "../../Common/Protocol.h";
 export class User : public Session
 {
 public:
-	User() = delete;
-	User(uint32 index)
-		: Session(index)
-	{}
+	User() = default;
 	virtual ~User() = default;
 
 	enum class DOMAIN_STATE
@@ -25,19 +22,20 @@ public:
 		ROOM = 4,
 	};
 
-	void Init()
+	virtual void Init(uint32 id) override
 	{
-		m_domainState = DOMAIN_STATE::CONNECTED;
-
+		Session::Init(id);
+		m_domainState = DOMAIN_STATE::NONE;
 		m_userId = "";
 		m_roomIndex = std::nullopt;
 	}
 
-	void ClearUserData()
+	virtual void Clear() override
 	{
-		m_roomIndex = std::nullopt;
-		m_userId = "";
+		Session::Clear();
 		m_domainState = DOMAIN_STATE::NONE;
+		m_userId = "";
+		m_roomIndex = std::nullopt;
 	}
 
 	int SetLogin(std::string_view userId)
@@ -46,10 +44,6 @@ public:
 		m_userId = userId;
 		return 0;
 	}
-
-
-
-
 
 	std::string GetUserId() const
 	{
@@ -61,14 +55,14 @@ public:
 		return m_domainState;
 	}
 
-
-
 	virtual bool OnConnect(HANDLE iocpHandle, SOCKET socket) override
 	{
 		bool ret = Session::OnConnect(iocpHandle, socket);
 		if (ret)
 		{
-			Init(); // Initialize User state when connected
+			m_domainState = DOMAIN_STATE::CONNECTED;
+			m_userId = "";
+			m_roomIndex = std::nullopt;
 		}
 		return ret;
 	}
@@ -76,7 +70,6 @@ public:
 	virtual void Close(bool isForce = false) override
 	{
 		Session::Close(isForce);
-		ClearUserData();
 	}
 
 	// ----------------------------------------------------
@@ -91,7 +84,6 @@ public:
 		if (!s_handlers.empty()) return;
 
 		// 예시: s_handlers[CS_LOGIN_REQ] = &User::HandleLogin;
-		// s_handlers[PKT_CS_LOGIN] = &User::HandleLogin; // 실제 패킷 ID에 맵핑
 	}
 
 	void ProcessPacket(const Packet& packet)
@@ -100,7 +92,7 @@ public:
 		if (it != s_handlers.end())
 		{
 			PacketHandler handlerFunc = it->second;
-			(this->*handlerFunc)(packet); // O(1) 함수 실행
+			(this->*handlerFunc)(packet);
 		}
 		else
 		{

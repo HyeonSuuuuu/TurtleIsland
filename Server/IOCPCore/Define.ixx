@@ -1,4 +1,4 @@
-﻿module;
+module;
 #include <winSock2.h>
 
 export module Define;

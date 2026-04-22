@@ -8,7 +8,7 @@ import "../../Common/Protocol.h";
 
 
 
-export class GameServer : public IOCPNetwork
+export class GameServer : public IOCPNetwork<User>
 {
 public:
 	GameServer() = default;
@@ -24,11 +24,11 @@ public:
 		std::print("[OnClose]: Index({})\n", clientIndex);
 	}
 
-	void Run(const uint32 maxClient)
+	void Run()
 	{
 		User::InitHandlers();
 
-		StartServer(maxClient);
+		StartServer();
 	}
 
 	void End()

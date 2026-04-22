@@ -18,9 +18,11 @@ export module IOCPNetwork;
 import Common;
 import Define;
 import Session;
-import User;
+import "../../Common/Protocol.h";
 
-export class IOCPNetwork
+export template<typename T>
+	requires std::derived_from<T, Session>
+class IOCPNetwork
 {
 public:
 	IOCPNetwork() = default;
@@ -33,6 +35,7 @@ public:
 	{
 		return true;
 	}
+
 	bool InitSocket()
 	{
 		WSADATA wsaData;
@@ -49,7 +52,6 @@ public:
 			Log::ErrorDisplay("Winsock.dll의 사용 가능한 버전을 찾을 수 없습니다", WSAGetLastError());
 			return 1;
 		}
-
 
 		m_listenSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_listenSocket == INVALID_SOCKET)
@@ -83,15 +85,10 @@ public:
 			return false;
 		}
 
-		m_aiSession = std::make_unique<Session>(AI_ID);
-		if (m_aiSession == nullptr)
-		{
-			Log::Error("AI 세션 생성 실패");
-			return false;
-		}
+		m_aiSession = std::make_unique<Session>();
+		m_aiSession->Init(AI_ID);
 
-
-		HANDLE hIOCP = CreateIoCompletionPort((HANDLE)m_aiSocket, m_iocpHandle, (ULONG_PTR)&m_aiSession, 0);
+		HANDLE hIOCP = CreateIoCompletionPort((HANDLE)m_aiSocket, m_iocpHandle, (ULONG_PTR)m_aiSession.get(), 0);
 		if (hIOCP == nullptr || hIOCP != m_iocpHandle)
 		{
 			Log::ErrorDisplay("aiSocket IOCP 등록 실패", GetLastError());
@@ -126,9 +123,9 @@ public:
 		return true;
 	}
 
-	bool StartServer(const uint32 maxClientCount)
+	bool StartServer()
 	{
-		CreateClient(maxClientCount);
+		CreateClient();
 		m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
 		m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
 		if (m_iocpHandle == nullptr)
@@ -186,15 +183,16 @@ public:
 
 	bool SendMsg(const uint32 clientIndex, const std::span<const byte> msg)
 	{
-		return m_users[clientIndex]->SendMsg(msg);
+		return m_users[clientIndex].SendMsg(msg);
 	}
 
 	virtual void OnConnect(const uint32 clientIndex) = 0;
 	virtual void OnClose(const uint32 clientIndex) = 0;
-	User* GetUser(uint32 index)
+
+	T* GetUser(uint32 index)
 	{
-		if (index >= m_users.size()) return nullptr;
-		return m_users[index].get();
+		if (index >= NetConfig::MAX_CLIENTS) return nullptr;
+		return &m_users[index];
 	}
 
 protected:
@@ -212,7 +210,7 @@ private:
 		auto [closedTime, index] = std::move(m_reuseQueue.front());
 		if (GetTick() - closedTime < REUSE_WAIT_MS) return nullptr;
 		m_reuseQueue.pop();
-		return m_users[index].get();
+		return &m_users[index];
 	}
 
 	void ReturnSession(uint32 index)
@@ -221,20 +219,20 @@ private:
 		m_reuseQueue.emplace(GetTick(), index);
 	}
 
-
-	void CreateClient(const uint32 maxClientCount)
+	void CreateClient()
 	{
-		m_users.reserve(maxClientCount);
-		for (uint32 i = 0; i < maxClientCount; ++i)
+		m_users = std::make_unique<T[]>(NetConfig::MAX_CLIENTS);
+		for (uint32 i = 0; i < NetConfig::MAX_CLIENTS; ++i)
 		{
-			m_users.emplace_back(std::make_unique<User>(i));
+			m_users[i].Init(i);
 			m_reuseQueue.emplace(0, i);
 		}
 	}
+
 	bool CreateWorkerThread()
 	{
 		m_isWorkerRun = true;
-		for (int i = 0; i < m_maxWorkerThread; ++i)
+		for (uint32 i = 0; i < m_maxWorkerThread; ++i)
 		{
 			m_IOWorkerThreads.emplace_back([this]() { WorkerThread(); });
 		}
@@ -275,7 +273,7 @@ private:
 			if (IOOperation::ACCEPT == pOverlappedEx->m_operation)
 			{
 				uint32 targetIndex = pOverlappedEx->m_sessionIndex;
-				pSession = m_users[targetIndex].get();
+				pSession = &m_users[targetIndex];
 				if (pSession)
 				{
 					pSession->AcceptCompleted(m_iocpHandle);
@@ -306,13 +304,11 @@ private:
 			{
 				const auto dataSpan{ pSession->GetRecvData(dwIoSize) };
 
-				User* pUser = m_users[pSession->GetIndex()].get();
+				T* pUser = &m_users[pSession->GetIndex()];
 				if (pUser)
 				{
-					// 1. 유저 버퍼에 저장
 					pUser->SetPacket(dataSpan);
 
-					// 패킷 조립
 					while (auto packetOpt = pUser->GetPacket())
 					{
 						pUser->ProcessPacket(packetOpt.value());
@@ -334,7 +330,7 @@ private:
 
 	void CloseSocket(uint32 index, bool isForce = false)
 	{
-		auto pUser = m_users[index].get();
+		T* pUser = &m_users[index];
 		pUser->Close(isForce);
 
 		OnClose(index);
@@ -355,7 +351,7 @@ private:
 
 	uint32 m_maxWorkerThread;
 
-	std::vector<std::unique_ptr<User>> m_users;
+	std::unique_ptr<T[]> m_users;
 	std::queue<std::pair<int64, uint32>> m_reuseQueue;
 	std::mutex m_reuseLock;
 };

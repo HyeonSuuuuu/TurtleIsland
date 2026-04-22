@@ -3,13 +3,13 @@
 #include <winSock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+#include <windows.h>
 
 #pragma comment(lib, "mswsock.lib")
 
 export module Session;
 import Common;
 import Define;
-import <windows.h>;
 import "../../Common/Protocol.h";
 
 export class Session
@@ -17,18 +17,23 @@ export class Session
 public:
 	static constexpr uint32 PACKET_DATA_BUFFER_SIZE = 8096;
 
-	Session() = delete;
-	Session(uint32 index)
-		: m_index(index)
-	{
-		m_packetDataBuffer = new byte[PACKET_DATA_BUFFER_SIZE];
-	}
+	Session() = default;
 	virtual ~Session()
 	{
 		delete[] m_packetDataBuffer;
 	}
 
+	virtual void Init(uint32 id)
+	{
+		m_index = id;
+		m_packetDataBuffer = new byte[PACKET_DATA_BUFFER_SIZE];
+	}
 
+	virtual void Clear()
+	{
+		m_packetDataReadPos = 0;
+		m_packetDataWritePos = 0;
+	}
 
 	constexpr uint32 GetIndex() const
 	{
@@ -119,11 +124,10 @@ public:
 		setsockopt(m_socket, SOL_SOCKET, SO_LINGER, (char*)&lingerOpt, sizeof(lingerOpt));
 
 		m_isConnect = false;
-		m_packetDataReadPos = 0;
-		m_packetDataWritePos = 0;
-
 		closesocket(m_socket);
 		m_socket = INVALID_SOCKET;
+
+		Clear();
 	}
 
 	bool PostAccept(SOCKET listenSock)
@@ -241,6 +245,8 @@ public:
 
 		return true;
 	}
+
+	virtual void ProcessPacket(const Packet& packet) {}
 
 protected:
 	uint32 m_index = 0;

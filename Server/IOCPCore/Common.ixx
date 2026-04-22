@@ -1,5 +1,5 @@
-﻿export module Common;
+export module Common;
 
-export import std;   
+export import std;
 export import "../../Common/Type.h";
 export import "../../Common/Log.h";
