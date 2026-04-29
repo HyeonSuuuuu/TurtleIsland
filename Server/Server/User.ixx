@@ -13,19 +13,19 @@ public:
 	User() = default;
 	virtual ~User() = default;
 
-	enum class DOMAIN_STATE
+	enum class State
 	{
-		NONE = 0,
-		CONNECTED = 1,
-		LOGIN = 2,
-		LOBBY = 3,
-		ROOM = 4,
+		None      = 0,
+		Connected = 1,
+		Login     = 2,
+		Lobby     = 3,
+		Room      = 4,
 	};
 
 	virtual void Init(uint32 id) override
 	{
 		Session::Init(id);
-		m_domainState = DOMAIN_STATE::NONE;
+		m_state = State::None;
 		m_userId = "";
 		m_roomIndex = std::nullopt;
 	}
@@ -33,34 +33,17 @@ public:
 	virtual void Clear() override
 	{
 		Session::Clear();
-		m_domainState = DOMAIN_STATE::NONE;
+		m_state = State::None;
 		m_userId = "";
 		m_roomIndex = std::nullopt;
 	}
 
-	int SetLogin(std::string_view userId)
+	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket) override
 	{
-		m_domainState = DOMAIN_STATE::LOGIN;
-		m_userId = userId;
-		return 0;
-	}
-
-	std::string GetUserId() const
-	{
-		return m_userId;
-	}
-
-	DOMAIN_STATE GetDomainState() const
-	{
-		return m_domainState;
-	}
-
-	virtual bool OnConnect(HANDLE iocpHandle, SOCKET socket) override
-	{
-		bool ret = Session::OnConnect(iocpHandle, socket);
+		bool ret = Session::RegisterSocket(iocpHandle, socket);
 		if (ret)
 		{
-			m_domainState = DOMAIN_STATE::CONNECTED;
+			m_state = State::Connected;
 			m_userId = "";
 			m_roomIndex = std::nullopt;
 		}
@@ -72,40 +55,45 @@ public:
 		Session::Close(isForce);
 	}
 
+	void Login(std::string_view userId)
+	{
+		m_state = State::Login;
+		m_userId = userId;
+	}
+
+	std::string GetUserId() const { return m_userId; }
+	State GetState() const { return m_state; }
+
 	// ----------------------------------------------------
-	// Packet Dispatcher 관련 구현
+	// Packet Dispatcher
 	// ----------------------------------------------------
 
 	using PacketHandler = void(User::*)(const Packet&);
 	static inline std::unordered_map<uint16, PacketHandler> s_handlers;
 
-	static void InitHandlers()
+	static void RegisterHandlers()
 	{
 		if (!s_handlers.empty()) return;
 
-		// 예시: s_handlers[CS_LOGIN_REQ] = &User::HandleLogin;
+		// s_handlers[CS_LOGIN_REQ] = &User::HandleLogin;
 	}
 
-	void ProcessPacket(const Packet& packet)
+	virtual void Dispatch(const Packet& packet) override
 	{
 		auto it = s_handlers.find(packet.packetId);
 		if (it != s_handlers.end())
-		{
-			PacketHandler handlerFunc = it->second;
-			(this->*handlerFunc)(packet);
-		}
+			(this->*it->second)(packet);
 		else
-		{
 			Log::Warning("알 수 없는 패킷입니다: ID {}", packet.packetId);
-		}
 	}
+
 	// ----------------------------------------------------
 
-	std::mutex m_stateLock;
+	std::mutex m_stateLock; // state 락 안걸어도 될듯 고민해봐야됨
 	float x{}, y{}, z{ 88 };
 
 private:
 	std::optional<uint32> m_roomIndex;
 	std::string m_userId;
-	DOMAIN_STATE m_domainState = DOMAIN_STATE::NONE;
+	State m_state = State::None;
 };

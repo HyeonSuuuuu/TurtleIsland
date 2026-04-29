@@ -131,6 +131,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\IOCPCore\Common.ixx" />
+    <ClCompile Include="..\IOCPCore\Define.ixx" />
+    <ClCompile Include="..\IOCPCore\Globals.ixx" />
+    <ClCompile Include="..\IOCPCore\IOCPNetwork.ixx" />
+    <ClCompile Include="..\IOCPCore\Session.ixx" />
     <ClCompile Include="GameMain.cpp" />
     <ClCompile Include="GameServer.ixx" />
     <ClCompile Include="User.ixx" />
@@ -140,11 +145,6 @@
     <ClInclude Include="..\..\Common\Protocol.h" />
     <ClInclude Include="..\..\Common\Type.h" />
     <ClInclude Include="Macro.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\IOCPCore\IOCPCore.vcxproj">
-      <Project>{4E8F2A1B-C3D5-4E7F-9012-3A4B5C6D7E8F}</Project>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

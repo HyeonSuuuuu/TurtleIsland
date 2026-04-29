@@ -26,9 +26,9 @@ TEST(SessionTest, PacketBufferRoundTrip)
 	header.id   = 200;
 
 	std::span<const byte> data{ reinterpret_cast<const byte*>(&header), PACKET_HEADER_SIZE };
-	s.SetPacket(data);
+	s.PushPacket(data);
 
-	auto result = s.GetPacket();
+	auto result = s.PopPacket();
 	ASSERT_TRUE(result.has_value());
 	EXPECT_EQ(result->packetId, static_cast<uint16>(200));
 	EXPECT_EQ(result->sessionIndex, 0u);
@@ -38,7 +38,7 @@ TEST(SessionTest, PacketBufferReturnsNulloptWhenEmpty)
 {
 	Session s;
 	s.Init(1);
-	auto result = s.GetPacket();
+	auto result = s.PopPacket();
 	EXPECT_FALSE(result.has_value());
 }
 
@@ -58,14 +58,14 @@ TEST(SessionTest, PacketBufferCompaction)
 
 	for (int i = 0; i < 1619; ++i)
 	{
-		s.SetPacket(data);
-		bool ok = s.GetPacket().has_value();
+		s.PushPacket(data);
+		bool ok = s.PopPacket().has_value();
 		EXPECT_TRUE(ok);
 	}
 
 	header.id = 999;
-	s.SetPacket(data);
-	auto result = s.GetPacket();
+	s.PushPacket(data);
+	auto result = s.PopPacket();
 	ASSERT_TRUE(result.has_value());
 	EXPECT_EQ(result->packetId, static_cast<uint16>(999));
 }
@@ -92,3 +92,4 @@ TEST(GlobalsTest, IndexMappingAfterLogin)
 
 	g_idToIndexMap.clear();
 }
+

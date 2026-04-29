@@ -6,9 +6,7 @@ import Define;
 import User;
 import "../../Common/Protocol.h";
 
-
-
-export class GameServer : public IOCPNetwork<User>
+export class GameServer : public IOCPNetwork
 {
 public:
 	GameServer() = default;
@@ -16,7 +14,7 @@ public:
 
 	virtual void OnConnect(const uint32 clientIndex) override
 	{
-		std::print("[Onconnect]: Index({})\n", clientIndex);
+		std::print("[OnConnect]: Index({})\n", clientIndex);
 	}
 
 	virtual void OnClose(const uint32 clientIndex) override
@@ -26,13 +24,12 @@ public:
 
 	void Run()
 	{
-		User::InitHandlers();
-
+		User::RegisterHandlers();
 		StartServer();
 	}
 
-	void End()
+	void Stop()
 	{
-		DestroyThread();
+		IOCPNetwork::Stop();
 	}
 };

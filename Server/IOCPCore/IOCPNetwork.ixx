@@ -2,27 +2,18 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winSock2.h>
 #include <ws2tcpip.h>
-
-#include <vector>
-#include <queue>
-#include <mutex>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <optional>
-#include <atomic>
-
 #pragma comment(lib, "ws2_32.lib")
 
 export module IOCPNetwork;
 import Common;
 import Define;
-import Session;
+import User;
+import Globals;
 import "../../Common/Protocol.h";
 
-export template<typename T>
-	requires std::derived_from<T, Session>
-class IOCPNetwork
+export inline std::array<User, NetConfig::MAX_CLIENTS> g_users{};
+
+export class IOCPNetwork
 {
 public:
 	IOCPNetwork() = default;
@@ -31,15 +22,9 @@ public:
 		WSACleanup();
 	}
 
-	bool InitEnvironment()
-	{
-		return true;
-	}
-
 	bool InitSocket()
 	{
 		WSADATA wsaData;
-
 		int32 ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
 		if (ret != 0)
 		{
@@ -50,13 +35,14 @@ public:
 		if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2)
 		{
 			Log::ErrorDisplay("Winsock.dll의 사용 가능한 버전을 찾을 수 없습니다", WSAGetLastError());
-			return 1;
+			return false;
 		}
 
 		m_listenSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_listenSocket == INVALID_SOCKET)
 		{
 			Log::ErrorDisplay("socket() 실패", WSAGetLastError());
+			return false;
 		}
 
 		Log::Success("소켓 초기화 성공");
@@ -98,22 +84,20 @@ public:
 		return true;
 	}
 
-	bool BindandListen(const int32 port) const
+	bool Listen(const int32 port) const
 	{
 		sockaddr_in serverAddr{};
 		serverAddr.sin_family = AF_INET;
 		serverAddr.sin_port = htons(port);
 		serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-		int32 ret = bind(m_listenSocket, (SOCKADDR*)&serverAddr, sizeof(SOCKADDR_IN));
-		if (ret != 0)
+		if (bind(m_listenSocket, (SOCKADDR*)&serverAddr, sizeof(SOCKADDR_IN)) != 0)
 		{
 			Log::ErrorDisplay("bind() 실패", WSAGetLastError());
 			return false;
 		}
 
-		ret = listen(m_listenSocket, SOMAXCONN);
-		if (ret != 0)
+		if (listen(m_listenSocket, SOMAXCONN) != 0)
 		{
 			Log::ErrorDisplay("listen() 실패", WSAGetLastError());
 			return false;
@@ -125,7 +109,8 @@ public:
 
 	bool StartServer()
 	{
-		CreateClient();
+		InitSessions();
+
 		m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
 		m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
 		if (m_iocpHandle == nullptr)
@@ -141,90 +126,80 @@ public:
 			return false;
 		}
 
-		bool ret = CreateWorkerThread();
-		if (ret == false)
-		{
+		if (!CreateWorkerThread())
 			return false;
-		}
 
 		for (int i = 0; i < 10; ++i)
 		{
-			Session* session = GetEmptySession();
+			Session* session = AcquireSession();
 			if (session == nullptr)
 			{
-				Log::Error("초기 세션 부족 ");
+				Log::Error("초기 세션 부족");
 				break;
 			}
-			if (session->PostAccept(m_listenSocket) == false)
-			{
-				ReturnSession(session->GetIndex());
-			}
+			if (!session->BindAccept(m_listenSocket))
+				ReleaseSession(session->GetIndex());
 		}
 
 		Log::Success("서버 시작");
 		return true;
 	}
 
-	void DestroyThread()
+	void Stop()
 	{
 		m_isWorkerRun = false;
 		CloseHandle(m_iocpHandle);
 
 		for (auto& th : m_IOWorkerThreads)
 		{
-			if (th.joinable())
-			{
-				th.join();
-			}
+			if (th.joinable()) th.join();
 		}
 
 		closesocket(m_listenSocket);
 	}
 
-	bool SendMsg(const uint32 clientIndex, const std::span<const byte> msg)
+	bool Send(const uint32 clientIndex, const std::span<const byte> msg)
 	{
-		return m_users[clientIndex].SendMsg(msg);
+		return g_users[clientIndex].Send(msg);
 	}
 
 	virtual void OnConnect(const uint32 clientIndex) = 0;
 	virtual void OnClose(const uint32 clientIndex) = 0;
 
-	T* GetUser(uint32 index)
+	User* GetUser(uint32 index)
 	{
 		if (index >= NetConfig::MAX_CLIENTS) return nullptr;
-		return &m_users[index];
+		return &g_users[index];
 	}
 
-protected:
 private:
-
 	int64 GetTick()
 	{
-		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		return std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
 
-	Session* GetEmptySession()
+	Session* AcquireSession()
 	{
 		std::lock_guard<std::mutex> lock(m_reuseLock);
 		if (m_reuseQueue.empty()) return nullptr;
 		auto [closedTime, index] = std::move(m_reuseQueue.front());
 		if (GetTick() - closedTime < REUSE_WAIT_MS) return nullptr;
 		m_reuseQueue.pop();
-		return &m_users[index];
+		return &g_users[index];
 	}
 
-	void ReturnSession(uint32 index)
+	void ReleaseSession(uint32 index)
 	{
 		std::lock_guard<std::mutex> lock(m_reuseLock);
 		m_reuseQueue.emplace(GetTick(), index);
 	}
 
-	void CreateClient()
+	void InitSessions()
 	{
-		m_users = std::make_unique<T[]>(NetConfig::MAX_CLIENTS);
 		for (uint32 i = 0; i < NetConfig::MAX_CLIENTS; ++i)
 		{
-			m_users[i].Init(i);
+			g_users[i].Init(i);
 			m_reuseQueue.emplace(0, i);
 		}
 	}
@@ -236,7 +211,6 @@ private:
 		{
 			m_IOWorkerThreads.emplace_back([this]() { WorkerThread(); });
 		}
-
 		Log::Success("{}개의 Worker Thread 생성 완료", m_maxWorkerThread);
 		return true;
 	}
@@ -251,10 +225,7 @@ private:
 		while (m_isWorkerRun)
 		{
 			isSuccess = GetQueuedCompletionStatus(m_iocpHandle,
-				&dwIoSize,
-				(PULONG_PTR)&pSession,
-				&lpOverlapped,
-				INFINITE);
+				&dwIoSize, (PULONG_PTR)&pSession, &lpOverlapped, INFINITE);
 
 			if (isSuccess && dwIoSize == 0 && lpOverlapped == nullptr)
 			{
@@ -273,46 +244,36 @@ private:
 			if (IOOperation::ACCEPT == pOverlappedEx->m_operation)
 			{
 				uint32 targetIndex = pOverlappedEx->m_sessionIndex;
-				pSession = &m_users[targetIndex];
-				if (pSession)
+				User* pUser = &g_users[targetIndex];
+				if (pUser)
 				{
-					pSession->AcceptCompleted(m_iocpHandle);
-					OnConnect(pSession->GetIndex());
+					pUser->AcceptCompleted(m_iocpHandle);
+					OnConnect(pUser->GetIndex());
 					m_clientCnt.fetch_add(1);
-					Session* session = GetEmptySession();
+
+					Session* session = AcquireSession();
 					if (session == nullptr)
-					{
-						Log::Error("초기 세션 부족 ");
-					}
-					else if (session->PostAccept(m_listenSocket) == false)
-					{
-						ReturnSession(session->GetIndex());
-					}
+						Log::Error("초기 세션 부족");
+					else if (!session->BindAccept(m_listenSocket))
+						ReleaseSession(session->GetIndex());
 				}
 				continue;
 			}
 			else if (!isSuccess || (dwIoSize == 0 && isSuccess))
 			{
-				if (pSession)
-				{
-					CloseSocket(pSession->GetIndex());
-				}
+				if (pSession) Disconnect(pSession->GetIndex());
 				continue;
 			}
-
 			else if (IOOperation::RECV == pOverlappedEx->m_operation)
 			{
-				const auto dataSpan{ pSession->GetRecvData(dwIoSize) };
+				const auto dataSpan = pSession->GetRecvData(dwIoSize);
 
-				T* pUser = &m_users[pSession->GetIndex()];
+				User* pUser = &g_users[pSession->GetIndex()];
 				if (pUser)
 				{
-					pUser->SetPacket(dataSpan);
-
-					while (auto packetOpt = pUser->GetPacket())
-					{
-						pUser->ProcessPacket(packetOpt.value());
-					}
+					pUser->PushPacket(dataSpan);
+					while (auto packet = pUser->PopPacket())
+						pUser->Dispatch(packet.value());
 				}
 
 				pSession->BindRecv();
@@ -323,19 +284,19 @@ private:
 			}
 			else
 			{
-				Log::Warning("socket({}에서 예외상황 ", pSession->GetSocketId());
+				Log::Warning("socket({})에서 예외상황", pSession->GetSocketId());
 			}
 		}
 	}
 
-	void CloseSocket(uint32 index, bool isForce = false)
+	void Disconnect(uint32 index, bool isForce = false)
 	{
-		T* pUser = &m_users[index];
+		User* pUser = &g_users[index];
 		pUser->Close(isForce);
 
 		OnClose(index);
 
-		ReturnSession(index);
+		ReleaseSession(index);
 		m_clientCnt.fetch_sub(1);
 	}
 
@@ -348,10 +309,8 @@ private:
 	std::unique_ptr<Session> m_aiSession;
 
 	HANDLE m_iocpHandle = INVALID_HANDLE_VALUE;
+	uint32 m_maxWorkerThread = 0;
 
-	uint32 m_maxWorkerThread;
-
-	std::unique_ptr<T[]> m_users;
 	std::queue<std::pair<int64, uint32>> m_reuseQueue;
 	std::mutex m_reuseLock;
 };

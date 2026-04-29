@@ -1,4 +1,4 @@
-export module Common;
+﻿export module Common;
 
 export import std;
 export import "../../Common/Type.h";

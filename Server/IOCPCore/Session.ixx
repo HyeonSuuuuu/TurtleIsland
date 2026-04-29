@@ -35,22 +35,15 @@ public:
 		m_packetDataWritePos = 0;
 	}
 
-	constexpr uint32 GetIndex() const
-	{
-		return m_index;
-	}
+	constexpr uint32 GetIndex() const { return m_index; }
+	constexpr uint64 GetSocketId() const { return static_cast<uint64>(m_socket); }
 
 	constexpr std::span<const byte> GetRecvData(int32 size) const
 	{
 		return std::span<const byte>(m_recvBuf, size);
 	}
 
-	constexpr uint64 GetSocketId() const
-	{
-		return static_cast<uint64>(m_socket);
-	}
-
-	void SetPacket(const std::span<const byte> dataSpan)
+	void PushPacket(const std::span<const byte> dataSpan)
 	{
 		if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 		{
@@ -70,55 +63,46 @@ public:
 		m_packetDataWritePos += static_cast<uint32>(dataSpan.size());
 	}
 
-	std::optional<Packet> GetPacket()
+	std::optional<Packet> PopPacket()
 	{
 		uint32 remainByte = m_packetDataWritePos - m_packetDataReadPos;
 
 		if (remainByte < PACKET_HEADER_SIZE)
-		{
 			return std::nullopt;
-		}
 
 		auto pHeader = (PacketHeader*)&m_packetDataBuffer[m_packetDataReadPos];
 
 		if (pHeader->size > remainByte)
-		{
 			return std::nullopt;
-		}
 
 		Packet packet;
 		packet.sessionIndex = m_index;
 		packet.packetId = pHeader->id;
-		std::span<byte> span{ &m_packetDataBuffer[m_packetDataReadPos], pHeader->size };
-		packet.dataSpan = span;
+		packet.dataSpan = std::span<byte>{ &m_packetDataBuffer[m_packetDataReadPos], pHeader->size };
 
 		m_packetDataReadPos += pHeader->size;
 		return packet;
 	}
 
-	virtual bool OnConnect(HANDLE iocpHandle, SOCKET socket)
+	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket)
 	{
 		m_socket = socket;
 		m_isConnect = true;
-		bool ret = BindIOCompletionPort(iocpHandle);
-		if (ret == false)
+
+		if (!RegisterIOCP(iocpHandle))
 		{
 			Log::Error("IOCP 바인딩 실패 (Index: {})", m_index);
 			return false;
 		}
 
 		BindRecv();
-
 		return true;
 	}
 
 	virtual void Close(bool isForce = false)
 	{
 		linger lingerOpt{ 0, 0 };
-		if (isForce)
-		{
-			lingerOpt.l_onoff = 1;
-		}
+		if (isForce) lingerOpt.l_onoff = 1;
 
 		shutdown(m_socket, SD_BOTH);
 		setsockopt(m_socket, SOL_SOCKET, SO_LINGER, (char*)&lingerOpt, sizeof(lingerOpt));
@@ -130,7 +114,7 @@ public:
 		Clear();
 	}
 
-	bool PostAccept(SOCKET listenSock)
+	bool BindAccept(SOCKET listenSock)
 	{
 		m_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_socket == INVALID_SOCKET)
@@ -138,15 +122,15 @@ public:
 			Log::ErrorDisplay("client WSASocket() 실패", GetLastError());
 			return false;
 		}
-		DWORD bytes = 0;
 
 		ZeroMemory(&m_acceptOverlappedEx, sizeof(OverlappedEx));
-
 		m_acceptOverlappedEx.m_operation = IOOperation::ACCEPT;
 		m_acceptOverlappedEx.m_sessionIndex = m_index;
 
-		if (AcceptEx(listenSock, m_socket, m_acceptBuf, 0, sizeof(SOCKADDR_IN) + 16,
-			sizeof(SOCKADDR_IN) + 16, &bytes, reinterpret_cast<LPWSAOVERLAPPED>(&m_acceptOverlappedEx)) == false)
+		DWORD bytes = 0;
+		if (!AcceptEx(listenSock, m_socket, m_acceptBuf, 0,
+			sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16,
+			&bytes, reinterpret_cast<LPWSAOVERLAPPED>(&m_acceptOverlappedEx)))
 		{
 			if (WSAGetLastError() != WSA_IO_PENDING)
 			{
@@ -154,18 +138,13 @@ public:
 				return false;
 			}
 		}
-
 		return true;
 	}
 
 	bool AcceptCompleted(HANDLE iocpHandle)
 	{
-		Log::Info("AcceptCompletion : SessionIndex({})", m_index);
-		if (OnConnect(iocpHandle, m_socket) == false)
-		{
-			return false;
-		}
-		return true;
+		Log::Info("AcceptCompleted : SessionIndex({})", m_index);
+		return RegisterSocket(iocpHandle, m_socket);
 	}
 
 	bool BindRecv()
@@ -174,29 +153,23 @@ public:
 		DWORD dwRecvNumBytes = 0;
 
 		ZeroMemory(&m_recvOverlappedEx, sizeof(OverlappedEx));
-
 		m_recvOverlappedEx.m_wsaBuf.len = MAX_SOCKBUF;
 		m_recvOverlappedEx.m_wsaBuf.buf = reinterpret_cast<char*>(m_recvBuf);
 		m_recvOverlappedEx.m_operation = IOOperation::RECV;
 
-		int ret = WSARecv(m_socket,
-			&(m_recvOverlappedEx.m_wsaBuf),
-			1,
-			&dwRecvNumBytes,
-			&dwFlag,
-			(LPWSAOVERLAPPED) & (m_recvOverlappedEx),
-			nullptr);
+		int ret = WSARecv(m_socket, &m_recvOverlappedEx.m_wsaBuf, 1,
+			&dwRecvNumBytes, &dwFlag,
+			(LPWSAOVERLAPPED)&m_recvOverlappedEx, nullptr);
 
-		if (ret == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
+		if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 		{
 			Log::ErrorDisplay("WSARecv() 실패", WSAGetLastError());
 			return false;
 		}
-
 		return true;
 	}
 
-	bool SendMsg(const std::span<const byte> msg)
+	bool Send(const std::span<const byte> msg)
 	{
 		OverlappedEx* sendOverlappedEx = new OverlappedEx();
 		sendOverlappedEx->m_wsaBuf.len = static_cast<uint32>(msg.size());
@@ -204,23 +177,18 @@ public:
 		sendOverlappedEx->m_operation = IOOperation::SEND;
 		CopyMemory(sendOverlappedEx->m_wsaBuf.buf, msg.data(), msg.size());
 
-		DWORD dwRecvNumBytes = 0;
-		int ret = WSASend(m_socket,
-			&(sendOverlappedEx->m_wsaBuf),
-			1,
-			&dwRecvNumBytes,
-			0,
-			reinterpret_cast<LPWSAOVERLAPPED>(sendOverlappedEx),
-			nullptr);
+		DWORD dwSentBytes = 0;
+		int ret = WSASend(m_socket, &sendOverlappedEx->m_wsaBuf, 1,
+			&dwSentBytes, 0,
+			reinterpret_cast<LPWSAOVERLAPPED>(sendOverlappedEx), nullptr);
 
-		if (ret == SOCKET_ERROR && (WSAGetLastError() != ERROR_IO_PENDING))
+		if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 		{
 			Log::ErrorDisplay("WSASend() 실패", WSAGetLastError());
 			delete[] sendOverlappedEx->m_wsaBuf.buf;
 			delete sendOverlappedEx;
 			return false;
 		}
-
 		return true;
 	}
 
@@ -230,28 +198,23 @@ public:
 		delete sendOverlappedEx;
 	}
 
-	bool BindIOCompletionPort(HANDLE iocpHandle) const
-	{
-		auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket,
-			iocpHandle,
-			(ULONG_PTR)this,
-			0);
-
-		if (hIOCP == nullptr || iocpHandle != hIOCP)
-		{
-			Log::ErrorDisplay("CreateCompletionPort() 실패", GetLastError());
-			return false;
-		}
-
-		return true;
-	}
-
-	virtual void ProcessPacket(const Packet& packet) {}
+	virtual void Dispatch(const Packet& packet) {}
 
 protected:
 	uint32 m_index = 0;
 
 private:
+	bool RegisterIOCP(HANDLE iocpHandle) const
+	{
+		auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket, iocpHandle, (ULONG_PTR)this, 0);
+		if (hIOCP == nullptr || iocpHandle != hIOCP)
+		{
+			Log::ErrorDisplay("CreateCompletionPort() 실패", GetLastError());
+			return false;
+		}
+		return true;
+	}
+
 	bool m_isConnect = false;
 	SOCKET m_socket = INVALID_SOCKET;
 
