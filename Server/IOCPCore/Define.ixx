@@ -7,6 +7,7 @@ import Common;
 export
 {
 	constexpr int16 MAX_SOCKBUF = 1024;
+	constexpr uint32 ACCEPT_COUNT = 10;
 	constexpr int64 REUSE_WAIT_MS = 2000;
 	constexpr uint32 INVALID_SESSION_INDEX = UINT_MAX;
 	constexpr uint32 INVALID_ID = UINT_MAX - 1;

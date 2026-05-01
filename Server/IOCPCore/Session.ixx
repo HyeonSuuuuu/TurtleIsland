@@ -40,7 +40,7 @@ public:
 
 	constexpr std::span<const byte> GetRecvData(int32 size) const
 	{
-		return std::span<const byte>(m_recvBuf, size);
+		return std::span<const byte>(reinterpret_cast<const byte*>(m_recvOverlappedEx.m_buf), size);
 	}
 
 	void PushPacket(const std::span<const byte> dataSpan)
@@ -114,7 +114,7 @@ public:
 		Clear();
 	}
 
-	bool BindAccept(SOCKET listenSock)
+	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)
 	{
 		m_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_socket == INVALID_SOCKET)
@@ -123,13 +123,13 @@ public:
 			return false;
 		}
 
-		ZeroMemory(&m_acceptOverlappedEx, sizeof(OverlappedEx));
-		m_acceptOverlappedEx.m_operation = IOOperation::ACCEPT;
+		ZeroMemory(&acceptOver, sizeof(OVERLAPPED));
+		acceptOver.m_operation = IOOperation::ACCEPT;
 
 		DWORD bytes = 0;
-		if (!AcceptEx(listenSock, m_socket, m_acceptBuf, 0,
+		if (!AcceptEx(listenSock, m_socket, acceptOver.m_buf, 0,
 			sizeof(SOCKADDR_IN) + 16, sizeof(SOCKADDR_IN) + 16,
-			&bytes, reinterpret_cast<LPWSAOVERLAPPED>(&m_acceptOverlappedEx)))
+			&bytes, reinterpret_cast<LPWSAOVERLAPPED>(&acceptOver)))
 		{
 			if (WSAGetLastError() != WSA_IO_PENDING)
 			{
@@ -215,11 +215,7 @@ private:
 	bool m_isConnect = false;
 	SOCKET m_socket = INVALID_SOCKET;
 
-	OverlappedEx m_acceptOverlappedEx{};
-	char m_acceptBuf[64]{};
-
 	OverlappedEx m_recvOverlappedEx{};
-	byte m_recvBuf[MAX_SOCKBUF]{};
 
 	byte* m_packetDataBuffer = nullptr;
 	uint32 m_packetDataWritePos = 0;

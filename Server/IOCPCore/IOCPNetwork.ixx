@@ -129,7 +129,7 @@ public:
 		if (!CreateWorkerThread())
 			return false;
 
-		for (int i = 0; i < 10; ++i)
+		for (uint32 i = 0; i < ACCEPT_COUNT; ++i)
 		{
 			Session* session = AcquireSession();
 			if (session == nullptr)
@@ -137,7 +137,7 @@ public:
 				Log::Error("초기 세션 부족");
 				break;
 			}
-			if (!session->BindAccept(m_listenSocket))
+			if (!session->BindAccept(m_listenSocket, m_acceptOverlappeds[i]))
 				ReleaseSession(session->GetIndex());
 		}
 
@@ -248,7 +248,7 @@ private:
 					Session* session = AcquireSession();
 					if (session == nullptr)
 						Log::Error("초기 세션 부족");
-					else if (!session->BindAccept(m_listenSocket))
+					else if (!session->BindAccept(m_listenSocket, *pOverlappedEx))
 						ReleaseSession(session->GetIndex());
 				}
 				continue;
@@ -307,4 +307,6 @@ private:
 
 	std::queue<std::pair<int64, uint32>> m_reuseQueue;
 	std::mutex m_reuseLock;
+
+	OverlappedEx m_acceptOverlappeds[ACCEPT_COUNT]{};
 };
