@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="Core">
+      <UniqueIdentifier>{a1b2c3d4-0001-0001-0001-000000000001}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Contents">
       <UniqueIdentifier>{56ea910b-41de-40f2-982b-b3f24f85a09a}</UniqueIdentifier>
     </Filter>
@@ -9,6 +12,21 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\IOCPCore\Common.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\IOCPCore\Define.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\IOCPCore\Globals.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\IOCPCore\IOCPNetwork.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\IOCPCore\Session.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="GameServer.ixx">
       <Filter>Contents</Filter>
     </ClCompile>
@@ -20,9 +38,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Macro.h">
-      <Filter>Shared</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\Common\Log.h">
       <Filter>Shared</Filter>
     </ClInclude>

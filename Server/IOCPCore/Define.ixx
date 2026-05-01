@@ -20,10 +20,10 @@ export
 
 	struct OverlappedEx : public OVERLAPPED
 	{
-		SOCKET m_socketClient;
-		WSABUF m_wsaBuf;
+		SOCKET      m_socketClient;
+		WSABUF      m_wsa;
 		IOOperation m_operation;
-		uint32 m_sessionIndex = 0;
+		char        m_buf[MAX_SOCKBUF]{};
 	};
 
 	struct Packet

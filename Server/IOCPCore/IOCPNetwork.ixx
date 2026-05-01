@@ -110,7 +110,7 @@ public:
 	bool StartServer()
 	{
 		InitSessions();
-
+		// 일단 2배 (밴치마크 후 적절히 조정)
 		m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
 		m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
 		if (m_iocpHandle == nullptr)
@@ -243,8 +243,7 @@ private:
 
 			if (IOOperation::ACCEPT == pOverlappedEx->m_operation)
 			{
-				uint32 targetIndex = pOverlappedEx->m_sessionIndex;
-				User* pUser = &g_users[targetIndex];
+				User* pUser = static_cast<User*>(pSession);
 				if (pUser)
 				{
 					pUser->AcceptCompleted(m_iocpHandle);

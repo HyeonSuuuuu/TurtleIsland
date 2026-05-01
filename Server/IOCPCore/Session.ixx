@@ -125,7 +125,6 @@ public:
 
 		ZeroMemory(&m_acceptOverlappedEx, sizeof(OverlappedEx));
 		m_acceptOverlappedEx.m_operation = IOOperation::ACCEPT;
-		m_acceptOverlappedEx.m_sessionIndex = m_index;
 
 		DWORD bytes = 0;
 		if (!AcceptEx(listenSock, m_socket, m_acceptBuf, 0,
@@ -153,11 +152,11 @@ public:
 		DWORD dwRecvNumBytes = 0;
 
 		ZeroMemory(&m_recvOverlappedEx, sizeof(OverlappedEx));
-		m_recvOverlappedEx.m_wsaBuf.len = MAX_SOCKBUF;
-		m_recvOverlappedEx.m_wsaBuf.buf = reinterpret_cast<char*>(m_recvBuf);
+		m_recvOverlappedEx.m_wsa.len = MAX_SOCKBUF;
+		m_recvOverlappedEx.m_wsa.buf = m_recvOverlappedEx.m_buf;
 		m_recvOverlappedEx.m_operation = IOOperation::RECV;
 
-		int ret = WSARecv(m_socket, &m_recvOverlappedEx.m_wsaBuf, 1,
+		int ret = WSARecv(m_socket, &m_recvOverlappedEx.m_wsa, 1,
 			&dwRecvNumBytes, &dwFlag,
 			(LPWSAOVERLAPPED)&m_recvOverlappedEx, nullptr);
 
@@ -172,20 +171,19 @@ public:
 	bool Send(const std::span<const byte> msg)
 	{
 		OverlappedEx* sendOverlappedEx = new OverlappedEx();
-		sendOverlappedEx->m_wsaBuf.len = static_cast<uint32>(msg.size());
-		sendOverlappedEx->m_wsaBuf.buf = new char[msg.size()];
+		sendOverlappedEx->m_wsa.len = static_cast<uint32>(msg.size());
+		sendOverlappedEx->m_wsa.buf = sendOverlappedEx->m_buf;
 		sendOverlappedEx->m_operation = IOOperation::SEND;
-		CopyMemory(sendOverlappedEx->m_wsaBuf.buf, msg.data(), msg.size());
+		CopyMemory(sendOverlappedEx->m_buf, msg.data(), msg.size());
 
 		DWORD dwSentBytes = 0;
-		int ret = WSASend(m_socket, &sendOverlappedEx->m_wsaBuf, 1,
+		int ret = WSASend(m_socket, &sendOverlappedEx->m_wsa, 1,
 			&dwSentBytes, 0,
 			reinterpret_cast<LPWSAOVERLAPPED>(sendOverlappedEx), nullptr);
 
 		if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 		{
 			Log::ErrorDisplay("WSASend() 실패", WSAGetLastError());
-			delete[] sendOverlappedEx->m_wsaBuf.buf;
 			delete sendOverlappedEx;
 			return false;
 		}
@@ -194,7 +192,6 @@ public:
 
 	void SendCompleted(const uint32 dataSize, OverlappedEx* sendOverlappedEx)
 	{
-		delete[] sendOverlappedEx->m_wsaBuf.buf;
 		delete sendOverlappedEx;
 	}
 
