@@ -158,11 +158,6 @@ public:
 		closesocket(m_listenSocket);
 	}
 
-	bool Send(const uint32 clientIndex, const std::span<const byte> msg)
-	{
-		return g_users[clientIndex].Send(msg);
-	}
-
 	virtual void OnConnect(const uint32 clientIndex) = 0;
 	virtual void OnClose(const uint32 clientIndex) = 0;
 
