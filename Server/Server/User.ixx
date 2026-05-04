@@ -69,8 +69,7 @@ public:
 	// ----------------------------------------------------
 
 	using PacketHandler = void(User::*)(const Packet&);
-	static inline std::unordered_map<uint16, PacketHandler> s_handlers;
-
+	static inline std::unordered_map<uint16, PacketHandler> s_handlers; // 삽입, 삭제 x
 	static void RegisterHandlers()
 	{
 		if (!s_handlers.empty()) return;

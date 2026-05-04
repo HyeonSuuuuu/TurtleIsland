@@ -1,5 +1,6 @@
-import GameServer;
+﻿import GameServer;
 import Common;
+import Minidump;
 import "../../Common/Protocol.h";
 
 constexpr uint16 SERVER_PORT = NetConfig::GAME_SERVER_PORT;
@@ -7,6 +8,7 @@ constexpr uint16 SERVER_PORT = NetConfig::GAME_SERVER_PORT;
 int main()
 {
 	GameServer server;
+	MiniDump::Begin();
 
 	server.InitSocket();
 	server.ConnectToAIServer("127.0.0.1", NetConfig::AI_SERVER_PORT);
@@ -23,5 +25,7 @@ int main()
 	}
 
 	server.Stop();
+
+	MiniDump::End();
 	return 0;
 }

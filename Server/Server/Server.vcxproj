@@ -141,6 +141,9 @@
     <ClCompile Include="User.ixx" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\utils\minidump\mdump.ixx" />
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="..\..\Common\Log.h" />
     <ClInclude Include="..\..\Common\Protocol.h" />
     <ClInclude Include="..\..\Common\Type.h" />

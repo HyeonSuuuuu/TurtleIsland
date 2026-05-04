@@ -10,6 +10,9 @@
     <Filter Include="Shared">
       <UniqueIdentifier>{13312596-9456-41b0-b453-6123029b11e4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{fc3055a8-8321-464b-b53c-ae5832f7b306}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\IOCPCore\Common.ixx">
@@ -46,6 +49,9 @@
     </ClInclude>
     <ClInclude Include="..\..\Common\Protocol.h">
       <Filter>Shared</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\minidump\mdump.ixx">
+      <Filter>Utils</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
