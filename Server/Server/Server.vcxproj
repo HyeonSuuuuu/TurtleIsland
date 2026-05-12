@@ -131,11 +131,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\IOCPCore\Common.ixx" />
-    <ClCompile Include="..\IOCPCore\Define.ixx" />
-    <ClCompile Include="..\IOCPCore\Globals.ixx" />
-    <ClCompile Include="..\IOCPCore\IOCPNetwork.ixx" />
-    <ClCompile Include="..\IOCPCore\Session.ixx" />
+    <ClCompile Include="Common.ixx" />
+    <ClCompile Include="Define.ixx" />
+    <ClCompile Include="GameObject.ixx" />
+    <ClCompile Include="Globals.ixx" />
+    <ClCompile Include="IOCPNetwork.ixx" />
+    <ClCompile Include="Session.ixx" />
     <ClCompile Include="GameMain.cpp" />
     <ClCompile Include="GameServer.ixx" />
     <ClCompile Include="User.ixx" />

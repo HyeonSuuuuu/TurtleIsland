@@ -89,7 +89,6 @@ public:
 	// ----------------------------------------------------
 
 	std::mutex m_stateLock; // state 락 안걸어도 될듯 고민해봐야됨
-	float x{}, y{}, z{ 88 };
 
 private:
 	std::optional<uint32> m_roomIndex;
