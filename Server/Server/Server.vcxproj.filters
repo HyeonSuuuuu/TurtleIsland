@@ -39,6 +39,7 @@
     <ClCompile Include="User.ixx">
       <Filter>Contents</Filter>
     </ClCompile>
+    <ClCompile Include="..\utils\minidump\mdump.ixx" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Common\Log.h">
@@ -49,9 +50,6 @@
     </ClInclude>
     <ClInclude Include="..\..\Common\Protocol.h">
       <Filter>Shared</Filter>
-    </ClInclude>
-    <ClInclude Include="..\utils\minidump\mdump.ixx">
-      <Filter>Utils</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
