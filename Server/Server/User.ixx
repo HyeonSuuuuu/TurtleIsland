@@ -13,29 +13,24 @@ public:
 	User() = default;
 	virtual ~User() = default;
 
-	enum class State
+	enum class UserState : uint8
 	{
-		None      = 0,
-		Connected = 1,
-		Login     = 2,
-		Lobby     = 3,
-		Room      = 4,
+		Login = 0,
+		Lobby = 1,
+		Room  = 2,
 	};
 
 	virtual void Init(uint32 id) override
 	{
 		Session::Init(id);
-		m_state = State::None;
-		m_userId = "";
-		m_roomIndex = std::nullopt;
 	}
 
-	virtual void Clear() override
+	virtual void InitClear() override
 	{
-		Session::Clear();
-		m_state = State::None;
+		m_userState = UserState::Login;
 		m_userId = "";
 		m_roomIndex = std::nullopt;
+		Session::InitClear();
 	}
 
 	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket) override
@@ -43,7 +38,8 @@ public:
 		bool ret = Session::RegisterSocket(iocpHandle, socket);
 		if (ret)
 		{
-			m_state = State::Connected;
+			state.store(SessionState::Connected);
+			m_userState = UserState::Login;
 			m_userId = "";
 			m_roomIndex = std::nullopt;
 		}
@@ -57,24 +53,18 @@ public:
 
 	void Login(std::string_view userId)
 	{
-		m_state = State::Login;
+		m_userState = UserState::Login;
 		m_userId = userId;
 	}
 
 	std::string GetUserId() const { return m_userId; }
-	State GetState() const { return m_state; }
-
-	// ----------------------------------------------------
-	// Packet Dispatcher
-	// ----------------------------------------------------
+	UserState GetUserState() const { return m_userState; }
 
 	using PacketHandler = void(User::*)(const Packet&);
-	static inline std::unordered_map<uint16, PacketHandler> s_handlers; // 삽입, 삭제 x
+	static inline std::unordered_map<uint16, PacketHandler> s_handlers;
 	static void RegisterHandlers()
 	{
 		if (!s_handlers.empty()) return;
-
-		// s_handlers[CS_LOGIN_REQ] = &User::HandleLogin;
 	}
 
 	virtual void Dispatch(const Packet& packet) override
@@ -83,15 +73,13 @@ public:
 		if (it != s_handlers.end())
 			(this->*it->second)(packet);
 		else
-			Log::Warning("알 수 없는 패킷입니다: ID {}", packet.packetId);
+			Log::Warning("Unknown packet ID: {}", packet.packetId);
 	}
 
-	// ----------------------------------------------------
-
-	std::mutex m_stateLock; // state 락 안걸어도 될듯 고민해봐야됨
+	std::mutex m_stateLock;
 
 private:
 	std::optional<uint32> m_roomIndex;
 	std::string m_userId;
-	State m_state = State::None;
+	UserState m_userState = UserState::Login;
 };

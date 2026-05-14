@@ -15,21 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\IOCPCore\Common.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\IOCPCore\Define.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\IOCPCore\Globals.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\IOCPCore\IOCPNetwork.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\IOCPCore\Session.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
     <ClCompile Include="GameServer.ixx">
       <Filter>Contents</Filter>
     </ClCompile>
@@ -39,7 +24,27 @@
     <ClCompile Include="User.ixx">
       <Filter>Contents</Filter>
     </ClCompile>
-    <ClCompile Include="..\utils\minidump\mdump.ixx" />
+    <ClCompile Include="GameObject.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="IOCPNetwork.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\utils\minidump\mdump.ixx">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Session.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Common.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Define.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Globals.ixx">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Common\Log.h">

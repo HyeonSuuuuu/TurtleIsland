@@ -138,7 +138,7 @@ public:
 				break;
 			}
 			if (!session->BindAccept(m_listenSocket, m_acceptOverlappeds[i]))
-				ReleaseSession(session->GetIndex());
+				ReleaseSession(session->GetId());
 		}
 
 		Log::Success("서버 시작");
@@ -242,27 +242,27 @@ private:
 				if (pUser)
 				{
 					pUser->AcceptCompleted(m_iocpHandle);
-					OnConnect(pUser->GetIndex());
+					OnConnect(pUser->GetId());
 					m_clientCnt.fetch_add(1);
 
 					Session* session = AcquireSession();
 					if (session == nullptr)
 						Log::Error("초기 세션 부족");
 					else if (!session->BindAccept(m_listenSocket, *pOverlappedEx))
-						ReleaseSession(session->GetIndex());
+						ReleaseSession(session->GetId());
 				}
 				continue;
 			}
 			else if (!isSuccess || (dwIoSize == 0 && isSuccess))
 			{
-				if (pSession) Disconnect(pSession->GetIndex());
+				if (pSession) Disconnect(pSession->GetId());
 				continue;
 			}
 			else if (IOOperation::RECV == pOverlappedEx->m_operation)
 			{
 				const auto dataSpan = pSession->GetRecvData(dwIoSize);
 
-				User* pUser = &g_users[pSession->GetIndex()];
+				User* pUser = &g_users[pSession->GetId()];
 				if (pUser)
 				{
 					pUser->PushPacket(dataSpan);

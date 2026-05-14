@@ -9,15 +9,14 @@ public:
 
 	virtual void Init(uint32 id)
 	{
-		m_index = id;
+		m_id = id;
 	}
 
-	virtual void Clear() {}
+	virtual void InitClear() = 0;
 
-	constexpr uint32 GetIndex() const { return m_index; }
+	constexpr uint32 GetId() const { return m_id; }
 
 	float x{}, y{}, z{ 88 };
-
 protected:
-	uint32 m_index = 0;
+	uint32 m_id = 0;
 };

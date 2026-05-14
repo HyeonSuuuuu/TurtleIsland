@@ -1,4 +1,4 @@
-export module Globals;
+﻿export module Globals;
 import Common;
 import "../../Common/Protocol.h";
 

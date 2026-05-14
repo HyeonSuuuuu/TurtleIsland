@@ -1,4 +1,4 @@
-module;
+﻿module;
 #define WIN32_LEAN_AND_MEAN
 #include <winSock2.h>
 #include <ws2tcpip.h>
@@ -13,10 +13,19 @@ import Define;
 import GameObject;
 import "../../Common/Protocol.h";
 
+export enum class SessionState : uint8
+{
+	None      = 0,
+	Retiring  = 1,
+	Connected = 2,
+};
+
 export class Session : public GameObject
 {
 public:
 	static constexpr uint32 PACKET_DATA_BUFFER_SIZE = 8096;
+
+	std::atomic<SessionState> state{ SessionState::None };
 
 	Session() = default;
 	virtual ~Session()
@@ -30,17 +39,19 @@ public:
 		m_packetDataBuffer = new byte[PACKET_DATA_BUFFER_SIZE];
 	}
 
-	virtual void Clear() override
+	virtual void InitClear() override
 	{
 		m_packetDataReadPos = 0;
 		m_packetDataWritePos = 0;
+		state.store(SessionState::None);
 	}
 
 	constexpr uint64 GetSocketId() const { return static_cast<uint64>(m_socket); }
 
-	constexpr std::span<const byte> GetRecvData(int32 size) const
+	std::span<const byte> GetRecvData(int32 size) const
 	{
-		return std::span<const byte>(reinterpret_cast<const byte*>(m_recvOverlappedEx.m_buf), size);
+		const byte* begin = reinterpret_cast<const byte*>(m_recvOverlappedEx.m_buf);
+		return std::span<const byte>(begin, begin + size);
 	}
 
 	void PushPacket(const std::span<const byte> dataSpan)
@@ -70,15 +81,16 @@ public:
 		if (remainByte < PACKET_HEADER_SIZE)
 			return std::nullopt;
 
-		auto pHeader = (PacketHeader*)&m_packetDataBuffer[m_packetDataReadPos];
+		auto pHeader = reinterpret_cast<PacketHeader*>(&m_packetDataBuffer[m_packetDataReadPos]);
 
 		if (pHeader->size > remainByte)
 			return std::nullopt;
 
 		Packet packet;
-		packet.sessionIndex = m_index;
-		packet.packetId = pHeader->id;
-		packet.dataSpan = std::span<byte>{ &m_packetDataBuffer[m_packetDataReadPos], pHeader->size };
+		packet.sessionIndex = m_id;
+		packet.packetId     = pHeader->id;
+		const byte* begin = m_packetDataBuffer + m_packetDataReadPos;
+		packet.dataSpan   = std::span<const byte>(begin, begin + pHeader->size);
 
 		m_packetDataReadPos += pHeader->size;
 		return packet;
@@ -91,7 +103,7 @@ public:
 
 		if (!RegisterIOCP(iocpHandle))
 		{
-			Log::Error("IOCP 바인딩 실패 (Index: {})", m_index);
+			Log::Error("IOCP bind failed (Id: {})", m_id);
 			return false;
 		}
 
@@ -111,7 +123,7 @@ public:
 		closesocket(m_socket);
 		m_socket = INVALID_SOCKET;
 
-		Clear();
+		InitClear();
 	}
 
 	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)
@@ -119,7 +131,7 @@ public:
 		m_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_socket == INVALID_SOCKET)
 		{
-			Log::ErrorDisplay("client WSASocket() 실패", GetLastError());
+			Log::ErrorDisplay("client WSASocket() failed", GetLastError());
 			return false;
 		}
 
@@ -133,7 +145,7 @@ public:
 		{
 			if (WSAGetLastError() != WSA_IO_PENDING)
 			{
-				Log::ErrorDisplay("AcceptEx Error", WSAGetLastError());
+				Log::ErrorDisplay("AcceptEx failed", WSAGetLastError());
 				return false;
 			}
 		}
@@ -142,7 +154,7 @@ public:
 
 	bool AcceptCompleted(HANDLE iocpHandle)
 	{
-		Log::Info("AcceptCompleted : SessionIndex({})", m_index);
+		Log::Info("AcceptCompleted : SessionId({})", m_id);
 		return RegisterSocket(iocpHandle, m_socket);
 	}
 
@@ -162,7 +174,7 @@ public:
 
 		if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 		{
-			Log::ErrorDisplay("WSARecv() 실패", WSAGetLastError());
+			Log::ErrorDisplay("WSARecv() failed", WSAGetLastError());
 			return false;
 		}
 		return true;
@@ -183,7 +195,7 @@ public:
 
 		if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 		{
-			Log::ErrorDisplay("WSASend() 실패", WSAGetLastError());
+			Log::ErrorDisplay("WSASend() failed", WSAGetLastError());
 			delete sendOverlappedEx;
 			return false;
 		}
@@ -203,7 +215,7 @@ private:
 		auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket, iocpHandle, (ULONG_PTR)this, 0);
 		if (hIOCP == nullptr || iocpHandle != hIOCP)
 		{
-			Log::ErrorDisplay("CreateCompletionPort() 실패", GetLastError());
+			Log::ErrorDisplay("CreateIoCompletionPort() failed", GetLastError());
 			return false;
 		}
 		return true;
