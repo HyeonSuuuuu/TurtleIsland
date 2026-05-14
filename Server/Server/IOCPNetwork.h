@@ -1,19 +1,13 @@
-﻿module;
-#define WIN32_LEAN_AND_MEAN
-#include <winSock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
+﻿#pragma once
+#include "pch.h"
+#include "Define.h"
+#include "User.h"
+#include "Globals.h"
+#include "../../Common/Protocol.h"
 
-export module IOCPNetwork;
-import Common;
-import Define;
-import User;
-import Globals;
-import "../../Common/Protocol.h";
+inline std::array<User, NetConfig::MAX_CLIENTS> g_users{};
 
-export inline std::array<User, NetConfig::MAX_CLIENTS> g_users{};
-
-export class IOCPNetwork
+class IOCPNetwork
 {
 public:
 	IOCPNetwork() = default;
@@ -25,7 +19,7 @@ public:
 	bool InitSocket()
 	{
 		WSADATA wsaData;
-		int32 ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
+		int32_t ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
 		if (ret != 0)
 		{
 			Log::ErrorDisplay("WSAStartup() 실패", WSAGetLastError());
@@ -49,7 +43,7 @@ public:
 		return true;
 	}
 
-	bool ConnectToAIServer(const std::string& ip, uint16 port)
+	bool ConnectToAIServer(const std::string& ip, uint16_t port)
 	{
 		m_aiSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 		if (m_aiSocket == INVALID_SOCKET)
@@ -84,11 +78,11 @@ public:
 		return true;
 	}
 
-	bool Listen(const int32 port) const
+	bool Listen(const int32_t port) const
 	{
 		sockaddr_in serverAddr{};
-		serverAddr.sin_family = AF_INET;
-		serverAddr.sin_port = htons(port);
+		serverAddr.sin_family      = AF_INET;
+		serverAddr.sin_port        = htons(port);
 		serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 		if (bind(m_listenSocket, (SOCKADDR*)&serverAddr, sizeof(SOCKADDR_IN)) != 0)
@@ -110,7 +104,6 @@ public:
 	bool StartServer()
 	{
 		InitSessions();
-		// 일단 2배 (밴치마크 후 적절히 조정)
 		m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
 		m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
 		if (m_iocpHandle == nullptr)
@@ -129,7 +122,7 @@ public:
 		if (!CreateWorkerThread())
 			return false;
 
-		for (uint32 i = 0; i < ACCEPT_COUNT; ++i)
+		for (uint32_t i = 0; i < ACCEPT_COUNT; ++i)
 		{
 			Session* session = AcquireSession();
 			if (session == nullptr)
@@ -158,17 +151,19 @@ public:
 		closesocket(m_listenSocket);
 	}
 
-	virtual void OnConnect(const uint32 clientIndex) = 0;
-	virtual void OnClose(const uint32 clientIndex) = 0;
+	virtual void OnConnect(const uint32_t clientIndex) = 0;
+	virtual void OnClose(const uint32_t clientIndex)   = 0;
+	virtual void OnRecv(uint32_t clientIndex, const Packet& packet) = 0;
+	virtual void OnSend(uint32_t clientIndex) {}
 
-	User* GetUser(uint32 index)
+	User* GetUser(uint32_t index)
 	{
 		if (index >= NetConfig::MAX_CLIENTS) return nullptr;
 		return &g_users[index];
 	}
 
 private:
-	int64 GetTick()
+	int64_t GetTick()
 	{
 		return std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -184,7 +179,7 @@ private:
 		return &g_users[index];
 	}
 
-	void ReleaseSession(uint32 index)
+	void ReleaseSession(uint32_t index)
 	{
 		std::lock_guard<std::mutex> lock(m_reuseLock);
 		m_reuseQueue.emplace(GetTick(), index);
@@ -192,7 +187,7 @@ private:
 
 	void InitSessions()
 	{
-		for (uint32 i = 0; i < NetConfig::MAX_CLIENTS; ++i)
+		for (uint32_t i = 0; i < NetConfig::MAX_CLIENTS; ++i)
 		{
 			g_users[i].Init(i);
 			m_reuseQueue.emplace(0, i);
@@ -202,7 +197,7 @@ private:
 	bool CreateWorkerThread()
 	{
 		m_isWorkerRun = true;
-		for (uint32 i = 0; i < m_maxWorkerThread; ++i)
+		for (uint32_t i = 0; i < m_maxWorkerThread; ++i)
 		{
 			m_IOWorkerThreads.emplace_back([this]() { WorkerThread(); });
 		}
@@ -212,9 +207,9 @@ private:
 
 	void WorkerThread()
 	{
-		Session* pSession = nullptr;
-		bool isSuccess = true;
-		DWORD dwIoSize = 0;
+		Session* pSession         = nullptr;
+		bool     isSuccess        = true;
+		DWORD    dwIoSize         = 0;
 		LPOVERLAPPED lpOverlapped = nullptr;
 
 		while (m_isWorkerRun)
@@ -267,7 +262,7 @@ private:
 				{
 					pUser->PushPacket(dataSpan);
 					while (auto packet = pUser->PopPacket())
-						pUser->Dispatch(packet.value());
+						OnRecv(pUser->GetId(), packet.value());
 				}
 
 				pSession->BindRecv();
@@ -275,6 +270,7 @@ private:
 			else if (IOOperation::SEND == pOverlappedEx->m_operation)
 			{
 				pSession->SendCompleted(dwIoSize, pOverlappedEx);
+				OnSend(pSession->GetId());
 			}
 			else
 			{
@@ -283,7 +279,7 @@ private:
 		}
 	}
 
-	void Disconnect(uint32 index, bool isForce = false)
+	void Disconnect(uint32_t index, bool isForce = false)
 	{
 		User* pUser = &g_users[index];
 		pUser->Close(isForce);
@@ -295,17 +291,17 @@ private:
 	}
 
 	SOCKET m_listenSocket = INVALID_SOCKET;
-	SOCKET m_aiSocket = INVALID_SOCKET;
-	std::atomic_int m_clientCnt = 0;
+	SOCKET m_aiSocket     = INVALID_SOCKET;
+	std::atomic_int  m_clientCnt = 0;
 
 	std::vector<std::thread> m_IOWorkerThreads;
-	std::atomic_bool m_isWorkerRun = false;
+	std::atomic_bool         m_isWorkerRun = false;
 	std::unique_ptr<Session> m_aiSession;
 
-	HANDLE m_iocpHandle = INVALID_HANDLE_VALUE;
-	uint32 m_maxWorkerThread = 0;
+	HANDLE   m_iocpHandle      = INVALID_HANDLE_VALUE;
+	uint32_t m_maxWorkerThread = 0;
 
-	std::queue<std::pair<int64, uint32>> m_reuseQueue;
+	std::queue<std::pair<int64_t, uint32_t>> m_reuseQueue;
 	std::mutex m_reuseLock;
 
 	OverlappedEx m_acceptOverlappeds[ACCEPT_COUNT]{};

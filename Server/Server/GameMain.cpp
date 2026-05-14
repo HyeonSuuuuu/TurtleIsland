@@ -1,9 +1,9 @@
-﻿import GameServer;
-import Common;
-import Minidump;
-import "../../Common/Protocol.h";
+﻿#include "pch.h"
+#include "GameServer.h"
+#include "../utils/minidump/mdump.h"
+#include "../../Common/Protocol.h"
 
-constexpr uint16 SERVER_PORT = NetConfig::GAME_SERVER_PORT;
+constexpr uint16_t SERVER_PORT = NetConfig::GAME_SERVER_PORT;
 
 int main()
 {

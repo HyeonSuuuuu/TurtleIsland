@@ -1,29 +1,20 @@
-﻿module;
-#define WIN32_LEAN_AND_MEAN
-#include <winSock2.h>
-#include <ws2tcpip.h>
-#include <mswsock.h>
-#include <windows.h>
+﻿#pragma once
+#include "pch.h"
+#include "Define.h"
+#include "GameObject.h"
+#include "../../Common/Protocol.h"
 
-#pragma comment(lib, "mswsock.lib")
-
-export module Session;
-import Common;
-import Define;
-import GameObject;
-import "../../Common/Protocol.h";
-
-export enum class SessionState : uint8
+enum class SessionState : uint8_t
 {
 	None      = 0,
 	Retiring  = 1,
 	Connected = 2,
 };
 
-export class Session : public GameObject
+class Session : public GameObject
 {
 public:
-	static constexpr uint32 PACKET_DATA_BUFFER_SIZE = 8096;
+	static constexpr uint32_t PACKET_DATA_BUFFER_SIZE = 8096;
 
 	std::atomic<SessionState> state{ SessionState::None };
 
@@ -33,28 +24,28 @@ public:
 		delete[] m_packetDataBuffer;
 	}
 
-	virtual void Init(uint32 id) override
+	virtual void Init(uint32_t id) override
 	{
 		GameObject::Init(id);
-		m_packetDataBuffer = new byte[PACKET_DATA_BUFFER_SIZE];
+		m_packetDataBuffer = new uint8_t[PACKET_DATA_BUFFER_SIZE];
 	}
 
 	virtual void InitClear() override
 	{
-		m_packetDataReadPos = 0;
+		m_packetDataReadPos  = 0;
 		m_packetDataWritePos = 0;
 		state.store(SessionState::None);
 	}
 
-	constexpr uint64 GetSocketId() const { return static_cast<uint64>(m_socket); }
+	constexpr uint64_t GetSocketId() const { return static_cast<uint64_t>(m_socket); }
 
-	std::span<const byte> GetRecvData(int32 size) const
+	std::span<const uint8_t> GetRecvData(int32_t size) const
 	{
-		const byte* begin = reinterpret_cast<const byte*>(m_recvOverlappedEx.m_buf);
-		return std::span<const byte>(begin, begin + size);
+		const uint8_t* begin = reinterpret_cast<const uint8_t*>(m_recvOverlappedEx.m_buf);
+		return std::span<const uint8_t>(begin, static_cast<size_t>(size));
 	}
 
-	void PushPacket(const std::span<const byte> dataSpan)
+	void PushPacket(const std::span<const uint8_t> dataSpan)
 	{
 		if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 		{
@@ -71,12 +62,12 @@ public:
 			m_packetDataReadPos = 0;
 		}
 		CopyMemory(&m_packetDataBuffer[m_packetDataWritePos], dataSpan.data(), dataSpan.size());
-		m_packetDataWritePos += static_cast<uint32>(dataSpan.size());
+		m_packetDataWritePos += static_cast<uint32_t>(dataSpan.size());
 	}
 
 	std::optional<Packet> PopPacket()
 	{
-		uint32 remainByte = m_packetDataWritePos - m_packetDataReadPos;
+		uint32_t remainByte = m_packetDataWritePos - m_packetDataReadPos;
 
 		if (remainByte < PACKET_HEADER_SIZE)
 			return std::nullopt;
@@ -89,8 +80,8 @@ public:
 		Packet packet;
 		packet.sessionIndex = m_id;
 		packet.packetId     = pHeader->id;
-		const byte* begin = m_packetDataBuffer + m_packetDataReadPos;
-		packet.dataSpan   = std::span<const byte>(begin, begin + pHeader->size);
+		const uint8_t* begin = reinterpret_cast<const uint8_t*>(m_packetDataBuffer + m_packetDataReadPos);
+		packet.dataSpan      = std::span<const uint8_t>(begin, static_cast<size_t>(pHeader->size));
 
 		m_packetDataReadPos += pHeader->size;
 		return packet;
@@ -98,7 +89,7 @@ public:
 
 	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket)
 	{
-		m_socket = socket;
+		m_socket    = socket;
 		m_isConnect = true;
 
 		if (!RegisterIOCP(iocpHandle))
@@ -160,12 +151,12 @@ public:
 
 	bool BindRecv()
 	{
-		DWORD dwFlag = 0;
+		DWORD dwFlag         = 0;
 		DWORD dwRecvNumBytes = 0;
 
 		ZeroMemory(&m_recvOverlappedEx, sizeof(OverlappedEx));
-		m_recvOverlappedEx.m_wsa.len = MAX_SOCKBUF;
-		m_recvOverlappedEx.m_wsa.buf = m_recvOverlappedEx.m_buf;
+		m_recvOverlappedEx.m_wsa.len   = MAX_SOCKBUF;
+		m_recvOverlappedEx.m_wsa.buf   = m_recvOverlappedEx.m_buf;
 		m_recvOverlappedEx.m_operation = IOOperation::RECV;
 
 		int ret = WSARecv(m_socket, &m_recvOverlappedEx.m_wsa, 1,
@@ -180,12 +171,12 @@ public:
 		return true;
 	}
 
-	bool Send(const std::span<const byte> msg)
+	bool Send(const std::span<const uint8_t> msg) const
 	{
 		OverlappedEx* sendOverlappedEx = new OverlappedEx();
-		sendOverlappedEx->m_wsa.len = static_cast<uint32>(msg.size());
-		sendOverlappedEx->m_wsa.buf = sendOverlappedEx->m_buf;
-		sendOverlappedEx->m_operation = IOOperation::SEND;
+		sendOverlappedEx->m_wsa.len    = static_cast<uint32_t>(msg.size());
+		sendOverlappedEx->m_wsa.buf    = sendOverlappedEx->m_buf;
+		sendOverlappedEx->m_operation  = IOOperation::SEND;
 		CopyMemory(sendOverlappedEx->m_buf, msg.data(), msg.size());
 
 		DWORD dwSentBytes = 0;
@@ -202,7 +193,7 @@ public:
 		return true;
 	}
 
-	void SendCompleted(const uint32 dataSize, OverlappedEx* sendOverlappedEx)
+	void SendCompleted(const uint32_t /*dataSize*/, OverlappedEx* sendOverlappedEx)
 	{
 		delete sendOverlappedEx;
 	}
@@ -221,12 +212,12 @@ private:
 		return true;
 	}
 
-	bool m_isConnect = false;
-	SOCKET m_socket = INVALID_SOCKET;
+	bool   m_isConnect = false;
+	SOCKET m_socket    = INVALID_SOCKET;
 
 	OverlappedEx m_recvOverlappedEx{};
 
-	byte* m_packetDataBuffer = nullptr;
-	uint32 m_packetDataWritePos = 0;
-	uint32 m_packetDataReadPos = 0;
+	uint8_t* m_packetDataBuffer   = nullptr;
+	uint32_t m_packetDataWritePos = 0;
+	uint32_t m_packetDataReadPos  = 0;
 };

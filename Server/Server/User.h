@@ -1,26 +1,22 @@
-﻿module;
-#include <unordered_map>
-export module User;
-import Common;
-import Define;
-import Session;
-import <windows.h>;
-import "../../Common/Protocol.h";
+﻿#pragma once
+#include "pch.h"
+#include "Session.h"
+#include "../../Common/Protocol.h"
 
-export class User : public Session
+class User : public Session
 {
 public:
 	User() = default;
 	virtual ~User() = default;
 
-	enum class UserState : uint8
+	enum class UserState : uint8_t
 	{
 		Login = 0,
 		Lobby = 1,
 		Room  = 2,
 	};
 
-	virtual void Init(uint32 id) override
+	virtual void Init(uint32_t id) override
 	{
 		Session::Init(id);
 	}
@@ -28,7 +24,7 @@ public:
 	virtual void InitClear() override
 	{
 		m_userState = UserState::Login;
-		m_userId = "";
+		m_userId    = "";
 		m_roomIndex = std::nullopt;
 		Session::InitClear();
 	}
@@ -40,7 +36,7 @@ public:
 		{
 			state.store(SessionState::Connected);
 			m_userState = UserState::Login;
-			m_userId = "";
+			m_userId    = "";
 			m_roomIndex = std::nullopt;
 		}
 		return ret;
@@ -54,14 +50,14 @@ public:
 	void Login(std::string_view userId)
 	{
 		m_userState = UserState::Login;
-		m_userId = userId;
+		m_userId    = userId;
 	}
 
-	std::string GetUserId() const { return m_userId; }
-	UserState GetUserState() const { return m_userState; }
+	std::string GetUserId()    const { return m_userId; }
+	UserState   GetUserState() const { return m_userState; }
 
 	using PacketHandler = void(User::*)(const Packet&);
-	static inline std::unordered_map<uint16, PacketHandler> s_handlers;
+	static inline std::unordered_map<uint16_t, PacketHandler> s_handlers;
 	static void RegisterHandlers()
 	{
 		if (!s_handlers.empty()) return;
@@ -79,7 +75,7 @@ public:
 	std::mutex m_stateLock;
 
 private:
-	std::optional<uint32> m_roomIndex;
+	std::optional<uint32_t> m_roomIndex;
 	std::string m_userId;
-	UserState m_userState = UserState::Login;
+	UserState   m_userState = UserState::Login;
 };
