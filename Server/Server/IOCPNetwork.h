@@ -5,8 +5,6 @@
 #include "Globals.h"
 #include "../../Common/Protocol.h"
 
-extern std::array<User, NetConfig::MAX_CLIENTS> g_users;
-
 class IOCPNetwork
 {
 public:
@@ -27,13 +25,9 @@ public:
 	User* GetUser(uint32_t index);
 
 private:
-	int64_t  GetTick();
-	Session* AcquireSession();
-	void     ReleaseSession(uint32_t index);
-	void     InitSessions();
-	bool     CreateWorkerThread();
-	void     WorkerThread();
-	void     Disconnect(uint32_t index, bool isForce = false);
+	bool CreateWorkerThread();
+	void WorkerThread();
+	void Disconnect(uint32_t index, bool isForce = false);
 
 	SOCKET           m_listenSocket    = INVALID_SOCKET;
 	SOCKET           m_aiSocket        = INVALID_SOCKET;
@@ -45,9 +39,6 @@ private:
 
 	HANDLE   m_iocpHandle      = INVALID_HANDLE_VALUE;
 	uint32_t m_maxWorkerThread = 0;
-
-	std::queue<std::pair<int64_t, uint32_t>> m_reuseQueue;
-	std::mutex m_reuseLock;
 
 	OverlappedEx m_acceptOverlappeds[ACCEPT_COUNT]{};
 };
