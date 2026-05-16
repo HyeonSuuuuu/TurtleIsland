@@ -18,6 +18,18 @@
     <ClCompile Include="pch.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="Session.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="IOCPNetwork.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="User.cpp">
+      <Filter>Contents</Filter>
+    </ClCompile>
+    <ClCompile Include="GameServer.cpp">
+      <Filter>Contents</Filter>
+    </ClCompile>
     <ClCompile Include="GameMain.cpp">
       <Filter>Contents</Filter>
     </ClCompile>

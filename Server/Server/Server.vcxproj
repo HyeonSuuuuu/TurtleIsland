@@ -139,6 +139,10 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Session.cpp" />
+    <ClCompile Include="IOCPNetwork.cpp" />
+    <ClCompile Include="User.cpp" />
+    <ClCompile Include="GameServer.cpp" />
     <ClCompile Include="GameMain.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -146,10 +150,10 @@
     <ClInclude Include="Define.h" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="Globals.h" />
-    <ClInclude Include="IOCPNetwork.h" />
     <ClInclude Include="Session.h" />
-    <ClInclude Include="GameServer.h" />
+    <ClInclude Include="IOCPNetwork.h" />
     <ClInclude Include="User.h" />
+    <ClInclude Include="GameServer.h" />
     <ClInclude Include="..\utils\minidump\mdump.h" />
     <ClInclude Include="..\..\Common\Log.h" />
     <ClInclude Include="..\..\Common\Protocol.h" />
@@ -157,5 +161,7 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="..\packages\inteltbb.devel.win.2022.3.1.401\build\native\inteltbb.devel.win.targets" Condition="Exists('..\packages\inteltbb.devel.win.2022.3.1.401\build\native\inteltbb.devel.win.targets')" />
+    <Import Project="..\packages\inteltbb.redist.win.2022.3.1.401\build\native\inteltbb.redist.win.targets" Condition="Exists('..\packages\inteltbb.redist.win.2022.3.1.401\build\native\inteltbb.redist.win.targets')" />
   </ImportGroup>
 </Project>

@@ -12,7 +12,7 @@ public:
 		m_id = id;
 	}
 
-	virtual void InitClear() = 0;
+	virtual void Clear() = 0;
 
 	constexpr uint32_t GetId() const { return m_id; }
 

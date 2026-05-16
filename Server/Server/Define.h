@@ -17,15 +17,15 @@ enum class IOOperation : uint8_t
 
 struct OverlappedEx : public OVERLAPPED
 {
-	SOCKET      m_socketClient;
-	WSABUF      m_wsa;
-	IOOperation m_operation;
+	SOCKET      m_socketClient = INVALID_SOCKET;
+	WSABUF      m_wsa{};
+	IOOperation m_operation{};
 	char        m_buf[MAX_SOCKBUF]{};
 };
 
 struct Packet
 {
-	uint32_t sessionIndex;
-	uint16_t packetId;
+	uint32_t sessionIndex = 0;
+	uint16_t packetId     = 0;
 	std::span<const uint8_t> dataSpan;
 };
