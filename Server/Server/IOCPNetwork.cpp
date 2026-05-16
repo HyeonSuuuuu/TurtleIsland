@@ -93,7 +93,9 @@ bool IOCPNetwork::Listen(const int32_t port) const
 
 bool IOCPNetwork::StartServer()
 {
-	g_user_pool.Init();
+	g_userPool.Init();
+	for (uint32_t i = 0; i < NetConfig::MAX_CLIENTS; ++i)
+		g_objects[i] = g_userPool.Get(i);
 
 	m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
 	m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
@@ -116,13 +118,13 @@ bool IOCPNetwork::StartServer()
 	for (uint32_t i = 0; i < ACCEPT_COUNT; ++i)
 	{
 		uint32_t idx;
-		if (!g_user_pool.Acquire(idx))
+		if (!g_userPool.Acquire(idx))
 		{
 			Log::Error("초기 세션 부족");
 			break;
 		}
-		if (!g_user_pool.Get(idx)->BindAccept(m_listenSocket, m_acceptOverlappeds[i], idx))
-			g_user_pool.Release(idx);
+		if (!g_userPool.Get(idx)->BindAccept(m_listenSocket, m_acceptOverlappeds[i], idx))
+			g_userPool.Release(idx);
 	}
 
 	Log::Success("서버 시작");
@@ -145,7 +147,7 @@ void IOCPNetwork::Stop()
 User* IOCPNetwork::GetUser(uint32_t index)
 {
 	if (index >= NetConfig::MAX_CLIENTS) return nullptr;
-	return g_user_pool.Get(index);
+	return g_userPool.Get(index);
 }
 
 bool IOCPNetwork::CreateWorkerThread()
@@ -194,18 +196,19 @@ void IOCPNetwork::WorkerThread()
 		if (IOOperation::ACCEPT == pOverlappedEx->m_operation)
 		{
 			uint32_t acceptedSlot = pOverlappedEx->m_slotIndex;
-			User* pUser = g_user_pool.Get(acceptedSlot);
+			User* pUser = g_userPool.Get(acceptedSlot);
 			if (pUser)
 			{
 				pUser->AcceptCompleted(m_iocpHandle, acceptedSlot);
-				OnConnect(pUser->GetId());
+				g_idToIndexMap[pUser->GetId()] = acceptedSlot;
+				OnConnect(acceptedSlot);
 				m_clientCnt.fetch_add(1);
 
 				uint32_t newIdx;
-				if (!g_user_pool.Acquire(newIdx))
+				if (!g_userPool.Acquire(newIdx))
 					Log::Error("초기 세션 부족");
-				else if (!g_user_pool.Get(newIdx)->BindAccept(m_listenSocket, *pOverlappedEx, newIdx))
-					g_user_pool.Retire(newIdx);
+				else if (!g_userPool.Get(newIdx)->BindAccept(m_listenSocket, *pOverlappedEx, newIdx))
+					g_userPool.Retire(newIdx);
 			}
 		}
 		else if (slotIdx == AI_ID)
@@ -233,23 +236,23 @@ void IOCPNetwork::WorkerThread()
 		}
 		else if (IOOperation::RECV == pOverlappedEx->m_operation)
 		{
-			User* pUser = g_user_pool.Get(slotIdx);
+			User* pUser = g_userPool.Get(slotIdx);
 			if (pUser)
 			{
 				const auto dataSpan = pUser->GetRecvData(dwIoSize);
 				pUser->PushPacket(dataSpan);
 				while (auto packet = pUser->PopPacket())
-					OnRecv(pUser->GetId(), packet.value());
+					OnRecv(slotIdx, packet.value());
 				pUser->BindRecv();
 			}
 		}
 		else if (IOOperation::SEND == pOverlappedEx->m_operation)
 		{
-			User* pUser = g_user_pool.Get(slotIdx);
+			User* pUser = g_userPool.Get(slotIdx);
 			if (pUser)
 			{
 				pUser->SendCompleted(dwIoSize, pOverlappedEx);
-				OnSend(pUser->GetId());
+				OnSend(slotIdx);
 			}
 		}
 		else
@@ -265,8 +268,10 @@ void IOCPNetwork::WorkerThread()
 
 void IOCPNetwork::Disconnect(uint32_t slotIndex, bool isForce)
 {
-	g_user_pool.Get(slotIndex)->Close(isForce);
+	User* pUser = g_userPool.Get(slotIndex);
+	g_idToIndexMap.erase(pUser->GetId());
+	pUser->Close(isForce);
 	OnClose(slotIndex);
-	g_user_pool.Retire(slotIndex);
+	g_userPool.Retire(slotIndex);
 	m_clientCnt.fetch_sub(1);
 }

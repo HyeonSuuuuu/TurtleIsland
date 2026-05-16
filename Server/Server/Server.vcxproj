@@ -139,6 +139,7 @@
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="EBR.cpp" />
     <ClCompile Include="Session.cpp" />
     <ClCompile Include="IOCPNetwork.cpp" />
     <ClCompile Include="User.cpp" />
@@ -148,6 +149,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="Define.h" />
+    <ClInclude Include="EBR.h" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="Session.h" />
