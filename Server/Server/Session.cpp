@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "Session.h"
 
 std::atomic<uint32_t> Session::s_nextId{ 1 };
