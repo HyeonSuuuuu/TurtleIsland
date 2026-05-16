@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "Session.h"
 
+std::atomic<uint32_t> Session::s_nextId{ 1 };
+
 Session::~Session()
 {
 	delete[] m_packetDataBuffer;
@@ -16,6 +18,7 @@ void Session::Clear()
 {
 	m_packetDataReadPos  = 0;
 	m_packetDataWritePos = 0;
+	m_id                 = INVALID_ID;
 	m_sessionState.store(SessionState::None);
 }
 
@@ -67,12 +70,13 @@ std::optional<Packet> Session::PopPacket()
 	return packet;
 }
 
-bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket)
+bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex)
 {
 	m_socket       = socket;
+	m_id           = s_nextId.fetch_add(1);
 	m_sessionState = SessionState::Connected;
 
-	if (!RegisterIOCP(iocpHandle))
+	if (!RegisterIOCP(iocpHandle, slotIndex))
 	{
 		Log::Error("IOCP bind failed (Id: {})", m_id);
 		return false;
@@ -93,11 +97,9 @@ void Session::Close(bool isForce)
 	m_sessionState = SessionState::Retiring;
 	closesocket(m_socket);
 	m_socket = INVALID_SOCKET;
-
-	Clear();
 }
 
-bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)
+bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex)
 {
 	m_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (m_socket == INVALID_SOCKET)
@@ -108,6 +110,7 @@ bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)
 
 	ZeroMemory(&acceptOver, sizeof(OVERLAPPED));
 	acceptOver.m_operation = IOOperation::ACCEPT;
+	acceptOver.m_slotIndex = slotIndex;
 
 	DWORD bytes = 0;
 	if (!AcceptEx(listenSock, m_socket, acceptOver.m_buf, 0,
@@ -123,10 +126,10 @@ bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)
 	return true;
 }
 
-bool Session::AcceptCompleted(HANDLE iocpHandle)
+bool Session::AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex)
 {
 	Log::Info("AcceptCompleted : SessionId({})", m_id);
-	return RegisterSocket(iocpHandle, m_socket);
+	return RegisterSocket(iocpHandle, m_socket, slotIndex);
 }
 
 bool Session::BindRecv()
@@ -178,9 +181,9 @@ void Session::SendCompleted(const uint32_t /*dataSize*/, OverlappedEx* sendOverl
 	delete sendOverlappedEx;
 }
 
-bool Session::RegisterIOCP(HANDLE iocpHandle) const
+bool Session::RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const
 {
-	auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket, iocpHandle, (ULONG_PTR)this, 0);
+	auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket, iocpHandle, (ULONG_PTR)slotIndex, 0);
 	if (hIOCP == nullptr || iocpHandle != hIOCP)
 	{
 		Log::ErrorDisplay("CreateIoCompletionPort() failed", GetLastError());

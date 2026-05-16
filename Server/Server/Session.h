@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "pch.h"
 #include "Define.h"
 #include "GameObject.h"
@@ -15,6 +15,7 @@ class Session : public GameObject
 {
 public:
 	static constexpr uint32_t PACKET_DATA_BUFFER_SIZE = 8096;
+	static std::atomic<uint32_t> s_nextId;
 
 	Session() = default;
 	virtual ~Session();
@@ -28,11 +29,11 @@ public:
 	void PushPacket(const std::span<const uint8_t> dataSpan);
 	std::optional<Packet> PopPacket();
 
-	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket);
+	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex);
 	virtual void Close(bool isForce = false);
 
-	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver);
-	bool AcceptCompleted(HANDLE iocpHandle);
+	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex);
+	bool AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex);
 	bool BindRecv();
 	bool Send(const std::span<const uint8_t> msg) const;
 	void SendCompleted(const uint32_t dataSize, OverlappedEx* sendOverlappedEx);
@@ -40,7 +41,7 @@ public:
 	virtual void Dispatch(const Packet& packet) {}
 
 private:
-	bool RegisterIOCP(HANDLE iocpHandle) const;
+	bool RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const;
 
 	SOCKET                    m_socket             = INVALID_SOCKET;
 	std::atomic<SessionState> m_sessionState{ SessionState::None };

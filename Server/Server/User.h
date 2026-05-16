@@ -18,7 +18,7 @@ public:
 
 	virtual void Init(uint32_t id) override;
 	virtual void Clear() override;
-	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket) override;
+	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex) override;
 	virtual void Close(bool isForce = false) override;
 
 	void Login(std::string_view userId);

@@ -14,9 +14,9 @@ void User::Clear()
 	Session::Clear();
 }
 
-bool User::RegisterSocket(HANDLE iocpHandle, SOCKET socket)
+bool User::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex)
 {
-	bool ret = Session::RegisterSocket(iocpHandle, socket);
+	bool ret = Session::RegisterSocket(iocpHandle, socket, slotIndex);
 	if (ret)
 	{
 		m_userState = UserState::Login;

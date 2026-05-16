@@ -3,7 +3,7 @@
 
 constexpr int16_t  MAX_SOCKBUF           = 1024;
 constexpr uint32_t ACCEPT_COUNT          = 10;
-constexpr int64_t  REUSE_WAIT_MS         = 2000;
+constexpr uint32_t MAX_WORKER_THREADS    = 64;
 constexpr uint32_t INVALID_SESSION_INDEX = UINT32_MAX;
 constexpr uint32_t INVALID_ID            = UINT32_MAX - 1;
 constexpr uint32_t AI_ID                 = UINT32_MAX - 2;
@@ -20,6 +20,7 @@ struct OverlappedEx : public OVERLAPPED
 	SOCKET      m_socketClient = INVALID_SOCKET;
 	WSABUF      m_wsa{};
 	IOOperation m_operation{};
+	uint32_t    m_slotIndex    = INVALID_SESSION_INDEX;
 	char        m_buf[MAX_SOCKBUF]{};
 };
 
