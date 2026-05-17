@@ -15,40 +15,60 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\IOCPCore\Common.ixx">
+    <ClCompile Include="pch.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\Define.ixx">
+    <ClCompile Include="Session.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\Globals.ixx">
+    <ClCompile Include="IOCPNetwork.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\IOCPNetwork.ixx">
-      <Filter>Core</Filter>
+    <ClCompile Include="User.cpp">
+      <Filter>Contents</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\Session.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="GameServer.ixx">
+    <ClCompile Include="GameServer.cpp">
       <Filter>Contents</Filter>
     </ClCompile>
     <ClCompile Include="GameMain.cpp">
       <Filter>Contents</Filter>
     </ClCompile>
-    <ClCompile Include="User.ixx">
-      <Filter>Contents</Filter>
-    </ClCompile>
-    <ClCompile Include="..\utils\minidump\mdump.ixx" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Define.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Globals.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Session.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="IOCPNetwork.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="User.h">
+      <Filter>Contents</Filter>
+    </ClInclude>
+    <ClInclude Include="GameServer.h">
+      <Filter>Contents</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\minidump\mdump.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Common\Log.h">
       <Filter>Shared</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\Common\Type.h">
+    <ClInclude Include="..\..\Common\Protocol.h">
       <Filter>Shared</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\Common\Protocol.h">
+    <ClInclude Include="..\..\Common\Type.h">
       <Filter>Shared</Filter>
     </ClInclude>
   </ItemGroup>

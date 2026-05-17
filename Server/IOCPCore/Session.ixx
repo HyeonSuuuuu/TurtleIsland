@@ -110,8 +110,6 @@ public:
 		m_isConnect = false;
 		closesocket(m_socket);
 		m_socket = INVALID_SOCKET;
-
-		Clear();
 	}
 
 	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver)

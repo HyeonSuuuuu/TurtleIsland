@@ -7,7 +7,7 @@
 #include "Type.h"
 namespace Log
 {
-	enum class Level : uint8
+	enum class Level : uint8_t
 	{
 		Info,
 		Success,
@@ -59,7 +59,7 @@ namespace Log
 		void Error(std::format_string<Args...> fmt, Args&&... args) {
 		Write(Level::Error, fmt, std::forward<Args>(args)...);
 	}
-	void ErrorDisplay(const char* msg, int errNo) {
+	inline void ErrorDisplay(const char* msg, int errNo) {
 		char* msgBuf = nullptr;
 		FormatMessageA(
 			FORMAT_MESSAGE_ALLOCATE_BUFFER |

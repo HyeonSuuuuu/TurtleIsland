@@ -9,16 +9,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\IOCPCore\Common.ixx">
+    <ClCompile Include="..\Server\EBR.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\Define.ixx">
+    <ClCompile Include="..\Server\Session.cpp">
       <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\IOCPCore\Globals.ixx">
-      <Filter>Core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\IOCPCore\Session.ixx">
+    <ClCompile Include="..\Server\User.cpp">
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="SessionTest.cpp">

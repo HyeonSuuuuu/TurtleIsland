@@ -1,9 +1,6 @@
-﻿#include "gtest/gtest.h"
-
-import Session;
-import Define;
-import Globals;
-import "../../Common/Protocol.h";
+﻿#include "pch.h"
+#include "../Server/Session.h"
+#include "../Server/Globals.h"
 
 // ----------------------------------------------------
 // SessionTest
@@ -13,7 +10,7 @@ TEST(SessionTest, InitSetsIndex)
 {
 	Session s;
 	s.Init(42);
-	EXPECT_EQ(s.GetIndex(), 42u);
+	EXPECT_EQ(s.GetId(), 42u);
 }
 
 TEST(SessionTest, PacketBufferRoundTrip)
@@ -25,12 +22,12 @@ TEST(SessionTest, PacketBufferRoundTrip)
 	header.size = PACKET_HEADER_SIZE;
 	header.id   = 200;
 
-	std::span<const byte> data{ reinterpret_cast<const byte*>(&header), PACKET_HEADER_SIZE };
+	std::span<const uint8_t> data{ reinterpret_cast<const uint8_t*>(&header), PACKET_HEADER_SIZE };
 	s.PushPacket(data);
 
 	auto result = s.PopPacket();
 	ASSERT_TRUE(result.has_value());
-	EXPECT_EQ(result->packetId, static_cast<uint16>(200));
+	EXPECT_EQ(result->packetId, static_cast<uint16_t>(200));
 	EXPECT_EQ(result->sessionIndex, 0u);
 }
 
@@ -54,7 +51,7 @@ TEST(SessionTest, PacketBufferCompaction)
 	header.size = PACKET_HEADER_SIZE;
 	header.id   = 100;
 
-	std::span<const byte> data(reinterpret_cast<const byte*>(&header), PACKET_HEADER_SIZE);
+	std::span<const uint8_t> data(reinterpret_cast<const uint8_t*>(&header), PACKET_HEADER_SIZE);
 
 	for (int i = 0; i < 1619; ++i)
 	{
@@ -67,7 +64,7 @@ TEST(SessionTest, PacketBufferCompaction)
 	s.PushPacket(data);
 	auto result = s.PopPacket();
 	ASSERT_TRUE(result.has_value());
-	EXPECT_EQ(result->packetId, static_cast<uint16>(999));
+	EXPECT_EQ(result->packetId, static_cast<uint16_t>(999));
 }
 
 // ----------------------------------------------------
@@ -92,4 +89,3 @@ TEST(GlobalsTest, IndexMappingAfterLogin)
 
 	g_idToIndexMap.clear();
 }
-

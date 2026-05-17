@@ -1,33 +1,11 @@
-module;
+﻿#pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <stdio.h>
 #include <tchar.h>
 #include <windows.h>
 #include <DbgHelp.h>
 
-export module Minidump;
-
 static LPTOP_LEVEL_EXCEPTION_FILTER PreviousExceptionFilter = NULL;
-LONG WINAPI UnHandledExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo);
-
-export
-{
-	class MiniDump
-	{
-	public:
-		static BOOL Begin(VOID)
-		{
-			SetErrorMode(SEM_FAILCRITICALERRORS);
-			PreviousExceptionFilter = SetUnhandledExceptionFilter(UnHandledExceptionFilter);
-			return true;
-		}
-		static BOOL End(VOID)
-		{
-			SetUnhandledExceptionFilter(PreviousExceptionFilter);
-			return true;
-		}
-	};
-}
 
 typedef BOOL(WINAPI* MINIDUMPWRITEDUMP)(
 	HANDLE hProcess,
@@ -38,7 +16,7 @@ typedef BOOL(WINAPI* MINIDUMPWRITEDUMP)(
 	CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam,
 	CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
 
-LONG WINAPI UnHandledExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo)
+inline LONG WINAPI UnHandledExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo)
 {
 	HMODULE DllHandle = NULL;
 
@@ -73,7 +51,7 @@ LONG WINAPI UnHandledExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo)
 
 			if (FileHandle != INVALID_HANDLE_VALUE)
 			{
-				_MINIDUMP_EXCEPTION_INFORMATION MiniDumpExceptionInfo;
+				_MINIDUMP_EXCEPTION_INFORMATION MiniDumpExceptionInfo{};
 
 				MiniDumpExceptionInfo.ThreadId          = GetCurrentThreadId();
 				MiniDumpExceptionInfo.ExceptionPointers = exceptionInfo;
@@ -101,3 +79,19 @@ LONG WINAPI UnHandledExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo)
 
 	return EXCEPTION_CONTINUE_SEARCH;
 }
+
+class MiniDump
+{
+public:
+	static BOOL Begin(VOID)
+	{
+		SetErrorMode(SEM_FAILCRITICALERRORS);
+		PreviousExceptionFilter = SetUnhandledExceptionFilter(UnHandledExceptionFilter);
+		return true;
+	}
+	static BOOL End(VOID)
+	{
+		SetUnhandledExceptionFilter(PreviousExceptionFilter);
+		return true;
+	}
+};

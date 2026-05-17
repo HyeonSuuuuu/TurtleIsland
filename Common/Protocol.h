@@ -6,16 +6,16 @@
 
 namespace NetConfig
 {
-	inline constexpr uint16 GAME_SERVER_PORT = 11021;
-	inline constexpr uint16 AI_SERVER_PORT = 4444;
-	inline constexpr uint16 MAX_CLIENTS = 10000;
+	inline constexpr uint16_t GAME_SERVER_PORT = 11021;
+	inline constexpr uint16_t AI_SERVER_PORT = 4444;
+	inline constexpr uint16_t MAX_CLIENTS = 10000;
 }
 
 
 // Protocol
 
 
-enum class PACKET_ID : uint16
+enum class PACKET_ID : uint16_t
 {
 	// SYSTEM (1~99)
 	SYS_USER_CONNECT = 11,
@@ -70,7 +70,7 @@ enum class PACKET_ID : uint16
 
 };
 
-enum class ERROR_CODE : uint8
+enum class ERROR_CODE : uint8_t
 {
 	NONE = 0,
 
@@ -85,18 +85,18 @@ enum class ERROR_CODE : uint8
 #pragma pack(push, 1)
 struct PacketHeader
 {
-	uint16 size;
-	uint16 id;
-	uint8 type; // 압축여부, 암호화 여부 등 속성을 알아내는 값
+	uint16_t size;
+	uint16_t id;
+	uint8_t type; // 압축여부, 암호화 여부 등 속성을 알아내는 값
 };
-inline constexpr uint16 PACKET_HEADER_SIZE = sizeof(PacketHeader);
+inline constexpr uint16_t PACKET_HEADER_SIZE = sizeof(PacketHeader);
 
 // ----------------- Login -----------------
-inline constexpr int32 MAX_USER_ID_LEN = 32;
-inline constexpr int32 MAX_USER_PW_LEN = 32;
+inline constexpr int32_t MAX_USER_ID_LEN = 32;
+inline constexpr int32_t MAX_USER_PW_LEN = 32;
 struct PlayerInfo
 {
-	uint32 playerId; // session ID
+	uint32_t playerId; // session ID
 	char name[MAX_USER_ID_LEN + 1];
 };
 
@@ -105,142 +105,148 @@ struct CS_Login : public PacketHeader
 	char userID[MAX_USER_ID_LEN + 1];
 	char userPW[MAX_USER_PW_LEN + 1];
 };
-inline constexpr uint16 CS_LOGIN_PACKET_SIZE = sizeof(CS_Login);
+inline constexpr uint16_t CS_LOGIN_PACKET_SIZE = sizeof(CS_Login);
 
 struct SC_Login : public PacketHeader
 {
-	uint8 result;
-	uint32 playerId; // 클라이언트에서 자신 패킷 식별용
+	uint8_t result;
+	uint32_t playerId; // 클라이언트에서 자신 패킷 식별용
 };
-inline constexpr uint16 SC_LOGIN_PACKET_SIZE = sizeof(SC_Login);
+inline constexpr uint16_t SC_LOGIN_PACKET_SIZE = sizeof(SC_Login);
 
 // --------------- Lobby ----------------
-inline constexpr int32 MAX_ROOM_TITLE_LEN = 64;
+inline constexpr int32_t MAX_ROOM_TITLE_LEN = 64;
 struct RoomInfo
 {
-	uint16 roomId;
+	uint16_t roomId;
 	char roomTitle[MAX_ROOM_TITLE_LEN];
 	char hostName[MAX_USER_ID_LEN]; // 방장 이름만
-	uint16 userCount;
+	uint16_t userCount;
 };
 
 struct CS_LobbyEnter : public PacketHeader
 {
 	// Empty
 };
-inline constexpr uint16 CS_LOBBY_ENTER_PACKET_SIZE = sizeof(CS_LobbyEnter);
+inline constexpr uint16_t CS_LOBBY_ENTER_PACKET_SIZE = sizeof(CS_LobbyEnter);
 
 struct SC_LobbyEnter : public PacketHeader
 {
-	int16 roomCount; // 현재 방 개수
+	int16_t roomCount; // 현재 방 개수
 	RoomInfo roomList[1]; // 가변
 };
-inline constexpr uint16 SC_LOBBY_ENTER_PACKET_SIZE = sizeof(SC_LobbyEnter);
+inline constexpr uint16_t SC_LOBBY_ENTER_PACKET_SIZE = sizeof(SC_LobbyEnter);
 
 // --------------- Room ----------------
 
 struct CS_RoomEnter : public PacketHeader
 {
-	uint32 roomIndex;
+	uint32_t roomIndex;
 };
-inline constexpr uint16 CS_ROOM_ENTER_PACKET_SIZE = sizeof(CS_RoomEnter);
+inline constexpr uint16_t CS_ROOM_ENTER_PACKET_SIZE = sizeof(CS_RoomEnter);
 
 struct SC_RoomEnter : public PacketHeader
 {
-	uint8 result;
+	uint8_t result;
 };
-inline constexpr uint16 SC_ROOM_ENTER_PACKET_SIZE = sizeof(SC_RoomEnter);
+inline constexpr uint16_t SC_ROOM_ENTER_PACKET_SIZE = sizeof(SC_RoomEnter);
 
 struct SC_RoomEnterNotify : public PacketHeader
 {
 	char userID[MAX_USER_ID_LEN + 1];
-	uint32 userIndex;
+	uint32_t userIndex;
 };
-inline constexpr uint16 SC_LOBBY_ENTER_NOTIFY_PACKET_SIZE = sizeof(SC_RoomEnterNotify);
+inline constexpr uint16_t SC_ROOM_ENTER_NOTIFY_PACKET_SIZE = sizeof(SC_RoomEnterNotify);
 
 struct CS_RoomLeave : public PacketHeader
 {
 };
-inline constexpr uint16 CS_ROOM_LEAVE_PACKET_SIZE = sizeof(CS_RoomLeave);
+inline constexpr uint16_t CS_ROOM_LEAVE_PACKET_SIZE = sizeof(CS_RoomLeave);
 
 struct SC_RoomLeaveNotify : public PacketHeader
 {
-	uint32 userIndex;
+	uint32_t userIndex;
 };
-inline constexpr uint16 SC_ROOM_LEAVE_NOTIFY_PACKET_SIZE = sizeof(SC_RoomLeaveNotify);
+inline constexpr uint16_t SC_ROOM_LEAVE_NOTIFY_PACKET_SIZE = sizeof(SC_RoomLeaveNotify);
 
 
-inline constexpr int32 MAX_CHAT_MSG_LEN = 256;
+inline constexpr int32_t MAX_CHAT_MSG_LEN = 256;
 struct CS_RoomChat : public PacketHeader
 {
 	char chatMsg[MAX_CHAT_MSG_LEN + 1];
 };
-inline constexpr uint16 CS_ROOM_CHAT_PACKET_SIZE = sizeof(CS_RoomChat);
+inline constexpr uint16_t CS_ROOM_CHAT_PACKET_SIZE = sizeof(CS_RoomChat);
+
+struct SC_RoomChatResponse : public PacketHeader
+{
+	uint8_t result;
+};
+inline constexpr uint16_t SC_ROOM_CHAT_RESPONSE_PACKET_SIZE = sizeof(SC_RoomChatResponse);
 
 struct SC_RoomChatNotify : public PacketHeader
 {
-	uint32 userIndex;
+	uint32_t userIndex;
 	char chatMsg[MAX_CHAT_MSG_LEN + 1];
 };
-inline constexpr uint16 SC_ROOM_CHAT_NOTIFY_PACKET_SIZE = sizeof(SC_RoomChatNotify);
+inline constexpr uint16_t SC_ROOM_CHAT_NOTIFY_PACKET_SIZE = sizeof(SC_RoomChatNotify);
 
 struct CS_RoomStart : public PacketHeader
 {
 };
-inline constexpr uint16 CS_ROOM_START_PACKET_SIZE = sizeof(CS_RoomStart);
+inline constexpr uint16_t CS_ROOM_START_PACKET_SIZE = sizeof(CS_RoomStart);
 
 struct SC_RoomStart : public PacketHeader
 {
-	uint8 result;
+	uint8_t result;
 };
-inline constexpr uint16 SC_ROOM_START_PACKET_SIZE = sizeof(SC_RoomStart);
+inline constexpr uint16_t SC_ROOM_START_PACKET_SIZE = sizeof(SC_RoomStart);
 
 //  --------------- InGame ----------------
 struct CS_Move : public PacketHeader
 {
-	uint16 inputFlag;
+	uint16_t inputFlag;
 	float yaw;
 };
-inline constexpr uint16 CS_MOVE_PACKET_SIZE = sizeof(CS_Move);
+inline constexpr uint16_t CS_MOVE_PACKET_SIZE = sizeof(CS_Move);
 
 struct SC_MoveNotify : public PacketHeader
 {
-	uint32 userIndex;
-	uint16 inputFlag;
+	uint32_t userIndex;
+	uint16_t inputFlag;
 	float x, y, z;
 	float yaw;
 };
-inline constexpr uint16 SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);
+inline constexpr uint16_t SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);
 
 
 //  --------------- NPC ----------------
 struct CS_NpcChat : public PacketHeader
 {
-	uint32 userIndex;
-	uint32 npcIndex;
+	uint32_t userIndex;
+	uint32_t npcIndex;
 	// 가변 AI 텍스트
 };
-inline constexpr uint16 CS_NPC_CHAT_PACKET_SIZE = sizeof(CS_NpcChat);
+inline constexpr uint16_t CS_NPC_CHAT_PACKET_SIZE = sizeof(CS_NpcChat);
 
 struct SA_AI: public PacketHeader
 {
-	uint32 userIndex;
-	uint32 npcIndex;
+	uint32_t userIndex;
+	uint32_t npcIndex;
 	// 가변 AI 텍스트
 };
-inline constexpr uint16 SA_AI_PACKET_SIZE = sizeof(SA_AI);
+inline constexpr uint16_t SA_AI_PACKET_SIZE = sizeof(SA_AI);
 
 struct AS_AI : public PacketHeader
 {
-	uint32 userIndex;
+	uint32_t userIndex;
 	// 가변 AI 텍스트
 };
-inline constexpr uint16 AS_AI_PACKET_SIZE = sizeof(SA_AI);
+inline constexpr uint16_t AS_AI_PACKET_SIZE = sizeof(AS_AI);
 
 struct SC_NpcChat : public PacketHeader
 {
 	// 가변 AI 텍스트
 };
-inline constexpr uint16 SC_NPC_CHAT_PACKET_SIZE = sizeof(SC_NpcChat);
+inline constexpr uint16_t SC_NPC_CHAT_PACKET_SIZE = sizeof(SC_NpcChat);
 
 #pragma pack(pop)
