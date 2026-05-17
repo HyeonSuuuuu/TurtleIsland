@@ -61,8 +61,13 @@ bool FNetworker::Init()
 
 uint32 FNetworker::Run()
 {
+	constexpr int32 TempBufSize = 65536;
+	TArray<uint8> TempBuf;
+	TempBuf.SetNumUninitialized(TempBufSize);
+
 	while (IsRunning)
 	{
+		// ---- Send ----
 		while (true)
 		{
 			TArray<uint8> SendPacket = DequeSendPacket();
@@ -73,49 +78,59 @@ uint32 FNetworker::Run()
 				Socket->Send(SendPacket.GetData(), SendPacket.Num(), BytesSent);
 			}
 		}
-		
+
+		// ---- Recv: 소켓에서 읽어서 스트림 버퍼에 쌓기 ----
 		if (Socket)
 		{
 			uint32 PendingDataSize = 0;
-			if (Socket->HasPendingData(PendingDataSize) && PendingDataSize >= sizeof(PacketHeader))
+			while (Socket->HasPendingData(PendingDataSize) && PendingDataSize > 0)
 			{
-				// 1. 헤더 먼저 읽기
-				TArray<uint8> HeaderBuffer;
-				HeaderBuffer.SetNumUninitialized(sizeof(PacketHeader));
 				int32 BytesRead = 0;
-                
-				if (Socket->Recv(HeaderBuffer.GetData(), HeaderBuffer.Num(), BytesRead))
+				int32 ToRead = FMath::Min((int32)PendingDataSize, TempBufSize);
+				if (Socket->Recv(TempBuf.GetData(), ToRead, BytesRead) && BytesRead > 0)
 				{
-					PacketHeader* Header = reinterpret_cast<PacketHeader*>(HeaderBuffer.GetData());
-					uint16 FullSize = Header->size;
-
-					// 2. 헤더에 적힌 전체 크기만큼 버퍼 준비
-					TArray<uint8> FullPacket;
-					FullPacket.SetNumUninitialized(FullSize);
-                    
-					// 이미 읽은 헤더 부분 복사
-					FMemory::Memcpy(FullPacket.GetData(), HeaderBuffer.GetData(), sizeof(PacketHeader));
-
-					// 3. 남은 바디 데이터 읽기
-					int32 BodySize = FullSize - sizeof(PacketHeader);
-					int32 BodyBytesRead = 0;
-                    
-					if (BodySize > 0)
-					{
-						// 실제 데이터가 다 올 때까지 잠시 기다리거나 루프를 돌 수 있지만, 
-						// 간단하게 Recv로 남은 부분 보충
-						Socket->Recv(FullPacket.GetData() + sizeof(PacketHeader), BodySize, BodyBytesRead);
-					}
-
-					// 4. 완성된 패킷을 RecvQueue에 넣기 (서브시스템이 꺼내갈 수 있게)
-					EnqueRecvPacket(MoveTemp(FullPacket));
+					RecvStreamBuf.Append(TempBuf.GetData(), BytesRead);
 				}
+				else break;
 			}
+
+			// 스트림 버퍼에서 완성된 패킷 꺼내기
+			ProcessRecvBuffer();
 		}
-		
-		FPlatformProcess::Sleep(0.01f);
+
+		FPlatformProcess::Sleep(0.001f);
 	}
 	return 0;
+}
+
+void FNetworker::ProcessRecvBuffer()
+{
+	while (true)
+	{
+		// 헤더 크기 미만이면 대기
+		if (RecvStreamBuf.Num() < (int32)sizeof(PacketHeader)) break;
+
+		PacketHeader* Header = reinterpret_cast<PacketHeader*>(RecvStreamBuf.GetData());
+		uint16 PacketSize = Header->size;
+
+		// 잘못된 패킷 크기 방어
+		if (PacketSize < (uint16)sizeof(PacketHeader) || PacketSize > 65535)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[FNetworker] Invalid packet size: %d — clearing buffer"), PacketSize);
+			RecvStreamBuf.Empty();
+			break;
+		}
+
+		// 패킷 전체가 아직 안 왔으면 대기
+		if (RecvStreamBuf.Num() < (int32)PacketSize) break;
+
+		// 완성된 패킷 추출
+		TArray<uint8> FullPacket(RecvStreamBuf.GetData(), PacketSize);
+		EnqueRecvPacket(MoveTemp(FullPacket));
+
+		// 소비한 만큼 버퍼 앞부분 제거
+		RecvStreamBuf.RemoveAt(0, PacketSize, EAllowShrinking::No);
+	}
 }
 
 void FNetworker::Exit()

@@ -23,8 +23,13 @@ public:
 	void SendLoginPacket(const FString& userID, const FString& userPW);
 	
 private:
+	void ProcessRecvBuffer();
+
 	FSocket* Socket = nullptr;
 	bool IsRunning = false;
-	TQueue<TArray<uint8>,	EQueueMode::Spsc> SendQueue;
-	TQueue<TArray<uint8>,	EQueueMode::Spsc> RecvQueue;
+	TQueue<TArray<uint8>, EQueueMode::Spsc> SendQueue;
+	TQueue<TArray<uint8>, EQueueMode::Spsc> RecvQueue;
+
+	// Stream reassembly buffer
+	TArray<uint8> RecvStreamBuf;
 };
