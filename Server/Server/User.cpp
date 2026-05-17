@@ -116,7 +116,7 @@ void User::OnLoginRequest(const Packet& packet)
 
 	// TODO: DB authentication
 	Login(pLogin->userID);
-	Log::Info("[Login] userId={} slotIndex={}", m_userId, packet.sessionIndex);
+	Log::Info("[Login] userId={} slot={} id={}", m_userId, GetSlotIndex(), GetId());
 
 	SC_Login response{};
 	response.result   = static_cast<uint8_t>(ERROR_CODE::NONE);
@@ -184,7 +184,7 @@ void User::OnRoomEnterRequest(const Packet& packet)
 		return;
 	}
 
-	uint32_t mySlot = packet.sessionIndex;
+	uint32_t mySlot = GetSlotIndex();
 	RoomEnterResult result = g_rooms[roomIdx].Enter(
 		static_cast<uint16_t>(roomIdx), mySlot, m_userId);
 

@@ -30,7 +30,8 @@ public:
 
 	RoomInfo GetRoomInfo() const;
 
-	bool     IsActive()   const { std::lock_guard lock(m_mutex); return m_isActive; }
+	// Lock-free reads — safe because m_isActive is atomic
+	bool     IsActive()   const { return m_isActive.load(std::memory_order_relaxed); }
 	bool     IsFull()     const { std::lock_guard lock(m_mutex); return m_userCount >= MAX_ROOM_USERS; }
 	bool     IsInGame()   const { std::lock_guard lock(m_mutex); return m_inGame; }
 	uint32_t GetUserCount() const { std::lock_guard lock(m_mutex); return m_userCount; }
@@ -59,8 +60,8 @@ private:
 
 	std::array<uint32_t, MAX_ROOM_USERS> m_userSlots{};
 	uint32_t m_userCount = 0;
-	bool     m_isActive  = false;
-	bool     m_inGame    = false;
+	std::atomic<bool> m_isActive{ false };
+	bool              m_inGame = false;
 
 	mutable std::mutex m_mutex;
 };

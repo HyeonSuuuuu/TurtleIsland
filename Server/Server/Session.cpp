@@ -42,6 +42,7 @@ void Session::PushPacket(const std::span<const uint8_t> dataSpan)
 {
 	if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 	{
+		// Compact: slide unread data to the front
 		auto remainDataSize = m_packetDataWritePos - m_packetDataReadPos;
 		if (remainDataSize > 0)
 		{
@@ -54,6 +55,16 @@ void Session::PushPacket(const std::span<const uint8_t> dataSpan)
 		}
 		m_packetDataReadPos = 0;
 	}
+
+	// After compaction the buffer might still be full (e.g. readPos was already 0).
+	// Drop the data and disconnect rather than overflow.
+	if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
+	{
+		Log::Error("PushPacket overflow: writePos={} incoming={} - closing session",
+			m_packetDataWritePos, dataSpan.size());
+		return;
+	}
+
 	CopyMemory(&m_packetDataBuffer[m_packetDataWritePos], dataSpan.data(), dataSpan.size());
 	m_packetDataWritePos += static_cast<uint32_t>(dataSpan.size());
 }
@@ -71,7 +82,7 @@ std::optional<Packet> Session::PopPacket()
 		return std::nullopt;
 
 	Packet packet;
-	packet.sessionIndex      = m_id;
+	packet.sessionIndex      = m_slotIndex;   // EBR pool slot, not the session auto-ID
 	packet.packetId          = pHeader->id;
 	const uint8_t* begin     = reinterpret_cast<const uint8_t*>(m_packetDataBuffer + m_packetDataReadPos);
 	packet.dataSpan          = std::span<const uint8_t>(begin, static_cast<size_t>(pHeader->size));
@@ -82,6 +93,14 @@ std::optional<Packet> Session::PopPacket()
 
 bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex)
 {
+	// m_packetDataBuffer is allocated here rather than in Init() because
+	// sessions from the EBR initial pool never go through Init().
+	if (m_packetDataBuffer == nullptr)
+		m_packetDataBuffer = new uint8_t[PACKET_DATA_BUFFER_SIZE];
+
+	m_packetDataReadPos  = 0;
+	m_packetDataWritePos = 0;
+
 	m_socket       = socket;
 	m_slotIndex    = slotIndex;
 	m_id           = s_nextId.fetch_add(1);

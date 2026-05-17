@@ -36,6 +36,9 @@ bool	keys[256];			// Array Used For The Keyboard Routine
 bool	active = TRUE;		// Window Active Flag Set To TRUE By Default
 bool	fullscreen = TRUE;	// Fullscreen Flag Set To Fullscreen Mode By Default
 
+constexpr int PAGE_SIZE = 100;
+int     g_roomPage = 0;         // current page index (0-based)
+
 LRESULT	CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);	// Declaration For WndProc
 
 GLvoid BuildFont(GLvoid)								// Build Our Bitmap Font
@@ -125,39 +128,110 @@ int InitGL(GLvoid)										// All Setup For OpenGL Goes Here
 	return TRUE;										// Initialization Went OK
 }
 
-int DrawGLScene(GLvoid)									// Here's Where We Do All The Drawing
+int DrawGLScene(GLvoid)
 {
-	int size = 0;
-	float* points = nullptr;
-	GetPointCloud(&size, &points);
+	// Window pixel size
+	RECT rc{};
+	GetClientRect(hWnd, &rc);
+	int winW = rc.right  > 0 ? rc.right  : 1;
+	int winH = rc.bottom > 0 ? rc.bottom : 1;
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);	// Clear Screen And Depth Buffer
-	glLoadIdentity();									// Reset The Current Modelview Matrix
-	glTranslatef(0.14f, -0.4f, -1.0f);						// Move One Unit Into The Screen
-	// Pulsing Colors Based On Text Position
-	glColor3f(1, 1, 0);
-	// Position The Text On The Screen
-	glRasterPos2f(0.0f, 0.00f);
-	glPrint("STRESS TEST [%d]", (int)active_clients);	// Print GL Text To The Screen
-	glRasterPos2f(0.0f, 0.05f);
-	glPrint("Delay : %dms", global_delay);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	glColor3f(1, 1, 1);
+	// ---- Fetch per-room data ----
+	int       numRooms = 0;
+	RoomView* rooms    = nullptr;
+	GetRoomViews(&numRooms, &rooms);
 
-	glPointSize(2.0);
-	glBegin(GL_POINTS);
-	for (int i = 0; i < size; i++)
+	// ---- Paging ----
+	int maxPage = (numRooms > 0) ? ((numRooms - 1) / PAGE_SIZE) : 0;
+	if (g_roomPage > maxPage) g_roomPage = maxPage;   // clamp if rooms shrank
+
+	int startRoom = g_roomPage * PAGE_SIZE;
+	int endRoom   = startRoom + PAGE_SIZE;
+	if (endRoom > numRooms) endRoom = numRooms;
+	int visible   = endRoom - startRoom;
+
+	if (visible > 0)
 	{
-		float x, y, z;
+		int cols = (int)ceil(sqrt((double)visible));
+		if (cols < 1) cols = 1;
+		int rows = (visible + cols - 1) / cols;
 
-		x = points[i * 2] / 200.0f - 1.25f;
-		y = 1.25f - points[i * 2 + 1] / 200.0f;
-		z = -1.0f;
-		glVertex3f(x, y, z);
+		int cellW = winW / cols;
+		int cellH = winH / rows;
+		if (cellW < 1) cellW = 1;
+		if (cellH < 1) cellH = 1;
+
+		// World-space half-extent to display in each cell
+		constexpr float HALF_MAP = 300.0f;
+
+		for (int ri = 0; ri < visible; ++ri)
+		{
+			int col = ri % cols;
+			int row = ri / cols;
+			int vx  = col * cellW;
+			int vy  = winH - (row + 1) * cellH;   // GL y is bottom-up
+
+			glViewport(vx, vy, cellW, cellH);
+
+			glMatrixMode(GL_PROJECTION);
+			glLoadIdentity();
+			glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+
+			glMatrixMode(GL_MODELVIEW);
+			glLoadIdentity();
+
+			// Cell border
+			glColor3f(0.2f, 0.2f, 0.5f);
+			glBegin(GL_LINE_LOOP);
+				glVertex2f(0.01f, 0.01f);
+				glVertex2f(0.99f, 0.01f);
+				glVertex2f(0.99f, 0.99f);
+				glVertex2f(0.01f, 0.99f);
+			glEnd();
+
+			const RoomView& rv = rooms[startRoom + ri];
+
+			// Room label (skip if cell too narrow for font)
+			if (cellW >= 100)
+			{
+				glColor3f(0.5f, 0.7f, 1.0f);
+				glRasterPos2f(0.04f, 0.87f);
+				glPrint("R%d[%d]", rv.roomId, rv.count);
+			}
+
+			// Player dots
+			glColor3f(1.0f, 1.0f, 0.0f);
+			glPointSize(cellW >= 100 ? 4.0f : 3.0f);
+			glBegin(GL_POINTS);
+			for (int pi = 0; pi < rv.count; ++pi)
+			{
+				float px = (rv.x[pi] + HALF_MAP) / (HALF_MAP * 2.0f);
+				float pz = (rv.z[pi] + HALF_MAP) / (HALF_MAP * 2.0f);
+				if (px < 0.04f) px = 0.04f; if (px > 0.96f) px = 0.96f;
+				if (pz < 0.04f) pz = 0.04f; if (pz > 0.82f) pz = 0.82f;
+				glVertex2f(px, pz);
+			}
+			glEnd();
+		}
 	}
-	glEnd();
 
-	return TRUE;										// Everything Went OK
+	// ---- HUD overlay (full viewport) ----
+	glViewport(0, 0, winW, winH);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0, (double)winW, 0.0, (double)winH, -1.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+	glColor3f(1.0f, 1.0f, 0.0f);
+	glRasterPos2i(8, winH - 22);
+	glPrint("Clients: %d  Rooms: %d  Page: %d/%d  [<- ->]",
+		(int)active_clients, numRooms,
+		g_roomPage + 1, maxPage + 1);
+
+	return TRUE;
 }
 
 GLvoid KillGLWindow(GLvoid)								// Properly Kill The Window
@@ -415,8 +489,16 @@ LRESULT CALLBACK WndProc(HWND	hWnd,			// Handle For This Window
 
 	case WM_KEYDOWN:							// Is A Key Being Held Down?
 	{
-		keys[wParam] = TRUE;					// If So, Mark It As TRUE
-		return 0;								// Jump Back
+		keys[wParam] = TRUE;
+
+		// Page navigation: right arrow / Page Down  =  next page
+		//                  left arrow  / Page Up    =  prev page
+		if (wParam == VK_RIGHT || wParam == VK_NEXT)
+			g_roomPage++;
+		if ((wParam == VK_LEFT || wParam == VK_PRIOR) && g_roomPage > 0)
+			g_roomPage--;
+
+		return 0;
 	}
 
 	case WM_KEYUP:								// Has A Key Been Released?
@@ -499,7 +581,44 @@ int WINAPI WinMain(HINSTANCE	hInstance,			// Instance
 	return ((int)msg.wParam);							// Exit The Program
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+	char ip[64] = "127.0.0.1";
+	int  maxClients = 200;
+
+	if (argc >= 2)
+	{
+		strncpy_s(ip, argv[1], sizeof(ip) - 1);
+	}
+	else
+	{
+		printf("Server IP (Enter for 127.0.0.1): ");
+		if (fgets(ip, sizeof(ip), stdin))
+		{
+			for (int i = 0; ip[i]; ++i)
+				if (ip[i] == '\n' || ip[i] == '\r') { ip[i] = '\0'; break; }
+			if (ip[0] == '\0')
+				strncpy_s(ip, "127.0.0.1", sizeof(ip) - 1);
+		}
+	}
+
+	if (argc >= 3)
+	{
+		maxClients = atoi(argv[2]);
+	}
+	else
+	{
+		printf("Max clients (Enter for %d): ", maxClients);
+		char buf[16]{};
+		if (fgets(buf, sizeof(buf), stdin))
+		{
+			int n = atoi(buf);
+			if (n > 0) maxClients = n;
+		}
+	}
+
+	printf("Connecting to %s  max=%d\n", ip, maxClients);
+	SetServerIP(ip);
+	SetMaxClients(maxClients);
 	WinMain(0, 0, 0, 0);
 }
