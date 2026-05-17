@@ -59,14 +59,26 @@ void UNetSubsystem::Tick(float DeltaTime)
 		case PACKET_ID::SC_LOGIN_RESPONSE:
 			{
 				SC_Login* Pkt = reinterpret_cast<SC_Login*>(RecvData.GetData());
-				
+
 				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
 				{
-					// 로그인 성공
-					UE_LOG(LogTemp, Log, TEXT("로그인 성공"));
+					UE_LOG(LogTemp, Log, TEXT("[Net] 로그인 성공 (playerId=%d)"), Pkt->playerId);
 					myId = Pkt->playerId;
+
+					// 로비 입장 요청
+					CS_LobbyEnter LobbyPkt{};
+					LobbyPkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
+					LobbyPkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
+					TArray<uint8> Buf;
+					Buf.SetNumUninitialized(CS_LOBBY_ENTER_PACKET_SIZE);
+					FMemory::Memcpy(Buf.GetData(), &LobbyPkt, CS_LOBBY_ENTER_PACKET_SIZE);
+					EnqueSendPacket(MoveTemp(Buf));
+
 					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
-					// UGameplayStatics::OpenLevel(GetWorld(), FName("Lv3_Ingame")); // 테스트용
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Net] 로그인 실패 (result=%d)"), Pkt->result);
 				}
 			break;
 			}
