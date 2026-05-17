@@ -156,7 +156,7 @@ struct SC_RoomEnterNotify : public PacketHeader
 	char userID[MAX_USER_ID_LEN + 1];
 	uint32_t userIndex;
 };
-inline constexpr uint16_t SC_LOBBY_ENTER_NOTIFY_PACKET_SIZE = sizeof(SC_RoomEnterNotify);
+inline constexpr uint16_t SC_ROOM_ENTER_NOTIFY_PACKET_SIZE = sizeof(SC_RoomEnterNotify);
 
 struct CS_RoomLeave : public PacketHeader
 {
@@ -176,6 +176,12 @@ struct CS_RoomChat : public PacketHeader
 	char chatMsg[MAX_CHAT_MSG_LEN + 1];
 };
 inline constexpr uint16_t CS_ROOM_CHAT_PACKET_SIZE = sizeof(CS_RoomChat);
+
+struct SC_RoomChatResponse : public PacketHeader
+{
+	uint8_t result;
+};
+inline constexpr uint16_t SC_ROOM_CHAT_RESPONSE_PACKET_SIZE = sizeof(SC_RoomChatResponse);
 
 struct SC_RoomChatNotify : public PacketHeader
 {
@@ -235,7 +241,7 @@ struct AS_AI : public PacketHeader
 	uint32_t userIndex;
 	// 가변 AI 텍스트
 };
-inline constexpr uint16_t AS_AI_PACKET_SIZE = sizeof(SA_AI);
+inline constexpr uint16_t AS_AI_PACKET_SIZE = sizeof(AS_AI);
 
 struct SC_NpcChat : public PacketHeader
 {
