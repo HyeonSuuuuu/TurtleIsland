@@ -22,9 +22,10 @@ public:
 	virtual void Close(bool isForce = false) override;
 
 	void Login(std::string_view userId);
+	void LeaveCurrentRoom(); // called by GameServer::OnClose on disconnect
 
 	std::string GetUserId()    const { return m_userId; }
-	UserState   GetUserState() const { return m_userState; }
+	UserState   GetUserState() const { return m_userState.load(); }
 
 	using PacketHandler = void(User::*)(const Packet&);
 	static inline std::unordered_map<uint16_t, PacketHandler> s_handlers;
@@ -33,7 +34,26 @@ public:
 	virtual void Dispatch(const Packet& packet) override;
 
 private:
+	// ---------- Packet Handlers ----------
+	void OnLoginRequest(const Packet& packet);
+	void OnLobbyEnterRequest(const Packet& packet);
+	void OnRoomEnterRequest(const Packet& packet);
+	void OnRoomLeaveRequest(const Packet& packet);
+	void OnRoomChatRequest(const Packet& packet);
+	void OnRoomStartRequest(const Packet& packet);
+	void OnMove(const Packet& packet);
+	void OnNpcChat(const Packet& packet);
+
+	// ---------- Helpers ----------
+	template<typename T>
+	void SendPacket(PACKET_ID id, T& pkt)
+	{
+		pkt.size = sizeof(T);
+		pkt.id   = static_cast<uint16_t>(id);
+		Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&pkt), sizeof(T)));
+	}
+
 	std::optional<uint32_t> m_roomIndex;
 	std::string             m_userId;
-	std::atomic<UserState>  m_userState = UserState::Login;
+	std::atomic<UserState>  m_userState{ UserState::Login };
 };

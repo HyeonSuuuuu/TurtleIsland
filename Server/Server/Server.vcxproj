@@ -140,6 +140,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="EBR.cpp" />
+    <ClCompile Include="Room.cpp" />
     <ClCompile Include="Session.cpp" />
     <ClCompile Include="IOCPNetwork.cpp" />
     <ClCompile Include="User.cpp" />
@@ -152,6 +153,7 @@
     <ClInclude Include="EBR.h" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="Globals.h" />
+    <ClInclude Include="Room.h" />
     <ClInclude Include="Session.h" />
     <ClInclude Include="IOCPNetwork.h" />
     <ClInclude Include="User.h" />

@@ -15,4 +15,7 @@ public:
 
 	void Run();
 	void Stop();
+
+private:
+	void OnAiRecv(const Packet& packet);
 };

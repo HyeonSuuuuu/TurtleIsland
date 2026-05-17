@@ -83,6 +83,7 @@ std::optional<Packet> Session::PopPacket()
 bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex)
 {
 	m_socket       = socket;
+	m_slotIndex    = slotIndex;
 	m_id           = s_nextId.fetch_add(1);
 	m_sessionState = SessionState::Connected;
 
@@ -107,6 +108,13 @@ void Session::Close(bool isForce)
 	m_sessionState = SessionState::Retiring;
 	closesocket(m_socket);
 	m_socket = INVALID_SOCKET;
+}
+
+bool Session::ConnectSocket(SOCKET socket)
+{
+	m_socket       = socket;
+	m_sessionState = SessionState::Connected;
+	return BindRecv();
 }
 
 bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex)

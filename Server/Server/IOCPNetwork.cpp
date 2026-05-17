@@ -65,6 +65,14 @@ bool IOCPNetwork::ConnectToAIServer(const std::string& ip, uint16_t port)
 		return false;
 	}
 
+	if (!m_aiSession->ConnectSocket(m_aiSocket))
+	{
+		Log::Error("AI 세션 recv 등록 실패");
+		return false;
+	}
+
+	g_aiSession = m_aiSession.get();
+	Log::Success("AI 서버 연결 및 recv 등록 완료");
 	return true;
 }
 

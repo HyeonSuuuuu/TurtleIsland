@@ -16,7 +16,7 @@ public:
 
 	constexpr uint32_t GetId() const { return m_id; }
 
-	float x{}, y{}, z{ 88 };
+	float x{}, y{}, z{ 88 }, yaw{};
 protected:
 	uint32_t m_id = 0;
 };

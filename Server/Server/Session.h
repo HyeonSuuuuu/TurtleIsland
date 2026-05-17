@@ -23,7 +23,8 @@ public:
 	virtual void Init(uint32_t id) override;
 	virtual void Clear() override;
 
-	constexpr uint64_t GetSocketId() const { return static_cast<uint64_t>(m_socket); }
+	constexpr uint64_t GetSocketId()  const { return static_cast<uint64_t>(m_socket); }
+	constexpr uint32_t GetSlotIndex() const { return m_slotIndex; }
 
 	std::span<const uint8_t> GetRecvData(int32_t size) const;
 	void PushPacket(const std::span<const uint8_t> dataSpan);
@@ -31,6 +32,9 @@ public:
 
 	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex);
 	virtual void Close(bool isForce = false);
+
+	// For outgoing connections (AI server): sets socket and starts recv without IOCP re-registration.
+	bool ConnectSocket(SOCKET socket);
 
 	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex);
 	bool AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex);
@@ -45,6 +49,7 @@ private:
 	void BindSend();
 
 	SOCKET                    m_socket             = INVALID_SOCKET;
+	uint32_t                  m_slotIndex          = INVALID_SESSION_INDEX;
 	std::atomic<SessionState> m_sessionState{ SessionState::None };
 
 	OverlappedEx m_recvOverlappedEx{};
