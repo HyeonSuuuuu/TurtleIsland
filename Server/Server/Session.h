@@ -35,13 +35,14 @@ public:
 	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex);
 	bool AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex);
 	bool BindRecv();
-	bool Send(const std::span<const uint8_t> msg) const;
-	void SendCompleted(const uint32_t dataSize, OverlappedEx* sendOverlappedEx);
+	bool Send(const std::span<const uint8_t> msg);
+	void SendCompleted(uint32_t bytesSent);
 
 	virtual void Dispatch(const Packet& packet) {}
 
 private:
 	bool RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const;
+	void BindSend();
 
 	SOCKET                    m_socket             = INVALID_SOCKET;
 	std::atomic<SessionState> m_sessionState{ SessionState::None };
@@ -51,4 +52,8 @@ private:
 	uint8_t* m_packetDataBuffer   = nullptr;
 	uint32_t m_packetDataWritePos = 0;
 	uint32_t m_packetDataReadPos  = 0;
+
+	std::queue<OverlappedEx*> m_sendQueue;
+	std::mutex                m_sendMutex;
+	std::atomic<bool>         m_sendRegistered{ false };
 };

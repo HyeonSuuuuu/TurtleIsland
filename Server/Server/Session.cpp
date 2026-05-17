@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "Session.h"
+#include "Globals.h"
 
 std::atomic<uint32_t> Session::s_nextId{ 1 };
 
@@ -18,7 +19,16 @@ void Session::Clear()
 {
 	m_packetDataReadPos  = 0;
 	m_packetDataWritePos = 0;
-	m_id                 = INVALID_ID;
+	{
+		std::lock_guard lock(m_sendMutex);
+		while (!m_sendQueue.empty())
+		{
+			g_sendPool.Release(m_sendQueue.front());
+			m_sendQueue.pop();
+		}
+	}
+	m_sendRegistered = false;
+	m_id             = INVALID_ID;
 	m_sessionState.store(SessionState::None);
 }
 
@@ -154,31 +164,82 @@ bool Session::BindRecv()
 	return true;
 }
 
-bool Session::Send(const std::span<const uint8_t> msg) const
+bool Session::Send(const std::span<const uint8_t> msg)
 {
-	OverlappedEx* sendOverlappedEx = new OverlappedEx();
-	sendOverlappedEx->m_wsa.len    = static_cast<uint32_t>(msg.size());
-	sendOverlappedEx->m_wsa.buf    = sendOverlappedEx->m_buf;
-	sendOverlappedEx->m_operation  = IOOperation::SEND;
-	CopyMemory(sendOverlappedEx->m_buf, msg.data(), msg.size());
+	if (msg.size() > MAX_SOCKBUF)
+	{
+		Log::Error("패킷 크기 초과 ({})", msg.size());
+		return false;
+	}
+
+	OverlappedEx* over = g_sendPool.Acquire();
+	if (!over)
+	{
+		Log::Error("SendPool 고갈");
+		return false;
+	}
+
+	CopyMemory(over->m_buf, msg.data(), msg.size());
+	over->m_wsa.buf   = over->m_buf;
+	over->m_wsa.len   = static_cast<uint32_t>(msg.size());
+	over->m_operation = IOOperation::SEND;
+
+	{
+		std::lock_guard lock(m_sendMutex);
+		m_sendQueue.push(over);
+	}
+
+	if (!m_sendRegistered.exchange(true))
+		BindSend();
+
+	return true;
+}
+
+void Session::BindSend()
+{
+	OverlappedEx* over;
+	{
+		std::lock_guard lock(m_sendMutex);
+		if (m_sendQueue.empty())
+		{
+			m_sendRegistered = false;
+			return;
+		}
+		over = m_sendQueue.front();
+	}
+
+	ZeroMemory(static_cast<OVERLAPPED*>(over), sizeof(OVERLAPPED));
 
 	DWORD dwSentBytes = 0;
-	int ret = WSASend(m_socket, &sendOverlappedEx->m_wsa, 1,
-		&dwSentBytes, 0,
-		reinterpret_cast<LPWSAOVERLAPPED>(sendOverlappedEx), nullptr);
+	int ret = WSASend(m_socket, &over->m_wsa, 1, &dwSentBytes, 0,
+		reinterpret_cast<LPWSAOVERLAPPED>(over), nullptr);
 
 	if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 	{
 		Log::ErrorDisplay("WSASend() failed", WSAGetLastError());
-		delete sendOverlappedEx;
-		return false;
+		std::lock_guard lock(m_sendMutex);
+		m_sendQueue.pop();
+		g_sendPool.Release(over);
+		m_sendRegistered = false;
 	}
-	return true;
 }
 
-void Session::SendCompleted(const uint32_t /*dataSize*/, OverlappedEx* sendOverlappedEx)
+void Session::SendCompleted(uint32_t /*bytesSent*/)
 {
-	delete sendOverlappedEx;
+	OverlappedEx* over;
+	bool hasMore;
+	{
+		std::lock_guard lock(m_sendMutex);
+		over = m_sendQueue.front();
+		m_sendQueue.pop();
+		hasMore = !m_sendQueue.empty();
+	}
+	g_sendPool.Release(over);
+
+	if (hasMore)
+		BindSend();
+	else
+		m_sendRegistered = false;
 }
 
 bool Session::RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const

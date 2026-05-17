@@ -94,6 +94,7 @@ bool IOCPNetwork::Listen(const int32_t port) const
 bool IOCPNetwork::StartServer()
 {
 	g_userPool.Init();
+	g_sendPool.Init();
 	for (uint32_t i = 0; i < NetConfig::MAX_CLIENTS; ++i)
 		g_objects[i] = g_userPool.Get(i);
 
@@ -227,7 +228,7 @@ void IOCPNetwork::WorkerThread()
 			}
 			else if (IOOperation::SEND == pOverlappedEx->m_operation)
 			{
-				m_aiSession->SendCompleted(dwIoSize, pOverlappedEx);
+				m_aiSession->SendCompleted(dwIoSize);
 			}
 		}
 		else if (!isSuccess || (dwIoSize == 0 && isSuccess))
@@ -251,7 +252,7 @@ void IOCPNetwork::WorkerThread()
 			User* pUser = g_userPool.Get(slotIdx);
 			if (pUser)
 			{
-				pUser->SendCompleted(dwIoSize, pOverlappedEx);
+				pUser->SendCompleted(dwIoSize);
 				OnSend(slotIdx);
 			}
 		}

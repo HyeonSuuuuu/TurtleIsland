@@ -122,6 +122,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 
 
+\## 5. File Encoding
+
+\*\*모든 .cpp/.h 파일은 UTF-8 BOM + LF 유지.\*\*
+
+Edit/Write 툴로 파일 수정 후 반드시 PowerShell로 BOM 복구:
+
+```powershell
+$path = "파일경로"
+$content = [System.IO.File]::ReadAllText($path)
+[System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($true))
+```
+
+수정한 모든 파일에 적용. 빠뜨리면 MSVC에서 한국어 깨짐.
+
 \---
 
 
