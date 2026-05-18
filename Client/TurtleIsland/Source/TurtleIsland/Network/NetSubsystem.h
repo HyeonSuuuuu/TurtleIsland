@@ -8,9 +8,24 @@
 #include "OpponentCharacter.h"
 #include "NetSubsystem.generated.h"
 
-/**
- * 
- */
+USTRUCT(BlueprintType)
+struct FRoomData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Room")
+	int32 RoomId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Room")
+	FString Title;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Room")
+	FString HostName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Room")
+	int32 UserCount = 0;
+};
+
 class FNetworker;
 
 UCLASS()
@@ -31,21 +46,31 @@ public:
 	void DequeRecvPacket();
 	
 	void EnqueSendPacket(TArray<uint8>&& packet);
-	//helper func
+
+	// 특정 방 입장 요청 (LobbyWidget에서 호출)
+	UFUNCTION(BlueprintCallable, Category = "Network")
+	void EnterRoom(int32 RoomIndex);
+
+	// helper
 	void CopyStringToBuffer(char* Dest, int32 DestSize, const FString& Source);
-	
+
 	// 상대방 캐릭터 BP 클래스 끌어다 사용
 	UPROPERTY(EditAnywhere, Category = "Network")
 	TSubclassOf<class AOpponentCharacter> OpponentClass;
+
+	// 서버에서 받은 방 목록 (Blueprint에서 읽기 가능)
+	UPROPERTY(BlueprintReadOnly, Category = "Network")
+	TArray<FRoomData> RoomList;
+
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Network")
 	bool IsConnect = false;
-	
+
 	FNetworker* Networker = nullptr;
 	FRunnableThread* Thread = nullptr;
-	
+
 	UPROPERTY()
 	TMap<uint32, AOpponentCharacter*> players;
-	
+
 	uint32 myId = 0;
 };

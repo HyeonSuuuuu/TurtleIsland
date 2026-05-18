@@ -82,6 +82,49 @@ void UNetSubsystem::Tick(float DeltaTime)
 				}
 			break;
 			}
+		case PACKET_ID::SC_LOBBY_RESPONSE:
+			{
+				// 가변 길이 패킷: PacketHeader + int16 roomCount + RoomInfo[]
+				if (RecvData.Num() < (int32)(sizeof(PacketHeader) + sizeof(int16)))
+					break;
+
+				int16 RoomCount = *reinterpret_cast<int16*>(RecvData.GetData() + sizeof(PacketHeader));
+				UE_LOG(LogTemp, Log, TEXT("[Net] 로비 응답 수신 - 방 개수: %d"), RoomCount);
+
+				RoomList.Empty();
+				const uint8* RoomPtr = RecvData.GetData() + sizeof(PacketHeader) + sizeof(int16);
+				for (int16 i = 0; i < RoomCount; ++i)
+				{
+					if (RoomPtr + sizeof(RoomInfo) > RecvData.GetData() + RecvData.Num()) break;
+
+					const RoomInfo* Info = reinterpret_cast<const RoomInfo*>(RoomPtr);
+					FRoomData Data;
+					Data.RoomId    = Info->roomId;
+					Data.Title     = UTF8_TO_TCHAR(Info->roomTitle);
+					Data.HostName  = UTF8_TO_TCHAR(Info->hostName);
+					Data.UserCount = Info->userCount;
+					RoomList.Add(Data);
+
+					UE_LOG(LogTemp, Log, TEXT("  [%d] %s (host: %s, %d명)"),
+						Data.RoomId, *Data.Title, *Data.HostName, Data.UserCount);
+
+					RoomPtr += sizeof(RoomInfo);
+				}
+			break;
+			}
+		case PACKET_ID::SC_ROOM_ENTER_RESPONSE:
+			{
+				SC_RoomEnter* Pkt = reinterpret_cast<SC_RoomEnter*>(RecvData.GetData());
+				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
+				{
+					UE_LOG(LogTemp, Log, TEXT("[Net] 방 입장 성공"));
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Net] 방 입장 실패 (result=%d)"), Pkt->result);
+				}
+			break;
+			}
 		case PACKET_ID::SC_MOVE_NOTIFY:
 			{
 				SC_MoveNotify* Pkt = reinterpret_cast<SC_MoveNotify*>(RecvData.GetData());
@@ -145,6 +188,21 @@ TStatId UNetSubsystem::GetStatId() const
 void UNetSubsystem::EnqueSendPacket(TArray<uint8>&& packet)
 {
 	Networker->EnqueSendPacket(MoveTemp(packet));
+}
+
+void UNetSubsystem::EnterRoom(int32 RoomIndex)
+{
+	CS_RoomEnter Pkt{};
+	Pkt.size      = CS_ROOM_ENTER_PACKET_SIZE;
+	Pkt.id        = static_cast<uint16>(PACKET_ID::CS_ROOM_ENTER_REQUEST);
+	Pkt.roomIndex = static_cast<uint32>(RoomIndex);
+
+	TArray<uint8> Buf;
+	Buf.SetNumUninitialized(CS_ROOM_ENTER_PACKET_SIZE);
+	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_ENTER_PACKET_SIZE);
+	EnqueSendPacket(MoveTemp(Buf));
+
+	UE_LOG(LogTemp, Log, TEXT("[Net] 방 입장 요청 (roomIndex=%d)"), RoomIndex);
 }
 
 void UNetSubsystem::CopyStringToBuffer(char* Dest, int32 DestSize, const FString& Source)
