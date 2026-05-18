@@ -128,38 +128,34 @@ void UNetSubsystem::Tick(float DeltaTime)
 		case PACKET_ID::SC_MOVE_NOTIFY:
 			{
 				SC_MoveNotify* Pkt = reinterpret_cast<SC_MoveNotify*>(RecvData.GetData());
-				if (myId == Pkt->userIndex)
+
+				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
+				// 수신되는 건 항상 다른 플레이어의 움직임
+				if (players.Contains(Pkt->userIndex))
 				{
-					// 내 캐릭터 이동처리
+					AOpponentCharacter* Opponent = players[Pkt->userIndex];
+					if (Opponent)
+					{
+						FVector NewLocation(Pkt->x, Pkt->y, Pkt->z);
+						FRotator NewRotation(0.f, Pkt->yaw, 0.f);
+						Opponent->SetActorLocationAndRotation(NewLocation, NewRotation);
+					}
 				}
 				else
 				{
-					// 상대방 캐릭터 이동처리
-					if (players.Contains(Pkt->userIndex))
+					// 처음 보는 플레이어 → 스폰
+					if (OpponentClass && GetWorld())
 					{
-						AOpponentCharacter* Opponent = players[Pkt->userIndex];
-						if (Opponent)
+						FVector SpawnPos(Pkt->x, Pkt->y, Pkt->z);
+						AOpponentCharacter* NewOpponent = GetWorld()->SpawnActor<AOpponentCharacter>(
+							OpponentClass, SpawnPos, FRotator(0.f, Pkt->yaw, 0.f));
+						if (NewOpponent)
 						{
-							FVector NewLocation(Pkt->x, Pkt->y, Pkt->z);
-							FRotator NewRotation(0.f, Pkt->yaw, 0.f);
-							Opponent->SetActorLocationAndRotation(NewLocation, NewRotation);
-						}
-					}
-					else
-					{
-						FVector TestPos(Pkt->x, Pkt->y, Pkt->z); // 초기 위치
-						FActorSpawnParameters Params;
-						if (OpponentClass)
-						{
-							AOpponentCharacter* TestActor = GetWorld()->SpawnActor<AOpponentCharacter>(OpponentClass, TestPos, FRotator::ZeroRotator, Params);
-							players.Emplace(Pkt->userIndex, TestActor);
-							UE_LOG(LogTemp, Log, TEXT("새로운 상대방 스폰"));
+							players.Emplace(Pkt->userIndex, NewOpponent);
+							UE_LOG(LogTemp, Log, TEXT("[Net] 상대방 스폰 (userId=%d)"), Pkt->userIndex);
 						}
 					}
 				}
-
-
-				UE_LOG(LogTemp, Log, TEXT("이동 패킷 수신: PlayerID=%d, InputFlag=%d"), Pkt->id, Pkt->inputFlag);
 			break;
 			}
 		case PACKET_ID::SC_ROOM_START_NOTIFY:

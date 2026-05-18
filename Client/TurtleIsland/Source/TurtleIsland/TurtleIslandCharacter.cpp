@@ -87,17 +87,21 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 			UNetSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 			if (NetSubsystem)
 			{
+				float CurrentYaw = GetController()
+								? GetController()->GetControlRotation().Yaw
+								: GetActorRotation().Yaw;
+
 				CS_Move MovePacket{};
-				MovePacket.size = CS_MOVE_PACKET_SIZE;
-				MovePacket.id = (uint16)PACKET_ID::CS_MOVE;
+				MovePacket.size      = CS_MOVE_PACKET_SIZE;
+				MovePacket.id        = (uint16)PACKET_ID::CS_MOVE;
 				MovePacket.inputFlag = InputFlag;
+				MovePacket.yaw       = CurrentYaw;
 
 				TArray<uint8> SendBuffer;
 				SendBuffer.SetNumUninitialized(CS_MOVE_PACKET_SIZE);
 				FMemory::Memcpy(SendBuffer.GetData(), &MovePacket, CS_MOVE_PACKET_SIZE);
 
 				NetSubsystem->EnqueSendPacket(MoveTemp(SendBuffer));
-				UE_LOG(LogTemp, Log, TEXT("이동패킷 전송 완료"));
 				InputFlag = 0;
 			}
 		}
