@@ -213,7 +213,7 @@ struct SC_MoveNotify : public PacketHeader
 {
 	uint32_t userIndex;
 	uint16_t inputFlag;
-	float x, y, z;
+	float x, z;   // 2D 좌표 (y는 사용 안 함)
 	float yaw;
 };
 inline constexpr uint16_t SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);

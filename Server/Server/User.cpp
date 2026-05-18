@@ -306,7 +306,6 @@ void User::OnMove(const Packet& packet)
 	notify.userIndex = GetId();
 	notify.inputFlag = pMove->inputFlag;
 	notify.x         = x;
-	notify.y         = y;
 	notify.z         = z;
 	notify.yaw       = pMove->yaw;
 

@@ -131,12 +131,18 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
 				// 수신되는 건 항상 다른 플레이어의 움직임
+				// 서버는 2D (x, z) 좌표 사용 → Unreal (X, Y)로 매핑, 높이(Z)는 고정
+				auto ToUnrealLoc = [](float sx, float sz) -> FVector
+				{
+					return FVector(sx, sz, 0.f);
+				};
+
 				if (players.Contains(Pkt->userIndex))
 				{
 					AOpponentCharacter* Opponent = players[Pkt->userIndex];
 					if (Opponent)
 					{
-						FVector NewLocation(Pkt->x, Pkt->y, Pkt->z);
+						FVector NewLocation = ToUnrealLoc(Pkt->x, Pkt->z);
 						FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 						Opponent->SetActorLocationAndRotation(NewLocation, NewRotation);
 					}
@@ -146,7 +152,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 					// 처음 보는 플레이어 → 스폰
 					if (OpponentClass && GetWorld())
 					{
-						FVector SpawnPos(Pkt->x, Pkt->y, Pkt->z);
+						FVector SpawnPos = ToUnrealLoc(Pkt->x, Pkt->z);
 						AOpponentCharacter* NewOpponent = GetWorld()->SpawnActor<AOpponentCharacter>(
 							OpponentClass, SpawnPos, FRotator(0.f, Pkt->yaw, 0.f));
 						if (NewOpponent)
