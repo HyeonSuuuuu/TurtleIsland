@@ -2,7 +2,7 @@
 
 
 #include "LobbyWidget.h"
-#include "Network/NetSubsystem.h"
+#include "NetSubsystem.h"
 
 void ULobbyWidget::NativeConstruct()
 {
@@ -34,4 +34,3 @@ void ULobbyWidget::OnRoomButtonClicked()
 
 	NetSubsystem->EnterRoom(RoomIndex);
 }
-

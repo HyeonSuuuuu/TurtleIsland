@@ -25,7 +25,6 @@ struct FRoomData
 	UPROPERTY(BlueprintReadOnly, Category = "Room")
 	int32 UserCount = 0;
 };
-
 class FNetworker;
 
 UCLASS()
@@ -35,16 +34,16 @@ class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTi
 public:
 	UNetSubsystem() = default;
 	virtual ~UNetSubsystem() = default;
-	
+
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-	
+
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
-	
+
 	void EnqueRecvPacket();
 	void DequeRecvPacket();
-	
+
 	void EnqueSendPacket(TArray<uint8>&& packet);
 
 	// 특정 방 입장 요청 (LobbyWidget에서 호출)

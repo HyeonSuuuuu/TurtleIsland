@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Network/NetSubsystem.h"
+#include "NetSubsystem.h"
 #include "NetSettings.h"
 
 #include <Protocol.h>
@@ -12,10 +12,10 @@
 void UNetSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	
+
 	Networker = new FNetworker();
 	Thread = FRunnableThread::Create(Networker, TEXT("Network Thread"));
-	
+
 	OpponentClass = UNetSettings::Get()->OpponentClass;
 
 	UE_LOG(LogTemp, Warning, TEXT("Network Thread Started!"));
@@ -30,11 +30,11 @@ void UNetSubsystem::Deinitialize()
 	if (Thread)
 	{
 		Thread->Kill(true);
-		
+
 		delete Thread;
 		Thread = nullptr;
 	}
-	
+
 	if (Networker)
 	{
 		delete Networker;

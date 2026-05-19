@@ -7,13 +7,13 @@
 #include "NetSettings.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS(Config=Game, DefaultConfig, meta = (DisplayName = "Network Settings"))
 class TURTLEISLAND_API UNetSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
-	
+
 public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Classes")
     TSubclassOf<class AOpponentCharacter> OpponentClass;

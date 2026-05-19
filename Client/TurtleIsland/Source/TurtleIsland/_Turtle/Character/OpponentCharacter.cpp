@@ -16,4 +16,3 @@ void AOpponentCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 }
-

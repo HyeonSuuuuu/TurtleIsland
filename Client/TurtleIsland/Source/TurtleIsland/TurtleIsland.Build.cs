@@ -26,20 +26,28 @@ public class TurtleIsland : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
 		PublicIncludePaths.AddRange(new string[] {
+			// 모듈 루트 (TurtleIsland.h 등 루트 파일 접근용)
 			"TurtleIsland",
-			"TurtleIsland/Variant_Platforming",
-			"TurtleIsland/Variant_Platforming/Animation",
-			"TurtleIsland/Variant_Combat",
-			"TurtleIsland/Variant_Combat/AI",
-			"TurtleIsland/Variant_Combat/Animation",
-			"TurtleIsland/Variant_Combat/Gameplay",
-			"TurtleIsland/Variant_Combat/Interfaces",
-			"TurtleIsland/Variant_Combat/UI",
-			"TurtleIsland/Variant_SideScrolling",
-			"TurtleIsland/Variant_SideScrolling/AI",
-			"TurtleIsland/Variant_SideScrolling/Gameplay",
-			"TurtleIsland/Variant_SideScrolling/Interfaces",
-			"TurtleIsland/Variant_SideScrolling/UI",
+			// 팀 작업 코드
+			"TurtleIsland/_Turtle",
+			"TurtleIsland/_Turtle/UI",
+			"TurtleIsland/_Turtle/Network",
+			"TurtleIsland/_Turtle/Character",
+			// Epic 샘플 참고 코드 (루트로 Variant_*/... 스타일 include 지원)
+			"TurtleIsland/_Reference",
+			"TurtleIsland/_Reference/Variant_Platforming",
+			"TurtleIsland/_Reference/Variant_Platforming/Animation",
+			"TurtleIsland/_Reference/Variant_Combat",
+			"TurtleIsland/_Reference/Variant_Combat/AI",
+			"TurtleIsland/_Reference/Variant_Combat/Animation",
+			"TurtleIsland/_Reference/Variant_Combat/Gameplay",
+			"TurtleIsland/_Reference/Variant_Combat/Interfaces",
+			"TurtleIsland/_Reference/Variant_Combat/UI",
+			"TurtleIsland/_Reference/Variant_SideScrolling",
+			"TurtleIsland/_Reference/Variant_SideScrolling/AI",
+			"TurtleIsland/_Reference/Variant_SideScrolling/Gameplay",
+			"TurtleIsland/_Reference/Variant_SideScrolling/Interfaces",
+			"TurtleIsland/_Reference/Variant_SideScrolling/UI",
 			"../../../Common"
 		});
 

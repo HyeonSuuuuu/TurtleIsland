@@ -8,7 +8,7 @@
 #include "LobbyWidget.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class TURTLEISLAND_API ULobbyWidget : public UUserWidget
@@ -16,7 +16,7 @@ class TURTLEISLAND_API ULobbyWidget : public UUserWidget
 	GENERATED_BODY()
 protected:
 	virtual void NativeConstruct() override;
-	
+
 	UPROPERTY(meta = (BindWidget))
 	class UButton* RoomButton;
 

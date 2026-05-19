@@ -9,7 +9,7 @@
 #include "LoginWidget.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class TURTLEISLAND_API ULoginWidget : public UUserWidget
@@ -17,17 +17,17 @@ class TURTLEISLAND_API ULoginWidget : public UUserWidget
 	GENERATED_BODY()
 protected:
 	virtual void NativeConstruct() override;
-	
+
 	UPROPERTY(meta = (BindWidget))
 	class UButton* LoginButton;
-	
+
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* UserIDInput;
 
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* UserPWInput;
-	
-	
+
+
 	UFUNCTION()
 	void OnLoginButtonClicked();
 };

@@ -11,7 +11,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "TurtleIsland.h"
-#include "Network/NetSubsystem.h"
+#include "NetSubsystem.h"
 #include "Protocol.h"
 
 ATurtleIslandCharacter::ATurtleIslandCharacter()

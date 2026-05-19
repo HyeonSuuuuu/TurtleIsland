@@ -2,7 +2,7 @@
 
 
 #include "LoginWidget.h"
-#include "Network/NetSubsystem.h"
+#include "NetSubsystem.h"
 #include "Protocol.h"
 
 void ULoginWidget::NativeConstruct()
@@ -40,11 +40,11 @@ void ULoginWidget::OnLoginButtonClicked()
 		// 버퍼에 담기
 		NetSubsystem->CopyStringToBuffer(LoginPacket.userID, MAX_USER_ID_LEN + 1, ID);
 		NetSubsystem->CopyStringToBuffer(LoginPacket.userPW, MAX_USER_PW_LEN + 1, PW);
-		
+
 		TArray<uint8> SendBuffer;
 		SendBuffer.SetNumUninitialized(sizeof(CS_Login));
 		FMemory::Memcpy(SendBuffer.GetData(), &LoginPacket, sizeof(CS_Login));
-		
+
 		NetSubsystem->EnqueSendPacket(MoveTemp(SendBuffer));
 		UE_LOG(LogTemp, Log, TEXT("C++에서 버튼 클릭을 감지하여 큐에 넣었습니다!"));
 	}

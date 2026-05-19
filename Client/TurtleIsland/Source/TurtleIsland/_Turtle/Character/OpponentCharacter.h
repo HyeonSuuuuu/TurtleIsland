@@ -6,31 +6,6 @@
 #include "GameFramework/Character.h"
 #include "OpponentCharacter.generated.h"
 
-//USTRUCT(BlueprintType)
-//struct APlayerData : public ACharacter
-//{
-//	GENERATED_BODY()
-//
-//	UPROPERTY()
-//	double X;
-//
-//	UPROPERTY()
-//	double Y;
-//
-//	UPROPERTY()
-//	double Z;
-//
-//	UPROPERTY()
-//	int32 KeyInput;
-//
-//	// 기본 생성자
-//	FOpponentPlayerData() : X(0.0), Y(0.0), Z(0.0), KeyInput(0) {}
-//    
-//	// 편의를 위한 생성자
-//	FOpponentPlayerData(double InX, double InY, double InZ, int32 InInput)
-//		: X(InX), Y(InY), Z(InZ), KeyInput(InInput) {}
-//};
-
 UCLASS()
 class TURTLEISLAND_API AOpponentCharacter : public ACharacter
 {
@@ -46,7 +21,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-public:	
+public:
 	virtual void Tick(float DeltaTime) override;
 
 	// 데이터를 업데이트하는 함수 예시

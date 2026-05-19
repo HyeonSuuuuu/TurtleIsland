@@ -44,18 +44,18 @@ bool FNetworker::Init()
 		UE_LOG(LogTemp, Error, TEXT("Socket Creation Failed"));
 		return false;
 	}
-	
+
 	FString address = TEXT("127.0.0.1");
 	int32 port = NetConfig::GAME_SERVER_PORT;
-	
+
 	FIPv4Address ip;
 	FIPv4Address::Parse(address, ip);
-	
+
 	TSharedRef<FInternetAddr> addr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
 	addr->SetIp(ip.Value);
 	addr->SetPort(port);
-	
-	
+
+
 	return Socket->Connect(*addr);
 }
 
