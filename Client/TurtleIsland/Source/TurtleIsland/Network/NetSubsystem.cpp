@@ -164,6 +164,19 @@ void UNetSubsystem::Tick(float DeltaTime)
 				}
 			break;
 			}
+		case PACKET_ID::SC_ROOM_LEAVE_NOTIFY:
+			{
+				SC_RoomLeaveNotify* Pkt = reinterpret_cast<SC_RoomLeaveNotify*>(RecvData.GetData());
+
+				AOpponentCharacter** Found = players.Find(Pkt->userIndex);
+				if (Found && *Found)
+				{
+					(*Found)->Destroy();
+					players.Remove(Pkt->userIndex);
+					UE_LOG(LogTemp, Log, TEXT("[Net] 상대방 퇴장 및 제거 (userId=%d)"), Pkt->userIndex);
+				}
+			break;
+			}
 		case PACKET_ID::SC_ROOM_START_NOTIFY:
 			{
 				SC_RoomStart* Pkt = reinterpret_cast<SC_RoomStart*>(RecvData.GetData());
