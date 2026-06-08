@@ -32,6 +32,8 @@ enum class PACKET_ID : uint16_t
 
 	CS_ROOM_ENTER_REQUEST = 221,
 
+	CS_ROOM_CREATE_REQUEST = 222,
+
 	CS_ROOM_LEAVE_REQUEST = 231,
 
 	CS_ROOM_CHAT_REQUEST = 241,
@@ -144,6 +146,12 @@ struct CS_RoomEnter : public PacketHeader
 	uint32_t roomIndex;
 };
 inline constexpr uint16_t CS_ROOM_ENTER_PACKET_SIZE = sizeof(CS_RoomEnter);
+
+struct CS_RoomCreate : public PacketHeader
+{
+	char roomTitle[MAX_ROOM_TITLE_LEN];
+};
+inline constexpr uint16_t CS_ROOM_CREATE_PACKET_SIZE = sizeof(CS_RoomCreate);
 
 struct SC_RoomEnter : public PacketHeader
 {

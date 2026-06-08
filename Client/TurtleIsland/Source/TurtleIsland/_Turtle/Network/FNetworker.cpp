@@ -2,7 +2,8 @@
 #include "SocketSubsystem.h"
 #include "Protocol.h"
 #include "Interfaces/IPv4/IPv4Address.h"
-FNetworker::FNetworker()
+FNetworker::FNetworker(FString InServerIP)
+	: ServerAddress(MoveTemp(InServerIP))
 {
 }
 
@@ -45,7 +46,7 @@ bool FNetworker::Init()
 		return false;
 	}
 
-	FString address = TEXT("127.0.0.1");
+	FString address = ServerAddress;
 	int32 port = NetConfig::GAME_SERVER_PORT;
 
 	FIPv4Address ip;
@@ -56,7 +57,8 @@ bool FNetworker::Init()
 	addr->SetPort(port);
 
 
-	return Socket->Connect(*addr);
+	bConnected = Socket->Connect(*addr);
+	return bConnected.load();
 }
 
 uint32 FNetworker::Run()

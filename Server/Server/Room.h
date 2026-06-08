@@ -17,8 +17,9 @@ public:
 	Room() { m_userSlots.fill(INVALID_SESSION_INDEX); }
 
 	// Enter: creates room if inactive, joins if active and not full.
+	// On creation, uses `title` if non-empty, otherwise a default "<user>'s Room".
 	// Returns result code. Thread-safe.
-	RoomEnterResult Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName);
+	RoomEnterResult Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title = {});
 
 	// Leave: removes user. Returns true if room is now empty.
 	bool Leave(uint32_t slotIndex);

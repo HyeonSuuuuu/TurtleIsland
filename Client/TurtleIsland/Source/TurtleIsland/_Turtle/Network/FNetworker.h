@@ -1,11 +1,12 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Sockets.h"
+#include <atomic>
 
 class FNetworker : public FRunnable
 {
 public:
-	FNetworker();
+	explicit FNetworker(FString InServerIP = TEXT("127.0.0.1"));
 	virtual ~FNetworker() override;
 
 	void EnqueSendPacket(TArray<uint8>&& packet);
@@ -21,12 +22,15 @@ public:
 
 
 	void SendLoginPacket(const FString& userID, const FString& userPW);
+	bool IsConnected() const { return bConnected.load(); }
 
 private:
 	void ProcessRecvBuffer();
 
+	FString ServerAddress;
 	FSocket* Socket = nullptr;
 	bool IsRunning = false;
+	std::atomic<bool> bConnected{false};
 	TQueue<TArray<uint8>, EQueueMode::Spsc> SendQueue;
 	TQueue<TArray<uint8>, EQueueMode::Spsc> RecvQueue;
 

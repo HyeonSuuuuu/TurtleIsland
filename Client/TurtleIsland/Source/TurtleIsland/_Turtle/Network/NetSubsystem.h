@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -27,6 +27,9 @@ struct FRoomData
 };
 class FNetworker;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginFailed, FString, ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
+
 UCLASS()
 class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
 {
@@ -50,12 +53,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Network")
 	void EnterRoom(int32 RoomIndex);
 
+	// 방 생성 요청 (제목 지정, CreateRoomPopup에서 호출)
+	UFUNCTION(BlueprintCallable, Category = "Network")
+	void CreateRoom(const FString& Title);
+
 	// helper
 	void CopyStringToBuffer(char* Dest, int32 DestSize, const FString& Source);
+	bool IsConnected() const;
+	void Reconnect(const FString& IP);
+	void SetServerIP(const FString& IP) { StoredServerIP = IP; }
+	FString GetServerIP() const { return StoredServerIP; }
+	void SetUserID(const FString& ID) { StoredUserID = ID; }
+	FString GetUserID() const { return StoredUserID; }
 
 	// 상대방 캐릭터 BP 클래스 끌어다 사용
 	UPROPERTY(EditAnywhere, Category = "Network")
 	TSubclassOf<class AOpponentCharacter> OpponentClass;
+
+	UPROPERTY(BlueprintAssignable, Category = "Network")
+	FOnLoginFailed OnLoginFailed;
+
+	UPROPERTY(BlueprintAssignable, Category = "Network")
+	FOnRoomListUpdated OnRoomListUpdated;
 
 	// 서버에서 받은 방 목록 (Blueprint에서 읽기 가능)
 	UPROPERTY(BlueprintReadOnly, Category = "Network")
@@ -64,6 +83,9 @@ public:
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Network")
 	bool IsConnect = false;
+
+	FString StoredServerIP = TEXT("127.0.0.1");
+	FString StoredUserID;
 
 	FNetworker* Networker = nullptr;
 	FRunnableThread* Thread = nullptr;

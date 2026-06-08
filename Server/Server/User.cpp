@@ -53,6 +53,7 @@ void User::RegisterHandlers()
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_LOGIN_REQUEST)]      = &User::OnLoginRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_LOBBY_ENTER_REQUEST)]= &User::OnLobbyEnterRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_ENTER_REQUEST)] = &User::OnRoomEnterRequest;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_CREATE_REQUEST)]= &User::OnRoomCreateRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_LEAVE_REQUEST)] = &User::OnRoomLeaveRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_CHAT_REQUEST)]  = &User::OnRoomChatRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_START_REQUEST)] = &User::OnRoomStartRequest;
@@ -216,6 +217,61 @@ void User::OnRoomEnterRequest(const Packet& packet)
 		mySlot);
 
 	Log::Info("[RoomEnter] userId={} roomIdx={} result={}", m_userId, roomIdx, static_cast<int>(result));
+}
+
+void User::OnRoomCreateRequest(const Packet& packet)
+{
+	if (m_userState != UserState::Lobby)
+		return;
+
+	if (packet.dataSpan.size() < CS_ROOM_CREATE_PACKET_SIZE)
+		return;
+
+	auto* pReq = reinterpret_cast<const CS_RoomCreate*>(packet.dataSpan.data());
+	std::string_view title(pReq->roomTitle,
+		strnlen(pReq->roomTitle, MAX_ROOM_TITLE_LEN));
+
+	// Find the first free room slot
+	uint32_t roomIdx = MAX_ROOMS;
+	for (uint32_t i = 0; i < MAX_ROOMS; ++i)
+	{
+		if (!g_rooms[i].IsActive())
+		{
+			roomIdx = i;
+			break;
+		}
+	}
+
+	if (roomIdx >= MAX_ROOMS)
+	{
+		// No free room
+		SC_RoomEnter response{};
+		response.result = static_cast<uint8_t>(ERROR_CODE::USER_LOGIN_USED_ALL);
+		SendPacket(PACKET_ID::SC_ROOM_ENTER_RESPONSE, response);
+		return;
+	}
+
+	uint32_t mySlot = GetSlotIndex();
+	RoomEnterResult result = g_rooms[roomIdx].Enter(
+		static_cast<uint16_t>(roomIdx), mySlot, m_userId, title);
+
+	if (result != RoomEnterResult::Created)
+	{
+		SC_RoomEnter response{};
+		response.result = static_cast<uint8_t>(ERROR_CODE::USER_LOGIN_USED_ALL);
+		SendPacket(PACKET_ID::SC_ROOM_ENTER_RESPONSE, response);
+		return;
+	}
+
+	// Success — same response as room enter so the client transitions into the room
+	m_roomIndex = roomIdx;
+	m_userState = UserState::Room;
+
+	SC_RoomEnter response{};
+	response.result = static_cast<uint8_t>(ERROR_CODE::NONE);
+	SendPacket(PACKET_ID::SC_ROOM_ENTER_RESPONSE, response);
+
+	Log::Info("[RoomCreate] userId={} roomIdx={} title={}", m_userId, roomIdx, std::string(title));
 }
 
 void User::OnRoomLeaveRequest(const Packet& packet)

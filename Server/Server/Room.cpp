@@ -2,7 +2,7 @@
 #include "Room.h"
 #include "Globals.h"
 
-RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName)
+RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title)
 {
 	std::lock_guard lock(m_mutex);
 
@@ -15,8 +15,8 @@ RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_vie
 		m_userCount = 0;
 		m_userSlots.fill(INVALID_SESSION_INDEX);
 
-		std::string title = std::string(userName) + "'s Room";
-		strncpy_s(m_title, title.c_str(), MAX_ROOM_TITLE_LEN - 1);
+		std::string roomTitle = title.empty() ? (std::string(userName) + "'s Room") : std::string(title);
+		strncpy_s(m_title, roomTitle.c_str(), MAX_ROOM_TITLE_LEN - 1);
 		m_title[MAX_ROOM_TITLE_LEN - 1] = '\0';
 
 		SetHost(slotIndex, userName);

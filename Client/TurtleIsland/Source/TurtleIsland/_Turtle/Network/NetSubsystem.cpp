@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "NetSubsystem.h"
@@ -13,7 +13,7 @@ void UNetSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	Networker = new FNetworker();
+	Networker = new FNetworker(StoredServerIP);
 	Thread = FRunnableThread::Create(Networker, TEXT("Network Thread"));
 
 	OpponentClass = UNetSettings::Get()->OpponentClass;
@@ -79,6 +79,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 				else
 				{
 					UE_LOG(LogTemp, Warning, TEXT("[Net] 로그인 실패 (result=%d)"), Pkt->result);
+					OnLoginFailed.Broadcast(TEXT("아이디 또는 비밀번호가 올바르지 않습니다."));
 				}
 			break;
 			}
@@ -110,6 +111,8 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 					RoomPtr += sizeof(RoomInfo);
 				}
+
+				OnRoomListUpdated.Broadcast();
 			break;
 			}
 		case PACKET_ID::SC_ROOM_ENTER_RESPONSE:
@@ -118,6 +121,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
 				{
 					UE_LOG(LogTemp, Log, TEXT("[Net] 방 입장 성공"));
+					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv2_Room"));
 				}
 				else
 				{
@@ -218,6 +222,40 @@ void UNetSubsystem::EnterRoom(int32 RoomIndex)
 	EnqueSendPacket(MoveTemp(Buf));
 
 	UE_LOG(LogTemp, Log, TEXT("[Net] 방 입장 요청 (roomIndex=%d)"), RoomIndex);
+}
+
+void UNetSubsystem::CreateRoom(const FString& Title)
+{
+	CS_RoomCreate Pkt{};
+	Pkt.size = CS_ROOM_CREATE_PACKET_SIZE;
+	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_CREATE_REQUEST);
+	CopyStringToBuffer(Pkt.roomTitle, MAX_ROOM_TITLE_LEN, Title);
+
+	TArray<uint8> Buf;
+	Buf.SetNumUninitialized(CS_ROOM_CREATE_PACKET_SIZE);
+	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_CREATE_PACKET_SIZE);
+	EnqueSendPacket(MoveTemp(Buf));
+
+	UE_LOG(LogTemp, Log, TEXT("[Net] 방 생성 요청 (title=%s)"), *Title);
+}
+
+void UNetSubsystem::Reconnect(const FString& IP)
+{
+	StoredServerIP = IP;
+
+	if (Networker) Networker->Stop();
+	if (Thread) { Thread->Kill(true); delete Thread; Thread = nullptr; }
+	if (Networker) { delete Networker; Networker = nullptr; }
+
+	Networker = new FNetworker(StoredServerIP);
+	Thread = FRunnableThread::Create(Networker, TEXT("Network Thread"));
+
+	UE_LOG(LogTemp, Log, TEXT("[Net] 서버 재연결: %s"), *StoredServerIP);
+}
+
+bool UNetSubsystem::IsConnected() const
+{
+	return Networker && Networker->IsConnected();
 }
 
 void UNetSubsystem::CopyStringToBuffer(char* Dest, int32 DestSize, const FString& Source)
