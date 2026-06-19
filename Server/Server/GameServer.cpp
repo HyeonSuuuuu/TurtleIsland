@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "GameServer.h"
 #include "Globals.h"
+#include "NpcTick.h"
 
 void GameServer::OnConnect(const uint32_t slotIndex)
 {
@@ -74,9 +75,11 @@ void GameServer::Run()
 {
 	User::RegisterHandlers();
 	StartServer();
+	StartNpcTick();
 }
 
 void GameServer::Stop()
 {
+	StopNpcTick();
 	IOCPNetwork::Stop();
 }

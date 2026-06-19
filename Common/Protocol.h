@@ -63,6 +63,9 @@ enum class PACKET_ID : uint16_t
 
 	SC_NPC_CHAT = 371,
 
+	SC_NPC_SPAWN = 381,
+	SC_NPC_MOVE  = 382,
+
 
 	// AI To Server (3000 ~ 3099)
 	AS_AI = 3001,
@@ -221,10 +224,29 @@ struct SC_MoveNotify : public PacketHeader
 {
 	uint32_t userIndex;
 	uint16_t inputFlag;
-	float x, z;   // 2D 좌표 (y는 사용 안 함)
+	float x, y;   // 2D 좌표 (z=높이는 언리얼 클라가 처리)
 	float yaw;
 };
 inline constexpr uint16_t SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);
+
+// --------------- NPC (게임플레이) ----------------
+struct SC_NpcSpawn : public PacketHeader
+{
+	uint32_t npcId;
+	uint16_t npcType;
+	float    x, y;   // 2D 좌표
+	float    yaw;
+	int32_t  hp;
+};
+inline constexpr uint16_t SC_NPC_SPAWN_PACKET_SIZE = sizeof(SC_NpcSpawn);
+
+struct SC_NpcMove : public PacketHeader
+{
+	uint32_t npcId;
+	float    x, y;   // 2D 좌표
+	float    yaw;
+};
+inline constexpr uint16_t SC_NPC_MOVE_PACKET_SIZE = sizeof(SC_NpcMove);
 
 
 //  --------------- NPC ----------------

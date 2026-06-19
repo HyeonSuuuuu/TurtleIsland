@@ -7,6 +7,7 @@ constexpr uint32_t MAX_WORKER_THREADS    = 64;
 constexpr uint32_t MAX_NPCS              = 200000;
 constexpr uint32_t MAX_ROOMS             = 5000;
 constexpr uint32_t MAX_ROOM_USERS        = 4;
+constexpr uint32_t MAX_ROOM_NPCS         = 8;
 constexpr uint32_t INVALID_SESSION_INDEX = UINT32_MAX;
 constexpr uint32_t INVALID_ID            = UINT32_MAX - 1;
 constexpr uint32_t AI_ID                 = UINT32_MAX - 2;

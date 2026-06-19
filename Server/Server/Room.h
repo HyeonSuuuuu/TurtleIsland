@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "pch.h"
 #include "Define.h"
+#include "NPC.h"
 #include "../../Common/Protocol.h"
 
 enum class RoomEnterResult : uint8_t
@@ -27,7 +28,11 @@ public:
 	// Send data to all users except excludeSlot.
 	void Broadcast(const std::span<const uint8_t> data, uint32_t excludeSlot = INVALID_SESSION_INDEX);
 
-	void StartGame();
+	void StartGame();   // m_inGame = true + NPC 스폰
+
+	// NPC (방 인스턴스 소유)
+	void TickNpcs();    // 틱 스레드가 호출: AI/이동 갱신 + 방 broadcast
+	void BroadcastNpcSpawns(uint32_t toSlot = INVALID_SESSION_INDEX); // 현재 NPC 스폰 통지
 
 	RoomInfo GetRoomInfo() const;
 
@@ -61,6 +66,8 @@ private:
 
 	std::array<uint32_t, MAX_ROOM_USERS> m_userSlots{};
 	uint32_t m_userCount = 0;
+
+	std::array<NPC, MAX_ROOM_NPCS> m_npcs{};   // 방 인스턴스 NPC
 	std::atomic<bool> m_isActive{ false };
 	bool              m_inGame = false;
 

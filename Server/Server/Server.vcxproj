@@ -141,6 +141,7 @@
     </ClCompile>
     <ClCompile Include="EBR.cpp" />
     <ClCompile Include="Room.cpp" />
+    <ClCompile Include="NpcTick.cpp" />
     <ClCompile Include="Session.cpp" />
     <ClCompile Include="IOCPNetwork.cpp" />
     <ClCompile Include="User.cpp" />
@@ -152,6 +153,8 @@
     <ClInclude Include="Define.h" />
     <ClInclude Include="EBR.h" />
     <ClInclude Include="GameObject.h" />
+    <ClInclude Include="NPC.h" />
+    <ClInclude Include="NpcTick.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="Room.h" />
     <ClInclude Include="Session.h" />

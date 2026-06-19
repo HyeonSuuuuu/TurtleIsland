@@ -332,6 +332,8 @@ void User::OnRoomStartRequest(const Packet& packet)
 	room.Broadcast(
 		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&notify), SC_ROOM_START_PACKET_SIZE));
 
+	room.BroadcastNpcSpawns();   // 게임 시작 시 스폰된 NPC 통지
+
 	Log::Info("[RoomStart] roomIdx={} hostUserId={}", roomIdx, m_userId);
 }
 
@@ -350,10 +352,10 @@ void User::OnMove(const Packet& packet)
 	constexpr float SPEED = 5.0f; // units/tick
 	float rad = pMove->yaw * 3.14159265f / 180.0f;
 	uint16_t flags = pMove->inputFlag;
-	if (flags & 0x01) { x += std::cos(rad) * SPEED; z += std::sin(rad) * SPEED; } // forward
-	if (flags & 0x02) { x -= std::cos(rad) * SPEED; z -= std::sin(rad) * SPEED; } // backward
-	if (flags & 0x04) { x -= std::sin(rad) * SPEED; z += std::cos(rad) * SPEED; } // left
-	if (flags & 0x08) { x += std::sin(rad) * SPEED; z -= std::cos(rad) * SPEED; } // right
+	if (flags & 0x01) { x += std::cos(rad) * SPEED; y += std::sin(rad) * SPEED; } // forward
+	if (flags & 0x02) { x -= std::cos(rad) * SPEED; y -= std::sin(rad) * SPEED; } // backward
+	if (flags & 0x04) { x -= std::sin(rad) * SPEED; y += std::cos(rad) * SPEED; } // left
+	if (flags & 0x08) { x += std::sin(rad) * SPEED; y -= std::cos(rad) * SPEED; } // right
 	yaw = pMove->yaw;
 
 	SC_MoveNotify notify{};
@@ -362,7 +364,7 @@ void User::OnMove(const Packet& packet)
 	notify.userIndex = GetId();
 	notify.inputFlag = pMove->inputFlag;
 	notify.x         = x;
-	notify.z         = z;
+	notify.y         = y;
 	notify.yaw       = pMove->yaw;
 
 	g_rooms[roomIdx].Broadcast(
