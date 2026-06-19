@@ -42,7 +42,7 @@ void Session::PushPacket(const std::span<const uint8_t> dataSpan)
 {
 	if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 	{
-		// Compact: slide unread data to the front
+		// Compact: 미처리 데이터를 앞으로 당긴다
 		auto remainDataSize = m_packetDataWritePos - m_packetDataReadPos;
 		if (remainDataSize > 0)
 		{
@@ -56,11 +56,9 @@ void Session::PushPacket(const std::span<const uint8_t> dataSpan)
 		m_packetDataReadPos = 0;
 	}
 
-	// After compaction the buffer might still be full (e.g. readPos was already 0).
-	// Drop the data and disconnect rather than overflow.
 	if (dataSpan.size() + m_packetDataWritePos > PACKET_DATA_BUFFER_SIZE)
 	{
-		Log::Error("PushPacket overflow: writePos={} incoming={} - closing session",
+		Log::Error("PushPacket overflow: writePos={} incoming={} - dropping",
 			m_packetDataWritePos, dataSpan.size());
 		return;
 	}
@@ -69,32 +67,42 @@ void Session::PushPacket(const std::span<const uint8_t> dataSpan)
 	m_packetDataWritePos += static_cast<uint32_t>(dataSpan.size());
 }
 
+// 와이어 헤더: [0]=전체 길이(1바이트), [1..4]=PACKET_TYPE(4바이트)
 std::optional<Packet> Session::PopPacket()
 {
 	uint32_t remainByte = m_packetDataWritePos - m_packetDataReadPos;
 
-	if (remainByte < PACKET_HEADER_SIZE)
+	if (remainByte < PACKET_LEN_FIELD_SIZE)
 		return std::nullopt;
 
-	auto pHeader = reinterpret_cast<PacketHeader*>(&m_packetDataBuffer[m_packetDataReadPos]);
-
-	if (pHeader->size > remainByte)
+	uint32_t pktSize = *reinterpret_cast<const uint16_t*>(&m_packetDataBuffer[m_packetDataReadPos]);   // size(2바이트)
+	if (pktSize == 0)
+	{
+		// 손상된 길이: 더 진행 못 함 버퍼를 비워 무한루프 방지
+		Log::Error("PopPacket: zero-length packet, flushing buffer");
+		m_packetDataReadPos = m_packetDataWritePos = 0;
 		return std::nullopt;
+	}
+
+	if (pktSize > remainByte)
+		return std::nullopt;   // 아직 전체 도착 안 함
 
 	Packet packet;
-	packet.sessionIndex      = m_slotIndex;   // EBR pool slot, not the session auto-ID
-	packet.packetId          = pHeader->id;
-	const uint8_t* begin     = reinterpret_cast<const uint8_t*>(m_packetDataBuffer + m_packetDataReadPos);
-	packet.dataSpan          = std::span<const uint8_t>(begin, static_cast<size_t>(pHeader->size));
+	packet.sessionIndex = m_slotIndex;
+	packet.packetId =
+		(pktSize >= PACKET_TYPE_OFFSET + sizeof(uint16_t))
+		? *reinterpret_cast<const uint16_t*>(&m_packetDataBuffer[m_packetDataReadPos + PACKET_TYPE_OFFSET])
+		: 0;
+	const uint8_t* begin = m_packetDataBuffer + m_packetDataReadPos;
+	packet.dataSpan      = std::span<const uint8_t>(begin, static_cast<size_t>(pktSize));
 
-	m_packetDataReadPos += pHeader->size;
+	m_packetDataReadPos += pktSize;
 	return packet;
 }
 
 bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex)
 {
-	// m_packetDataBuffer is allocated here rather than in Init() because
-	// sessions from the EBR initial pool never go through Init().
+	// 초기 풀 세션은 Init() 을 거치지 않으므로 여기서도 버퍼를 보장한다
 	if (m_packetDataBuffer == nullptr)
 		m_packetDataBuffer = new uint8_t[PACKET_DATA_BUFFER_SIZE];
 
@@ -129,19 +137,12 @@ void Session::Close(bool isForce)
 	m_socket = INVALID_SOCKET;
 }
 
-bool Session::ConnectSocket(SOCKET socket)
-{
-	m_socket       = socket;
-	m_sessionState = SessionState::Connected;
-	return BindRecv();
-}
-
 bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex)
 {
 	m_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (m_socket == INVALID_SOCKET)
 	{
-		Log::ErrorDisplay("client WSASocket() failed", GetLastError());
+		Log::ErrorDisplay("client WSASocket() 실패", GetLastError());
 		return false;
 	}
 
@@ -156,7 +157,7 @@ bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t s
 	{
 		if (WSAGetLastError() != WSA_IO_PENDING)
 		{
-			Log::ErrorDisplay("AcceptEx failed", WSAGetLastError());
+			Log::ErrorDisplay("AcceptEx 실패", WSAGetLastError());
 			return false;
 		}
 	}
@@ -165,7 +166,6 @@ bool Session::BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t s
 
 bool Session::AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex)
 {
-	Log::Info("AcceptCompleted : SessionId({})", m_id);
 	return RegisterSocket(iocpHandle, m_socket, slotIndex);
 }
 
@@ -185,7 +185,7 @@ bool Session::BindRecv()
 
 	if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 	{
-		Log::ErrorDisplay("WSARecv() failed", WSAGetLastError());
+		Log::ErrorDisplay("WSARecv() 실패", WSAGetLastError());
 		return false;
 	}
 	return true;
@@ -193,18 +193,17 @@ bool Session::BindRecv()
 
 bool Session::Send(const std::span<const uint8_t> msg)
 {
+	// 닫히는/닫힌 세션엔 송신 금지(동시 종료 중 브로드캐스트 → WSASend 10038 방지)
+	if (m_socket == INVALID_SOCKET || m_sessionState.load() == SessionState::Retiring)
+		return false;
+
 	if (msg.size() > MAX_SOCKBUF)
 	{
 		Log::Error("패킷 크기 초과 ({})", msg.size());
 		return false;
 	}
 
-	OverlappedEx* over = g_sendPool.Acquire();
-	if (!over)
-	{
-		Log::Error("SendPool 고갈");
-		return false;
-	}
+	OverlappedEx* over = g_sendPool.Acquire();   // 고갈 시 heap 폴백(null 반환 없음)
 
 	CopyMemory(over->m_buf, msg.data(), msg.size());
 	over->m_wsa.buf   = over->m_buf;
@@ -243,7 +242,7 @@ void Session::BindSend()
 
 	if (ret == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING)
 	{
-		Log::ErrorDisplay("WSASend() failed", WSAGetLastError());
+		Log::ErrorDisplay("WSASend() 실패", WSAGetLastError());
 		std::lock_guard lock(m_sendMutex);
 		m_sendQueue.pop();
 		g_sendPool.Release(over);
@@ -274,7 +273,7 @@ bool Session::RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const
 	auto hIOCP = CreateIoCompletionPort((HANDLE)m_socket, iocpHandle, (ULONG_PTR)slotIndex, 0);
 	if (hIOCP == nullptr || iocpHandle != hIOCP)
 	{
-		Log::ErrorDisplay("CreateIoCompletionPort() failed", GetLastError());
+		Log::ErrorDisplay("CreateIoCompletionPort() 실패", GetLastError());
 		return false;
 	}
 	return true;

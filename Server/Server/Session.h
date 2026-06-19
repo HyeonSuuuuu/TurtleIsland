@@ -2,7 +2,6 @@
 #include "pch.h"
 #include "Define.h"
 #include "GameObject.h"
-#include "../../Common/Protocol.h"
 
 enum class SessionState : uint8_t
 {
@@ -11,10 +10,13 @@ enum class SessionState : uint8_t
 	Connected = 2,
 };
 
+// ======================== Session ===========================
+// 순수 네트워크 세션: accept/recv/send + 1바이트 길이헤더 패킷 재조립
+// 게임 로직은 일절 모른다(콘텐츠는 User : Session 에서)
 class Session : public GameObject
 {
 public:
-	static constexpr uint32_t PACKET_DATA_BUFFER_SIZE = 8096;
+	static constexpr uint32_t PACKET_DATA_BUFFER_SIZE = 8192;
 	static std::atomic<uint32_t> s_nextId;
 
 	Session() = default;
@@ -23,7 +25,6 @@ public:
 	virtual void Init(uint32_t id) override;
 	virtual void Clear() override;
 
-	constexpr uint64_t GetSocketId()  const { return static_cast<uint64_t>(m_socket); }
 	constexpr uint32_t GetSlotIndex() const { return m_slotIndex; }
 
 	std::span<const uint8_t> GetRecvData(int32_t size) const;
@@ -33,23 +34,21 @@ public:
 	virtual bool RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotIndex);
 	virtual void Close(bool isForce = false);
 
-	// For outgoing connections (AI server): sets socket and starts recv without IOCP re-registration.
-	bool ConnectSocket(SOCKET socket);
-
 	bool BindAccept(SOCKET listenSock, OverlappedEx& acceptOver, uint32_t slotIndex);
 	bool AcceptCompleted(HANDLE iocpHandle, uint32_t slotIndex);
 	bool BindRecv();
 	bool Send(const std::span<const uint8_t> msg);
 	void SendCompleted(uint32_t bytesSent);
 
+	// 콘텐츠 디스패치 진입점(기본 no-op) User 가 override 해 process_packet 역할 수행
 	virtual void Dispatch(const Packet& packet) {}
 
 private:
 	bool RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const;
 	void BindSend();
 
-	SOCKET                    m_socket             = INVALID_SOCKET;
-	uint32_t                  m_slotIndex          = INVALID_SESSION_INDEX;
+	SOCKET                    m_socket     = INVALID_SOCKET;
+	uint32_t                  m_slotIndex  = INVALID_SESSION_INDEX;
 	std::atomic<SessionState> m_sessionState{ SessionState::None };
 
 	OverlappedEx m_recvOverlappedEx{};

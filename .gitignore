@@ -67,3 +67,6 @@ $RECYCLE.BIN/
 *.nupkg
 **/[Pp]ackages/*
 !**/[Pp]ackages/build/
+
+# --- Claude Code worktrees (작업용 임시 폴더) ---
+**/.claude/worktrees/

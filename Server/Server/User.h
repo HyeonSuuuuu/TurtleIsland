@@ -38,6 +38,7 @@ private:
 	void OnLoginRequest(const Packet& packet);
 	void OnLobbyEnterRequest(const Packet& packet);
 	void OnRoomEnterRequest(const Packet& packet);
+	void OnRoomCreateRequest(const Packet& packet);
 	void OnRoomLeaveRequest(const Packet& packet);
 	void OnRoomChatRequest(const Packet& packet);
 	void OnRoomStartRequest(const Packet& packet);

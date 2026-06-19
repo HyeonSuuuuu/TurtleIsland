@@ -1,5 +1,7 @@
 ﻿#include "pch.h"
 #include "IOCPNetwork.h"
+#include "Globals.h"
+#include "Ebr.h"
 
 IOCPNetwork::~IOCPNetwork()
 {
@@ -9,16 +11,9 @@ IOCPNetwork::~IOCPNetwork()
 bool IOCPNetwork::InitSocket()
 {
 	WSADATA wsaData;
-	int32_t ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (ret != 0)
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 	{
 		Log::ErrorDisplay("WSAStartup() 실패", WSAGetLastError());
-		return false;
-	}
-
-	if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2)
-	{
-		Log::ErrorDisplay("Winsock.dll의 사용 가능한 버전을 찾을 수 없습니다", WSAGetLastError());
 		return false;
 	}
 
@@ -33,54 +28,11 @@ bool IOCPNetwork::InitSocket()
 	return true;
 }
 
-bool IOCPNetwork::ConnectToAIServer(const std::string& ip, uint16_t port)
-{
-	m_aiSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-	if (m_aiSocket == INVALID_SOCKET)
-	{
-		Log::Error("Ai 소켓 생성 실패", WSAGetLastError());
-		return false;
-	}
-
-	sockaddr_in aiAddr{};
-	aiAddr.sin_family = AF_INET;
-	inet_pton(AF_INET, ip.c_str(), &aiAddr.sin_addr);
-	aiAddr.sin_port = htons(port);
-
-	Log::Info("Ai 서버에 연결 시도 (IP: {}, Port: {})", ip, port);
-	if (connect(m_aiSocket, (sockaddr*)&aiAddr, sizeof(aiAddr)) == SOCKET_ERROR)
-	{
-		Log::Error("Ai 서버 연결 실패", WSAGetLastError());
-		closesocket(m_aiSocket);
-		return false;
-	}
-
-	m_aiSession = std::make_unique<Session>();
-	m_aiSession->Init(AI_ID);
-
-	HANDLE hIOCP = CreateIoCompletionPort((HANDLE)m_aiSocket, m_iocpHandle, (ULONG_PTR)AI_ID, 0);
-	if (hIOCP == nullptr || hIOCP != m_iocpHandle)
-	{
-		Log::ErrorDisplay("aiSocket IOCP 등록 실패", GetLastError());
-		return false;
-	}
-
-	if (!m_aiSession->ConnectSocket(m_aiSocket))
-	{
-		Log::Error("AI 세션 recv 등록 실패");
-		return false;
-	}
-
-	g_aiSession = m_aiSession.get();
-	Log::Success("AI 서버 연결 및 recv 등록 완료");
-	return true;
-}
-
 bool IOCPNetwork::Listen(const int32_t port) const
 {
 	sockaddr_in serverAddr{};
 	serverAddr.sin_family      = AF_INET;
-	serverAddr.sin_port        = htons(port);
+	serverAddr.sin_port        = htons(static_cast<uint16_t>(port));
 	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 	if (bind(m_listenSocket, (SOCKADDR*)&serverAddr, sizeof(SOCKADDR_IN)) != 0)
@@ -95,18 +47,18 @@ bool IOCPNetwork::Listen(const int32_t port) const
 		return false;
 	}
 
-	Log::Success("서버 등록 성공");
+	Log::Success("서버 리슨 성공 (port {})", port);
 	return true;
 }
 
 bool IOCPNetwork::StartServer()
 {
-	g_userPool.Init();
 	g_sendPool.Init();
-	for (uint32_t i = 0; i < NetConfig::MAX_CLIENTS; ++i)
-		g_objects[i] = g_userPool.Get(i);
 
 	m_maxWorkerThread = std::thread::hardware_concurrency() * 2;
+	if (m_maxWorkerThread == 0) m_maxWorkerThread = 4;
+	if (m_maxWorkerThread > MAX_WORKER_THREADS) m_maxWorkerThread = MAX_WORKER_THREADS;
+
 	m_iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, m_maxWorkerThread);
 	if (m_iocpHandle == nullptr)
 	{
@@ -133,7 +85,7 @@ bool IOCPNetwork::StartServer()
 			break;
 		}
 		if (!g_userPool.Get(idx)->BindAccept(m_listenSocket, m_acceptOverlappeds[i], idx))
-			g_userPool.Release(idx);
+			g_userPool.Retire(idx);
 	}
 
 	Log::Success("서버 시작");
@@ -143,143 +95,182 @@ bool IOCPNetwork::StartServer()
 void IOCPNetwork::Stop()
 {
 	m_isWorkerRun = false;
-	CloseHandle(m_iocpHandle);
+	// 워커들을 깨우기 위해 종료 신호(0,0,nullptr)를 워커 수만큼 게시
+	for (uint32_t i = 0; i < m_maxWorkerThread; ++i)
+		PostQueuedCompletionStatus(m_iocpHandle, 0, 0, nullptr);
 
 	for (auto& th : m_IOWorkerThreads)
-	{
 		if (th.joinable()) th.join();
-	}
 
+	CloseHandle(m_iocpHandle);
 	closesocket(m_listenSocket);
 }
 
-User* IOCPNetwork::GetUser(uint32_t index)
+PooledSession* IOCPNetwork::GetSession(uint32_t index)
 {
-	if (index >= NetConfig::MAX_CLIENTS) return nullptr;
+	if (index >= MAX_CLIENTS) return nullptr;
 	return g_userPool.Get(index);
+}
+
+bool IOCPNetwork::ConnectToAIServer(const std::string& ip, uint16_t port)
+{
+	SOCKET aiSock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	if (aiSock == INVALID_SOCKET)
+	{
+		Log::Error("[AI] socket 생성 실패");
+		return false;
+	}
+
+	sockaddr_in addr{};
+	addr.sin_family = AF_INET;
+	addr.sin_port   = htons(port);
+	inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+
+	if (WSAConnect(aiSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr), nullptr, nullptr, nullptr, nullptr) == SOCKET_ERROR)
+	{
+		Log::Warning("[AI] 연결 실패 ({}) — NpcChat 비활성", WSAGetLastError());
+		closesocket(aiSock);
+		return false;
+	}
+
+	// 아웃바운드 세션: 완료키 = AI_ID 로 IOCP 등록 + recv 게시
+	m_aiSession = std::make_unique<Session>();
+	m_aiSession->Init(AI_ID);
+	if (!m_aiSession->RegisterSocket(m_iocpHandle, aiSock, AI_ID))
+	{
+		Log::Error("[AI] RegisterSocket 실패");
+		m_aiSession.reset();
+		return false;
+	}
+
+	g_aiSession = m_aiSession.get();
+	Log::Success("[AI] AI 서버 연결 {}:{}", ip, port);
+	return true;
 }
 
 bool IOCPNetwork::CreateWorkerThread()
 {
 	m_isWorkerRun = true;
 	for (uint32_t i = 0; i < m_maxWorkerThread; ++i)
-	{
-		m_IOWorkerThreads.emplace_back([this]() { WorkerThread(); });
-	}
+		m_IOWorkerThreads.emplace_back([this, i]() { WorkerThread(static_cast<int>(i)); });
+
 	Log::Success("{}개의 Worker Thread 생성 완료", m_maxWorkerThread);
 	return true;
 }
 
-void IOCPNetwork::WorkerThread()
+void IOCPNetwork::WorkerThread(int tid)
 {
-	EBR::RegisterThread();
+	ebr::register_thread(tid);
 
 	uint32_t     slotIdx      = INVALID_SESSION_INDEX;
-	bool         isSuccess    = true;
+	BOOL         isSuccess    = TRUE;
 	DWORD        dwIoSize     = 0;
 	LPOVERLAPPED lpOverlapped = nullptr;
 
 	while (m_isWorkerRun)
 	{
-		EBR::Start();
+		ebr::start_op();
 
 		isSuccess = GetQueuedCompletionStatus(m_iocpHandle,
 			&dwIoSize, (PULONG_PTR)&slotIdx, &lpOverlapped, INFINITE);
 
+		// 종료 신호(Stop 이 게시한 0,0,nullptr)
 		if (isSuccess && dwIoSize == 0 && lpOverlapped == nullptr)
 		{
-			m_isWorkerRun = false;
-			EBR::End();
-			continue;
+			ebr::end_op();
+			break;
 		}
 
 		if (lpOverlapped == nullptr)
 		{
 			Log::ErrorDisplay("GetQueuedCompletionStatus() 실패", GetLastError());
-			EBR::End();
+			ebr::end_op();
 			continue;
 		}
 
-		OverlappedEx* pOverlappedEx = (OverlappedEx*)lpOverlapped;
+		OverlappedEx* pOver = (OverlappedEx*)lpOverlapped;
 
-		if (IOOperation::ACCEPT == pOverlappedEx->m_operation)
+		if (IOOperation::ACCEPT == pOver->m_operation)
 		{
-			uint32_t acceptedSlot = pOverlappedEx->m_slotIndex;
-			User* pUser = g_userPool.Get(acceptedSlot);
-			if (pUser)
+			uint32_t acceptedSlot = pOver->m_slotIndex;
+			PooledSession* pSession = g_userPool.Get(acceptedSlot);
+			if (pSession)
 			{
-				pUser->AcceptCompleted(m_iocpHandle, acceptedSlot);
-				g_idToIndexMap[pUser->GetId()] = acceptedSlot;
+				pSession->AcceptCompleted(m_iocpHandle, acceptedSlot);
+				g_idToIndexMap[pSession->GetId()] = acceptedSlot;
 				OnConnect(acceptedSlot);
 				m_clientCnt.fetch_add(1);
 
 				uint32_t newIdx;
 				if (!g_userPool.Acquire(newIdx))
-					Log::Error("초기 세션 부족");
-				else if (!g_userPool.Get(newIdx)->BindAccept(m_listenSocket, *pOverlappedEx, newIdx))
+					Log::Error("세션 풀 고갈 - accept 재장전 실패");
+				else if (!g_userPool.Get(newIdx)->BindAccept(m_listenSocket, *pOver, newIdx))
 					g_userPool.Retire(newIdx);
 			}
 		}
-		else if (slotIdx == AI_ID)
+		else if (IOOperation::RECV == pOver->m_operation || IOOperation::SEND == pOver->m_operation)
 		{
+			// 소켓 완료: 실패/정상종료(0바이트) 는 연결 해제
 			if (!isSuccess || dwIoSize == 0)
 			{
-				Log::Warning("AI 서버 연결 끊김");
+				if (slotIdx < MAX_CLIENTS) Disconnect(slotIdx);
+				// AI 연결 종료는 무시(재연결 미구현)
 			}
-			else if (IOOperation::RECV == pOverlappedEx->m_operation)
+			else if (slotIdx == AI_ID)
 			{
-				const auto dataSpan = m_aiSession->GetRecvData(dwIoSize);
-				m_aiSession->PushPacket(dataSpan);
-				while (auto packet = m_aiSession->PopPacket())
-					OnRecv(AI_ID, packet.value());
-				m_aiSession->BindRecv();
+				if (m_aiSession)
+				{
+					if (IOOperation::RECV == pOver->m_operation)
+					{
+						const auto dataSpan = m_aiSession->GetRecvData(dwIoSize);
+						m_aiSession->PushPacket(dataSpan);
+						while (auto packet = m_aiSession->PopPacket())
+							OnRecv(AI_ID, packet.value());
+						m_aiSession->BindRecv();
+					}
+					else
+					{
+						m_aiSession->SendCompleted(dwIoSize);
+					}
+				}
 			}
-			else if (IOOperation::SEND == pOverlappedEx->m_operation)
+			else if (IOOperation::RECV == pOver->m_operation)
 			{
-				m_aiSession->SendCompleted(dwIoSize);
+				PooledSession* pSession = g_userPool.Get(slotIdx);
+				if (pSession)
+				{
+					const auto dataSpan = pSession->GetRecvData(dwIoSize);
+					pSession->PushPacket(dataSpan);
+					while (auto packet = pSession->PopPacket())
+						OnRecv(slotIdx, packet.value());
+					pSession->BindRecv();
+				}
 			}
-		}
-		else if (!isSuccess || (dwIoSize == 0 && isSuccess))
-		{
-			if (slotIdx < NetConfig::MAX_CLIENTS) Disconnect(slotIdx);
-		}
-		else if (IOOperation::RECV == pOverlappedEx->m_operation)
-		{
-			User* pUser = g_userPool.Get(slotIdx);
-			if (pUser)
+			else // SEND
 			{
-				const auto dataSpan = pUser->GetRecvData(dwIoSize);
-				pUser->PushPacket(dataSpan);
-				while (auto packet = pUser->PopPacket())
-					OnRecv(slotIdx, packet.value());
-				pUser->BindRecv();
-			}
-		}
-		else if (IOOperation::SEND == pOverlappedEx->m_operation)
-		{
-			User* pUser = g_userPool.Get(slotIdx);
-			if (pUser)
-			{
-				pUser->SendCompleted(dwIoSize);
-				OnSend(slotIdx);
+				PooledSession* pSession = g_userPool.Get(slotIdx);
+				if (pSession)
+				{
+					pSession->SendCompleted(dwIoSize);
+					OnSend(slotIdx);
+				}
 			}
 		}
 		else
 		{
-			Log::Warning("socket({})에서 예외상황", slotIdx);
+			// 콘텐츠가 게시한 타이머/DB 이벤트 → 콘텐츠로 디스패치
+			OnUserEvent(slotIdx, pOver, dwIoSize, isSuccess != FALSE);
 		}
 
-		EBR::End();
+		ebr::end_op();
 	}
-
-	EBR::UnregisterThread();
 }
 
 void IOCPNetwork::Disconnect(uint32_t slotIndex, bool isForce)
 {
-	User* pUser = g_userPool.Get(slotIndex);
-	g_idToIndexMap.erase(pUser->GetId());
-	pUser->Close(isForce);
+	PooledSession* pSession = g_userPool.Get(slotIndex);
+	g_idToIndexMap.erase(pSession->GetId());
+	pSession->Close(isForce);
 	OnClose(slotIndex);
 	g_userPool.Retire(slotIndex);
 	m_clientCnt.fetch_sub(1);
