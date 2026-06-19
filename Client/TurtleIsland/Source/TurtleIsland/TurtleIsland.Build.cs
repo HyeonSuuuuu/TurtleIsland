@@ -27,6 +27,10 @@ public class TurtleIsland : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"TurtleIsland",
+			"TurtleIsland/_Turtle",
+			"TurtleIsland/_Turtle/Character",
+			"TurtleIsland/_Turtle/Network",
+			"TurtleIsland/_Turtle/UI",
 			"TurtleIsland/Variant_Platforming",
 			"TurtleIsland/Variant_Platforming/Animation",
 			"TurtleIsland/Variant_Combat",
