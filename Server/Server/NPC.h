@@ -18,9 +18,10 @@ public:
 		m_type       = 0;
 		m_state      = NpcState::Idle;
 		m_targetSlot = INVALID_SESSION_INDEX;
+		m_speed      = 0.f;
 	}
 
-	void Spawn(uint32_t npcId, uint16_t type, float spawnX, float spawnY, int32_t hp)
+	void Spawn(uint32_t npcId, uint16_t type, float spawnX, float spawnY, int32_t hp, float speed)
 	{
 		Init(npcId);
 		x = spawnX; y = spawnY; yaw = 0.f;
@@ -28,6 +29,7 @@ public:
 		m_type    = type;
 		m_hp      = hp;
 		m_maxHp   = hp;
+		m_speed   = speed;
 		m_state   = NpcState::Idle;
 		m_targetSlot = INVALID_SESSION_INDEX;
 		m_active  = true;
@@ -43,4 +45,5 @@ public:
 	NpcState m_state  = NpcState::Idle;
 	uint32_t m_targetSlot = INVALID_SESSION_INDEX;
 	float    m_anchorX = 0.f, m_anchorY = 0.f;
+	float    m_speed   = 0.f;   // units/tick (MonsterDef)
 };

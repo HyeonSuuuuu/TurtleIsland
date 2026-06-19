@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "Room.h"
 #include "Globals.h"
+#include "MonsterScript.h"
 #include <cmath>
 
 RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title)
@@ -97,17 +98,27 @@ void Room::StartGame()
 	// NPC 스폰: 원점 주변 원형 배치 (좌표 2D x,y)
 	constexpr int   SPAWN_COUNT  = 5;
 	constexpr float SPAWN_RADIUS = 300.0f;
+	const size_t    defCount     = g_monsterDefs.size();
 	for (int i = 0; i < SPAWN_COUNT && i < static_cast<int>(MAX_ROOM_NPCS); ++i)
 	{
 		float ang = static_cast<float>(i) / SPAWN_COUNT * 6.2831853f;
-		m_npcs[i].Spawn(static_cast<uint32_t>(i), 0,
-			std::cos(ang) * SPAWN_RADIUS, std::sin(ang) * SPAWN_RADIUS, 100);
+		float sx  = std::cos(ang) * SPAWN_RADIUS;
+		float sy  = std::sin(ang) * SPAWN_RADIUS;
+		if (defCount > 0)
+		{
+			uint16_t type = static_cast<uint16_t>(i % defCount);
+			const MonsterDef& def = g_monsterDefs[type];
+			m_npcs[i].Spawn(static_cast<uint32_t>(i), type, sx, sy, def.hp, def.speed);
+		}
+		else
+		{
+			m_npcs[i].Spawn(static_cast<uint32_t>(i), 0, sx, sy, 100, 6.0f);   // Lua 미로드 폴백
+		}
 	}
 }
 
 void Room::TickNpcs()
 {
-	constexpr float SPEED       = 6.0f;     // units/tick
 	constexpr float CHASE_RANGE = 600.0f;   // 추격 시작 거리
 	constexpr float STOP_DIST   = 60.0f;    // 추격 정지 거리(근접)
 
@@ -148,8 +159,8 @@ void Room::TickNpcs()
 			if (dist > arrive)
 			{
 				float inv = 1.0f / dist;
-				npc.x += dx * inv * SPEED;
-				npc.y += dy * inv * SPEED;
+				npc.x += dx * inv * npc.m_speed;
+				npc.y += dy * inv * npc.m_speed;
 				npc.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265f;
 			}
 
