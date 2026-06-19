@@ -1,5 +1,9 @@
 # Custom
 Docs/지역연계형_필요서류/
+Docs/server-wiki/
+
+# 작업용 임시 캡처 (MCP/스크린샷)
+Client/TurtleIsland/*.png
 
 # --- AI & LLM (LFS 관리 대상이므로 Ignore에서 제외) ---
 # 기존에 막혀있던 부분을 주석 처리하거나 삭제하여 Git이 인식하게 합니다.
@@ -16,6 +20,7 @@ Intermediate/
 Saved/
 LocalBuilds/
 *.sln
+*.slnx
 .vscode/
 .idea/
 .vsconfig
