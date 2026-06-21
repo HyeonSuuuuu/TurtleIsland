@@ -2,6 +2,7 @@
 #include "Room.h"
 #include "Globals.h"
 #include "MonsterScript.h"
+#include "ObstacleMap.h"
 #include <cmath>
 
 RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title)
@@ -95,15 +96,27 @@ void Room::StartGame()
 	std::lock_guard lock(m_mutex);
 	m_inGame = true;
 
-	// NPC 스폰: 원점 주변 원형 배치 (좌표 2D x,y)
+	// 플레이어를 인게임 스폰(월드좌표)으로 배치 — 장애물 그리드/클라 좌표와 일치
+	for (uint32_t i = 0; i < m_userCount; ++i)
+	{
+		User* u = g_userPool.Get(m_userSlots[i]);
+		if (!u) continue;
+		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
+		float py = MapSpawn::PLAYER_Y + static_cast<float>(i / 2) * 120.0f;
+		g_obstacleMap.SnapToFree(px, py);   // 벽에 끼지 않도록 보정
+		u->x = px; u->y = py; u->yaw = 0.f;
+	}
+
+	// NPC 스폰: 아레나 개방 통로(NPC_ANCHOR) 주변 원형 배치 (좌표 2D x,y, 월드)
 	constexpr int   SPAWN_COUNT  = 5;
-	constexpr float SPAWN_RADIUS = 300.0f;
+	constexpr float SPAWN_RADIUS = 150.0f;
 	const size_t    defCount     = g_monsterDefs.size();
 	for (int i = 0; i < SPAWN_COUNT && i < static_cast<int>(MAX_ROOM_NPCS); ++i)
 	{
 		float ang = static_cast<float>(i) / SPAWN_COUNT * 6.2831853f;
-		float sx  = std::cos(ang) * SPAWN_RADIUS;
-		float sy  = std::sin(ang) * SPAWN_RADIUS;
+		float sx  = MapSpawn::NPC_ANCHOR_X + std::cos(ang) * SPAWN_RADIUS;
+		float sy  = MapSpawn::NPC_ANCHOR_Y + std::sin(ang) * SPAWN_RADIUS;
+		g_obstacleMap.SnapToFree(sx, sy);   // 벽에 끼지 않도록 보정
 		if (defCount > 0)
 		{
 			uint16_t type = static_cast<uint16_t>(i % defCount);
@@ -159,8 +172,10 @@ void Room::TickNpcs()
 			if (dist > arrive)
 			{
 				float inv = 1.0f / dist;
-				npc.x += dx * inv * npc.m_speed;
-				npc.y += dy * inv * npc.m_speed;
+				float ncx = npc.x + dx * inv * npc.m_speed;
+				float ncy = npc.y + dy * inv * npc.m_speed;
+				// 장애물 충돌: 막힌 칸이면 이동 정지 (길찾기 없음 — 벽에 막힘)
+				if (g_obstacleMap.CanMoveTo(ncx, ncy)) { npc.x = ncx; npc.y = ncy; }
 				npc.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265f;
 			}
 
@@ -220,6 +235,28 @@ void Room::BroadcastNpcSpawns(uint32_t toSlot)
 		if (!u) continue;
 		for (const auto& s : pkts)
 			u->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&s), SC_NPC_SPAWN_PACKET_SIZE));
+	}
+}
+
+void Room::SendPlayerStatesToUser(uint32_t toSlot)
+{
+	std::lock_guard lock(m_mutex);
+	User* dst = g_userPool.Get(toSlot);
+	if (!dst) return;
+
+	for (uint32_t i = 0; i < m_userCount; ++i)
+	{
+		if (m_userSlots[i] == toSlot) continue;
+		User* src = g_userPool.Get(m_userSlots[i]);
+		if (!src) continue;
+
+		SC_MoveNotify m{};
+		m.size      = SC_MOVE_NOTIFY_PACKET_SIZE;
+		m.id        = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
+		m.userIndex = src->GetId();
+		m.inputFlag = 0;
+		m.x = src->x; m.y = src->y; m.yaw = src->yaw;
+		dst->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&m), SC_MOVE_NOTIFY_PACKET_SIZE));
 	}
 }
 

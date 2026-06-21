@@ -19,6 +19,7 @@ public class TurtleIsland : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"SlateCore",
 			"Sockets",
 			"Networking"
 		});

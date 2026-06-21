@@ -46,6 +46,10 @@ protected:
 	UFUNCTION()
 	void OnLoginButtonClicked();
 
+	// ID/PW 입력칸에서 엔터를 누르면 로그인 시도
+	UFUNCTION()
+	void OnLoginTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
 	UFUNCTION()
 	void OnSettingsButtonClicked();
 
@@ -54,6 +58,13 @@ protected:
 
 	UFUNCTION()
 	void ShowError(FString Message);
+
+	// 로그인 성공: 신규 가입이면 안내 팝업 → 확인 후 로비, 기존이면 바로 로비
+	UFUNCTION()
+	void OnLoginSucceeded(bool bIsNewAccount);
+
+	UFUNCTION()
+	void OnAccountCreatedConfirmed();
 
 	void TrySendLogin();
 

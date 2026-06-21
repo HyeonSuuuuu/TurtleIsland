@@ -91,6 +91,8 @@
     <ClCompile Include="Room.cpp" />
     <ClCompile Include="NpcTick.cpp" />
     <ClCompile Include="MonsterScript.cpp" />
+    <ClCompile Include="ObstacleMap.cpp" />
+    <ClCompile Include="Database.cpp" />
     <ClCompile Include="GameServer.cpp" />
     <ClCompile Include="GameMain.cpp" />
   </ItemGroup>
@@ -111,6 +113,8 @@
     <ClInclude Include="Globals.h" />
     <ClInclude Include="GameServer.h" />
     <ClInclude Include="MonsterScript.h" />
+    <ClInclude Include="ObstacleMap.h" />
+    <ClInclude Include="Database.h" />
     <ClInclude Include="..\..\Common\Protocol.h" />
     <ClInclude Include="..\..\Common\Type.h" />
   </ItemGroup>
@@ -119,6 +123,13 @@
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">PreserveNewest</CopyToOutputDirectory>
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="map.dat">
+      <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="sql\01_account.sql" />
+    <None Include="sql\02_account_procs.sql" />
+    <None Include="sql\README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

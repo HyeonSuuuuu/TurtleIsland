@@ -44,6 +44,8 @@ enum class PACKET_ID : uint16_t
 
 	CS_NPC_CHAT = 271,
 
+	CS_INGAME_READY = 281,   // 인게임 레벨 로딩 완료 → 현재 상태 요청
+
 	// Server To Client (300 ~ 399)
 	SC_LOGIN_RESPONSE = 301,
 
@@ -84,7 +86,12 @@ enum class ERROR_CODE : uint8_t
 	/*	USER_MGR_INVALID_INDEX = 11,
 		USER_MGR_INVALID_USER_UNIQUE_ID = 12,*/
 
-		// Login
+	// Login
+	USER_LOGIN_FAIL = 21,           // 비밀번호 불일치 또는 DB 오류
+	USER_ALREADY_LOGGED_IN = 22,    // 이미 접속 중인 계정
+
+	// Room
+	ROOM_TITLE_DUP = 31,            // 같은 제목의 방이 이미 있음
 };
 
 #pragma pack(push, 1)
@@ -116,6 +123,7 @@ struct SC_Login : public PacketHeader
 {
 	uint8_t result;
 	uint32_t playerId; // 클라이언트에서 자신 패킷 식별용
+	uint8_t isNewAccount; // 1 = 이번 로그인에서 신규 가입됨, 0 = 기존 계정
 };
 inline constexpr uint16_t SC_LOGIN_PACKET_SIZE = sizeof(SC_Login);
 
@@ -217,8 +225,16 @@ struct CS_Move : public PacketHeader
 {
 	uint16_t inputFlag;
 	float yaw;
+	float x, y;   // 클라 실제 위치 (Unreal 월드 X, Y)
 };
 inline constexpr uint16_t CS_MOVE_PACKET_SIZE = sizeof(CS_Move);
+
+// 인게임 로딩 완료 통지 + 실제 스폰 위치. 서버가 다른 플레이어/NPC 상태를 응답.
+struct CS_IngameReady : public PacketHeader
+{
+	float x, y, yaw;   // 클라 실제 스폰 위치
+};
+inline constexpr uint16_t CS_INGAME_READY_PACKET_SIZE = sizeof(CS_IngameReady);
 
 struct SC_MoveNotify : public PacketHeader
 {

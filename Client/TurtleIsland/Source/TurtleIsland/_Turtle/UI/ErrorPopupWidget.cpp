@@ -20,5 +20,6 @@ void UErrorPopupWidget::SetMessage(const FString& Title, const FString& Message)
 
 void UErrorPopupWidget::OnConfirmClicked()
 {
+	OnConfirmed.Broadcast();
 	RemoveFromParent();
 }

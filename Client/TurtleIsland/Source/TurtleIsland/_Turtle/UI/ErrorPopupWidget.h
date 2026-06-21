@@ -8,10 +8,17 @@
 #include "Components/TextBlock.h"
 #include "ErrorPopupWidget.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnPopupConfirmed);
+
 UCLASS()
 class TURTLEISLAND_API UErrorPopupWidget : public UUserWidget
 {
 	GENERATED_BODY()
+public:
+	// 확인 버튼 클릭 시 브로드캐스트(팝업은 스스로 닫힘)
+	UPROPERTY(BlueprintAssignable)
+	FOnPopupConfirmed OnConfirmed;
+
 protected:
 	virtual void NativeConstruct() override;
 

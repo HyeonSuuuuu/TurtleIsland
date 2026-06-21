@@ -14,9 +14,8 @@ class TURTLEISLAND_API AOpponentCharacter : public ACharacter
 public:
 	AOpponentCharacter();
 
-	// 2. 모든 상대방의 데이터를 관리하는 TMap (정적 멤버 혹은 서브시스템 권장)
-	// Key: PlayerID (uint32), Value: PlayerData (struct)
-
+	// 서버에서 받은 위치/회전 목표 갱신
+	void UpdateNetState(const FVector& InLocation, const FRotator& InRotation);
 
 protected:
 	virtual void BeginPlay() override;
@@ -24,6 +23,16 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 
-	// 데이터를 업데이트하는 함수 예시
-	// void UpdateRemotePlayerData(uint32 InId, double InX, double InY, double InZ, int32 InInput);
+	// 애님BP가 읽는 현재 속도(2D)
+	UPROPERTY(BlueprintReadOnly, Category = "Net")
+	float Speed = 0.f;
+
+private:
+	FVector  TargetLocation = FVector::ZeroVector;
+	FRotator TargetRotation = FRotator::ZeroRotator;
+	bool     bHasTarget = false;
+
+	// 위치/회전 보간 속도
+	UPROPERTY(EditAnywhere, Category = "Net")
+	float InterpSpeed = 12.f;
 };

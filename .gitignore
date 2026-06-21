@@ -2,6 +2,9 @@
 Docs/지역연계형_필요서류/
 Docs/server-wiki/
 
+# 원본 에셋 (대용량 FBX/사운드/팩 — Content로 import해서 사용, git 제외)
+Client/Assets/
+
 # 작업용 임시 캡처 (MCP/스크린샷)
 Client/TurtleIsland/*.png
 

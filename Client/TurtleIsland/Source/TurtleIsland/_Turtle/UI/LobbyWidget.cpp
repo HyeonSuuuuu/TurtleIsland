@@ -32,6 +32,7 @@ void ULobbyWidget::NativeConstruct()
 			ID->SetText(FText::FromString(Net->GetUserID()));
 
 		Net->OnRoomListUpdated.AddDynamic(this, &ULobbyWidget::OnRoomListUpdated);
+		Net->OnRoomEnterFailed.AddDynamic(this, &ULobbyWidget::OnRoomEnterFailed);
 		PopulateRoomList();
 	}
 }
@@ -40,7 +41,10 @@ void ULobbyWidget::NativeDestruct()
 {
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (Net)
+	{
 		Net->OnRoomListUpdated.RemoveDynamic(this, &ULobbyWidget::OnRoomListUpdated);
+		Net->OnRoomEnterFailed.RemoveDynamic(this, &ULobbyWidget::OnRoomEnterFailed);
+	}
 
 	Super::NativeDestruct();
 }
@@ -83,6 +87,31 @@ void ULobbyWidget::OnRoomListUpdated()
 {
 	FString Filter = SearchInput ? SearchInput->GetText().ToString() : TEXT("");
 	PopulateRoomList(Filter);
+}
+
+void ULobbyWidget::OnRoomEnterFailed(FString Message)
+{
+	UE_LOG(LogTemp, Warning, TEXT("[Lobby] 방 생성/입장 실패: %s"), *Message);
+
+	if (!ErrorPopupClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Lobby] ErrorPopupClass 미할당 — WBP_Lobby 를 열어 'UI > ErrorPopupClass' 에 WBP_ErrorPopup 을 지정하세요."));
+		return;
+	}
+
+	if (ActivePopup)
+	{
+		ActivePopup->RemoveFromParent();
+		ActivePopup = nullptr;
+	}
+
+	ActivePopup = CreateWidget<UErrorPopupWidget>(GetOwningPlayer(), ErrorPopupClass);
+	if (ActivePopup)
+	{
+		ActivePopup->SetMessage(TEXT("알림"), Message);
+		ActivePopup->AddToViewport(20);
+	}
 }
 
 void ULobbyWidget::PopulateRoomList(const FString& Filter)

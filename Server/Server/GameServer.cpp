@@ -3,6 +3,9 @@
 #include "Globals.h"
 #include "NpcTick.h"
 #include "MonsterScript.h"
+#include "ObstacleMap.h"
+#include "Database.h"
+#include <cstdlib>
 
 void GameServer::OnConnect(const uint32_t slotIndex)
 {
@@ -12,8 +15,21 @@ void GameServer::OnConnect(const uint32_t slotIndex)
 void GameServer::OnClose(const uint32_t slotIndex)
 {
 	User* u = GetSession(slotIndex);
-	if (u && u->GetUserState() == User::UserState::Room)
-		u->LeaveCurrentRoom();
+	if (u)
+	{
+		// 온라인 목록에서 제거 (중복 접속 차단용)
+		std::string uid = u->GetUserId();
+		if (!uid.empty())
+		{
+			std::lock_guard lock(g_onlineMutex);
+			auto it = g_onlineUsers.find(uid);
+			if (it != g_onlineUsers.end() && it->second == slotIndex)
+				g_onlineUsers.erase(it);
+		}
+
+		if (u->GetUserState() == User::UserState::Room)
+			u->LeaveCurrentRoom();
+	}
 	Log::Info("[OnClose] slot={}", slotIndex);
 }
 
@@ -61,6 +77,12 @@ void GameServer::Run()
 {
 	User::RegisterHandlers();
 	LoadMonsterScript("Monster.lua"); // 몬스터 정의 로드 (없으면 폴백 스폰)
+	g_obstacleMap.Load("map.dat");    // 인게임 장애물 그리드 (없으면 충돌 비활성)
+
+	// DB 연결: 환경변수 TI_DB_CONN 우선, 없으면 기본값. 실패해도 서버는 계속(로그인 폴백).
+	char connBuf[512] = {}; size_t connLen = 0;
+	getenv_s(&connLen, connBuf, sizeof(connBuf), "TI_DB_CONN");
+	g_db.Connect(connLen > 0 ? connBuf : DbConfig::DEFAULT_CONN);
 	StartServer();                    // IOCP 생성 + 워커 스레드
 	g_iocpHandle = GetIocpHandle();
 	ConnectToAIServer("127.0.0.1", 4444);   // AI 서버(NetConfig::AI_SERVER_PORT) — 없으면 경고 후 진행
@@ -70,5 +92,6 @@ void GameServer::Run()
 void GameServer::Stop()
 {
 	StopNpcTick();
+	g_db.Disconnect();
 	IOCPNetwork::Stop();
 }

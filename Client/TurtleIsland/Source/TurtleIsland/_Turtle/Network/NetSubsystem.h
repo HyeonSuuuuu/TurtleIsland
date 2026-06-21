@@ -48,6 +48,8 @@ struct FRoomMember
 class FNetworker;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginFailed, FString, ErrorMessage);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginSucceeded, bool, bIsNewAccount);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRoomEnterFailed, FString, Message);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomMembersUpdated);
 
@@ -86,6 +88,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Network")
 	void StartRoom();
 
+	// 로비 입장(CS_LOBBY_ENTER 전송 + Lv1_Lobby 로드). 로그인 성공 후 호출.
+	void EnterLobby();
+
+	// 인게임 로딩 완료 통지(CS_INGAME_READY) + 실제 스폰 위치 → 서버가 다른 플레이어/NPC 상태 응답
+	void NotifyIngameReady(float X, float Y, float Yaw);
+
 	// 한 방에 입장 가능한 최대 인원
 	static constexpr int32 MaxRoomMembers = 4;
 
@@ -102,8 +110,21 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Network")
 	TSubclassOf<class AOpponentCharacter> OpponentClass;
 
+	// 상대방을 배치할 아레나 바닥 높이(Z). 서버는 월드 2D(x,y)만 보내므로 Z는 고정값 사용.
+	// Lv3_Ingame PlayerStart Z(=92)에 맞춤. 캐릭터가 바닥에 안 맞으면 여기만 조정.
+	UPROPERTY(EditAnywhere, Category = "Network")
+	float OpponentGroundZ = 92.f;
+
 	UPROPERTY(BlueprintAssignable, Category = "Network")
 	FOnLoginFailed OnLoginFailed;
+
+	// 로그인 성공 시 브로드캐스트. 인자: 이번에 신규 가입되었는지 여부
+	UPROPERTY(BlueprintAssignable, Category = "Network")
+	FOnLoginSucceeded OnLoginSucceeded;
+
+	// 방 생성/입장 실패 시 브로드캐스트(제목 중복, 정원 초과 등). 인자: 안내 메시지
+	UPROPERTY(BlueprintAssignable, Category = "Network")
+	FOnRoomEnterFailed OnRoomEnterFailed;
 
 	UPROPERTY(BlueprintAssignable, Category = "Network")
 	FOnRoomListUpdated OnRoomListUpdated;

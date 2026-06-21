@@ -1,6 +1,54 @@
 ﻿#include "pch.h"
 #include "User.h"
 #include "Globals.h"
+#include "ObstacleMap.h"
+#include "Database.h"
+
+// -------------------------------------------------------
+// 로비 방 목록 푸시 헬퍼
+// -------------------------------------------------------
+namespace
+{
+	// 현재 활성 방들로 SC_LOBBY_RESPONSE(가변 길이) 패킷 구성
+	std::vector<uint8_t> BuildLobbyRoomListPacket()
+	{
+		constexpr uint32_t MAX_PER_PACKET =
+			(MAX_SOCKBUF - sizeof(PacketHeader) - sizeof(int16_t)) / sizeof(RoomInfo);
+
+		std::vector<RoomInfo> roomList;
+		roomList.reserve(MAX_PER_PACKET);
+		for (uint32_t i = 0; i < MAX_ROOMS && roomList.size() < MAX_PER_PACKET; ++i)
+			if (g_rooms[i].IsActive())
+				roomList.push_back(g_rooms[i].GetRoomInfo());
+
+		const uint32_t roomCount  = static_cast<uint32_t>(roomList.size());
+		const uint32_t packetSize = static_cast<uint32_t>(
+			sizeof(PacketHeader) + sizeof(int16_t) + sizeof(RoomInfo) * roomCount);
+
+		std::vector<uint8_t> buf(packetSize, 0);
+		auto* header = reinterpret_cast<PacketHeader*>(buf.data());
+		header->size = static_cast<uint16_t>(packetSize);
+		header->id   = static_cast<uint16_t>(PACKET_ID::SC_LOBBY_RESPONSE);
+		*reinterpret_cast<int16_t*>(buf.data() + sizeof(PacketHeader)) = static_cast<int16_t>(roomCount);
+		if (roomCount > 0)
+			CopyMemory(buf.data() + sizeof(PacketHeader) + sizeof(int16_t),
+				roomList.data(), sizeof(RoomInfo) * roomCount);
+		return buf;
+	}
+
+	// 로비 상태인 모든 유저에게 최신 방 목록 푸시 (방 생성/입장/퇴장 시 호출)
+	void BroadcastRoomListToLobby()
+	{
+		std::vector<uint8_t> buf = BuildLobbyRoomListPacket();
+		std::lock_guard lock(g_onlineMutex);
+		for (auto& [uid, slot] : g_onlineUsers)
+		{
+			User* u = g_userPool.Get(slot);
+			if (u && u->GetUserState() == User::UserState::Lobby)
+				u->Send(std::span<const uint8_t>(buf.data(), buf.size()));
+		}
+	}
+}
 
 // -------------------------------------------------------
 // Lifecycle
@@ -58,6 +106,7 @@ void User::RegisterHandlers()
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_CHAT_REQUEST)]  = &User::OnRoomChatRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ROOM_START_REQUEST)] = &User::OnRoomStartRequest;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_MOVE)]               = &User::OnMove;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_INGAME_READY)]       = &User::OnIngameReady;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_NPC_CHAT)]           = &User::OnNpcChat;
 }
 
@@ -96,6 +145,9 @@ void User::LeaveCurrentRoom()
 		room.Broadcast(std::span<const uint8_t>(
 			reinterpret_cast<const uint8_t*>(&notify), SC_ROOM_LEAVE_NOTIFY_PACKET_SIZE));
 	}
+
+	// 방 인원 변화/방 소멸이 로비 목록에 반영되도록 푸시
+	BroadcastRoomListToLobby();
 }
 
 // -------------------------------------------------------
@@ -115,13 +167,50 @@ void User::OnLoginRequest(const Packet& packet)
 
 	auto* pLogin = reinterpret_cast<const CS_Login*>(packet.dataSpan.data());
 
-	// TODO: DB authentication
-	Login(pLogin->userID);
-	Log::Info("[Login] userId={} slot={} id={}", m_userId, GetSlotIndex(), GetId());
+	// DB 인증: 존재하면 비번 검증, 없으면 자동 가입. DB 미연결이면 폴백(통과).
+	std::string loginId(pLogin->userID, strnlen(pLogin->userID, MAX_USER_ID_LEN));
+	std::string password(pLogin->userPW, strnlen(pLogin->userPW, MAX_USER_PW_LEN));
+
+	uint8_t isNewAccount = 0;
+	if (g_db.IsConnected())
+	{
+		uint64_t accountId = 0;
+		AuthResult r = g_db.LoginOrRegister(loginId, password, accountId);
+		// Ok = 기존 계정 로그인, Registered = 신규 가입 — 둘 다 성공
+		if (r != AuthResult::Ok && r != AuthResult::Registered)
+		{
+			SC_Login fail{};
+			fail.result   = static_cast<uint8_t>(ERROR_CODE::USER_LOGIN_FAIL);
+			fail.playerId = 0;
+			SendPacket(PACKET_ID::SC_LOGIN_RESPONSE, fail);
+			Log::Warning("[Login] 실패 userId={} result={}", loginId, static_cast<int>(r));
+			return;
+		}
+		isNewAccount = (r == AuthResult::Registered) ? 1 : 0;
+	}
+
+	// 중복 접속 차단: 같은 ID가 이미 온라인이면 거부
+	{
+		std::lock_guard lock(g_onlineMutex);
+		if (g_onlineUsers.find(loginId) != g_onlineUsers.end())
+		{
+			SC_Login fail{};
+			fail.result   = static_cast<uint8_t>(ERROR_CODE::USER_ALREADY_LOGGED_IN);
+			fail.playerId = 0;
+			SendPacket(PACKET_ID::SC_LOGIN_RESPONSE, fail);
+			Log::Warning("[Login] 중복 접속 차단 userId={}", loginId);
+			return;
+		}
+		g_onlineUsers[loginId] = GetSlotIndex();
+	}
+
+	Login(loginId);
+	Log::Info("[Login] userId={} slot={} id={} new={}", m_userId, GetSlotIndex(), GetId(), isNewAccount);
 
 	SC_Login response{};
-	response.result   = static_cast<uint8_t>(ERROR_CODE::NONE);
-	response.playerId = GetId();
+	response.result       = static_cast<uint8_t>(ERROR_CODE::NONE);
+	response.playerId     = GetId();
+	response.isNewAccount = isNewAccount;
 	SendPacket(PACKET_ID::SC_LOGIN_RESPONSE, response);
 }
 
@@ -130,40 +219,9 @@ void User::OnLobbyEnterRequest(const Packet& packet)
 	if (m_userState != UserState::Lobby)
 		return;
 
-	// Collect room list (cap at what fits in one packet)
-	constexpr uint32_t MAX_PER_PACKET =
-		(MAX_SOCKBUF - sizeof(PacketHeader) - sizeof(int16_t)) / sizeof(RoomInfo);
-
-	std::vector<RoomInfo> roomList;
-	roomList.reserve(MAX_PER_PACKET);
-
-	for (uint32_t i = 0; i < MAX_ROOMS && roomList.size() < MAX_PER_PACKET; ++i)
-	{
-		if (g_rooms[i].IsActive())
-			roomList.push_back(g_rooms[i].GetRoomInfo());
-	}
-
-	// Build variable-length packet manually
-	const uint32_t roomCount   = static_cast<uint32_t>(roomList.size());
-	const uint32_t packetSize  = static_cast<uint32_t>(
-		sizeof(PacketHeader) + sizeof(int16_t) + sizeof(RoomInfo) * roomCount);
-
-	std::vector<uint8_t> buf(packetSize, 0);
-	auto* header         = reinterpret_cast<PacketHeader*>(buf.data());
-	header->size         = static_cast<uint16_t>(packetSize);
-	header->id           = static_cast<uint16_t>(PACKET_ID::SC_LOBBY_RESPONSE);
-
-	auto* countPtr       = reinterpret_cast<int16_t*>(buf.data() + sizeof(PacketHeader));
-	*countPtr            = static_cast<int16_t>(roomCount);
-
-	if (roomCount > 0)
-	{
-		CopyMemory(buf.data() + sizeof(PacketHeader) + sizeof(int16_t),
-			roomList.data(), sizeof(RoomInfo) * roomCount);
-	}
-
+	std::vector<uint8_t> buf = BuildLobbyRoomListPacket();
 	Send(std::span<const uint8_t>(buf.data(), buf.size()));
-	Log::Info("[Lobby] userId={} roomCount={}", m_userId, roomCount);
+	Log::Info("[Lobby] userId={} 방 목록 전송", m_userId);
 }
 
 void User::OnRoomEnterRequest(const Packet& packet)
@@ -216,7 +274,26 @@ void User::OnRoomEnterRequest(const Packet& packet)
 		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&notify), SC_ROOM_ENTER_NOTIFY_PACKET_SIZE),
 		mySlot);
 
+	// 입장자에게 '이미 방에 있던' 기존 참가자 목록을 각각 SC_ROOM_ENTER_NOTIFY 로 전송
+	// (클라는 이 패킷으로 멤버 목록을 채움 — 자기 자신은 mySlot 제외로 빠짐)
+	g_rooms[roomIdx].ForEachUser([this](uint32_t slot)
+	{
+		User* member = g_userPool.Get(slot);
+		if (!member) return;
+
+		SC_RoomEnterNotify info{};
+		info.size      = SC_ROOM_ENTER_NOTIFY_PACKET_SIZE;
+		info.id        = static_cast<uint16_t>(PACKET_ID::SC_ROOM_ENTER_NOTIFY);
+		info.userIndex = member->GetId();
+		strncpy_s(info.userID, member->GetUserId().c_str(), MAX_USER_ID_LEN);
+
+		Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&info), SC_ROOM_ENTER_NOTIFY_PACKET_SIZE));
+	}, mySlot);
+
 	Log::Info("[RoomEnter] userId={} roomIdx={} result={}", m_userId, roomIdx, static_cast<int>(result));
+
+	// 인원 수가 바뀌었으니 로비 유저들에게 방 목록 푸시
+	BroadcastRoomListToLobby();
 }
 
 void User::OnRoomCreateRequest(const Packet& packet)
@@ -230,6 +307,25 @@ void User::OnRoomCreateRequest(const Packet& packet)
 	auto* pReq = reinterpret_cast<const CS_RoomCreate*>(packet.dataSpan.data());
 	std::string_view title(pReq->roomTitle,
 		strnlen(pReq->roomTitle, MAX_ROOM_TITLE_LEN));
+
+	// 같은 제목의 활성 방이 있으면 거부 (제목 중복 금지)
+	if (!title.empty())
+	{
+		for (uint32_t i = 0; i < MAX_ROOMS; ++i)
+		{
+			if (!g_rooms[i].IsActive()) continue;
+			RoomInfo info = g_rooms[i].GetRoomInfo();
+			std::string_view existing(info.roomTitle, strnlen(info.roomTitle, MAX_ROOM_TITLE_LEN));
+			if (title == existing)
+			{
+				SC_RoomEnter dup{};
+				dup.result = static_cast<uint8_t>(ERROR_CODE::ROOM_TITLE_DUP);
+				SendPacket(PACKET_ID::SC_ROOM_ENTER_RESPONSE, dup);
+				Log::Warning("[RoomCreate] 제목 중복 거부 title={}", std::string(title));
+				return;
+			}
+		}
+	}
 
 	// Find the first free room slot
 	uint32_t roomIdx = MAX_ROOMS;
@@ -272,6 +368,9 @@ void User::OnRoomCreateRequest(const Packet& packet)
 	SendPacket(PACKET_ID::SC_ROOM_ENTER_RESPONSE, response);
 
 	Log::Info("[RoomCreate] userId={} roomIdx={} title={}", m_userId, roomIdx, std::string(title));
+
+	// 로비 유저들에게 새 방 목록 푸시(실시간 갱신)
+	BroadcastRoomListToLobby();
 }
 
 void User::OnRoomLeaveRequest(const Packet& packet)
@@ -348,14 +447,9 @@ void User::OnMove(const Packet& packet)
 	auto* pMove  = reinterpret_cast<const CS_Move*>(packet.dataSpan.data());
 	uint32_t roomIdx = m_roomIndex.value();
 
-	// Simple server-side position update (no physics validation for now)
-	constexpr float SPEED = 5.0f; // units/tick
-	float rad = pMove->yaw * 3.14159265f / 180.0f;
-	uint16_t flags = pMove->inputFlag;
-	if (flags & 0x01) { x += std::cos(rad) * SPEED; y += std::sin(rad) * SPEED; } // forward
-	if (flags & 0x02) { x -= std::cos(rad) * SPEED; y -= std::sin(rad) * SPEED; } // backward
-	if (flags & 0x04) { x -= std::sin(rad) * SPEED; y += std::cos(rad) * SPEED; } // left
-	if (flags & 0x08) { x += std::sin(rad) * SPEED; y -= std::cos(rad) * SPEED; } // right
+	// 클라가 보낸 실제 위치를 그대로 중계
+	x   = pMove->x;
+	y   = pMove->y;
 	yaw = pMove->yaw;
 
 	SC_MoveNotify notify{};
@@ -370,6 +464,41 @@ void User::OnMove(const Packet& packet)
 	g_rooms[roomIdx].Broadcast(
 		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&notify), SC_MOVE_NOTIFY_PACKET_SIZE),
 		packet.sessionIndex); // exclude sender
+}
+
+void User::OnIngameReady(const Packet& packet)
+{
+	if (m_userState != UserState::Room || !m_roomIndex.has_value())
+		return;
+
+	Room& room = g_rooms[m_roomIndex.value()];
+
+	// 클라가 보낸 실제 스폰 위치 채택 (원점 근처면 무시)
+	if (packet.dataSpan.size() >= CS_INGAME_READY_PACKET_SIZE)
+	{
+		auto* p = reinterpret_cast<const CS_IngameReady*>(packet.dataSpan.data());
+		if (p->x < -1.f || p->x > 1.f || p->y < -1.f || p->y > 1.f)
+		{
+			x = p->x; y = p->y; yaw = p->yaw;
+		}
+	}
+
+	// 1) 나에게: 같은 방의 다른 플레이어 위치 + NPC 스폰 (입장 즉시 보이도록)
+	room.SendPlayerStatesToUser(GetSlotIndex());
+	room.BroadcastNpcSpawns(GetSlotIndex());
+
+	// 2) 남들에게: 내 위치 (이미 인게임인 사람들이 나를 스폰)
+	SC_MoveNotify me{};
+	me.size      = SC_MOVE_NOTIFY_PACKET_SIZE;
+	me.id        = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
+	me.userIndex = GetId();
+	me.inputFlag = 0;
+	me.x = x; me.y = y; me.yaw = yaw;
+	room.Broadcast(
+		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&me), SC_MOVE_NOTIFY_PACKET_SIZE),
+		GetSlotIndex());
+
+	Log::Info("[IngameReady] userId={} pos=({},{})", m_userId, x, y);
 }
 
 void User::OnNpcChat(const Packet& packet)

@@ -34,6 +34,9 @@ public:
 	void TickNpcs();    // 틱 스레드가 호출: AI/이동 갱신 + 방 broadcast
 	void BroadcastNpcSpawns(uint32_t toSlot = INVALID_SESSION_INDEX); // 현재 NPC 스폰 통지
 
+	// toSlot 유저에게 같은 방의 '다른' 플레이어들의 현재 위치를 SC_MoveNotify 로 전송(초기 스폰용)
+	void SendPlayerStatesToUser(uint32_t toSlot);
+
 	RoomInfo GetRoomInfo() const;
 
 	// Lock-free reads — safe because m_isActive is atomic

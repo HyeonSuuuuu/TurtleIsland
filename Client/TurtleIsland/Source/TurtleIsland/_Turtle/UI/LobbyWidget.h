@@ -9,6 +9,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/EditableText.h"
 #include "RoomEntryWidget.h"
+#include "ErrorPopupWidget.h"
 #include "LobbyWidget.generated.h"
 
 UCLASS()
@@ -40,8 +41,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UUserWidget> CreateRoomPopupClass;
 
+	// WBP_ErrorPopup 할당 (방 생성/입장 실패 안내용)
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UErrorPopupWidget> ErrorPopupClass;
+
 	UPROPERTY()
 	UUserWidget* ActiveCreateRoomPopup;
+
+	UPROPERTY()
+	UErrorPopupWidget* ActivePopup;
 
 	UFUNCTION()
 	void OnCreateRoomClicked();
@@ -54,6 +62,10 @@ protected:
 
 	UFUNCTION()
 	void OnRoomListUpdated();
+
+	// 방 생성/입장 실패 안내 팝업
+	UFUNCTION()
+	void OnRoomEnterFailed(FString Message);
 
 	void PopulateRoomList(const FString& Filter = TEXT(""));
 };

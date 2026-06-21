@@ -22,9 +22,18 @@ void ULoginWidget::NativeConstruct()
 	if (SettingsButton)
 		SettingsButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSettingsButtonClicked);
 
+	// 엔터 입력 시 로그인 시도 (ID/PW 칸 어느 쪽에서 눌러도)
+	if (UserIDInput)
+		UserIDInput->OnTextCommitted.AddDynamic(this, &ULoginWidget::OnLoginTextCommitted);
+	if (UserPWInput)
+		UserPWInput->OnTextCommitted.AddDynamic(this, &ULoginWidget::OnLoginTextCommitted);
+
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (Net)
+	{
 		Net->OnLoginFailed.AddDynamic(this, &ULoginWidget::ShowError);
+		Net->OnLoginSucceeded.AddDynamic(this, &ULoginWidget::OnLoginSucceeded);
+	}
 }
 
 void ULoginWidget::OnSettingsButtonClicked()
@@ -64,7 +73,10 @@ void ULoginWidget::NativeDestruct()
 
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (Net)
+	{
 		Net->OnLoginFailed.RemoveDynamic(this, &ULoginWidget::ShowError);
+		Net->OnLoginSucceeded.RemoveDynamic(this, &ULoginWidget::OnLoginSucceeded);
+	}
 
 	Super::NativeDestruct();
 }
@@ -85,6 +97,48 @@ void ULoginWidget::ShowError(FString Message)
 		ActivePopup->SetMessage(TEXT("오류"), Message);
 		ActivePopup->AddToViewport(10);
 	}
+}
+
+void ULoginWidget::OnLoginSucceeded(bool bIsNewAccount)
+{
+	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
+	if (!Net) return;
+
+	// 신규 가입이면 안내 팝업을 띄우고, 확인을 눌러야 로비로 진입(레벨 전환에 팝업이 사라지지 않게)
+	if (bIsNewAccount && ErrorPopupClass)
+	{
+		if (ActivePopup)
+		{
+			ActivePopup->RemoveFromParent();
+			ActivePopup = nullptr;
+		}
+
+		ActivePopup = CreateWidget<UErrorPopupWidget>(GetOwningPlayer(), ErrorPopupClass);
+		if (ActivePopup)
+		{
+			ActivePopup->SetMessage(TEXT("환영합니다"), TEXT("계정이 생성되었습니다."));
+			ActivePopup->OnConfirmed.AddDynamic(this, &ULoginWidget::OnAccountCreatedConfirmed);
+			ActivePopup->AddToViewport(10);
+			return;
+		}
+	}
+
+	// 기존 계정이거나 팝업 클래스 미설정 → 바로 로비 진입
+	Net->EnterLobby();
+}
+
+void ULoginWidget::OnAccountCreatedConfirmed()
+{
+	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
+	if (Net)
+		Net->EnterLobby();
+}
+
+void ULoginWidget::OnLoginTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+	// 엔터로 커밋된 경우에만 로그인 시도(포커스 이동/클릭아웃은 무시)
+	if (CommitMethod == ETextCommit::OnEnter)
+		OnLoginButtonClicked();
 }
 
 void ULoginWidget::OnLoginButtonClicked()

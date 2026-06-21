@@ -87,15 +87,19 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 			UNetSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 			if (NetSubsystem)
 			{
-				float CurrentYaw = GetController()
-								? GetController()->GetControlRotation().Yaw
-								: GetActorRotation().Yaw;
+				// 캐릭터 실제 facing (이동 방향 회전 포함)
+				float CurrentYaw = GetActorRotation().Yaw;
 
 				CS_Move MovePacket{};
 				MovePacket.size      = CS_MOVE_PACKET_SIZE;
 				MovePacket.id        = (uint16)PACKET_ID::CS_MOVE;
 				MovePacket.inputFlag = InputFlag;
 				MovePacket.yaw       = CurrentYaw;
+
+				// 실제 위치 함께 전송
+				const FVector Loc = GetActorLocation();
+				MovePacket.x = Loc.X;
+				MovePacket.y = Loc.Y;
 
 				TArray<uint8> SendBuffer;
 				SendBuffer.SetNumUninitialized(CS_MOVE_PACKET_SIZE);

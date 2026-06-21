@@ -62,24 +62,20 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
 				{
-					UE_LOG(LogTemp, Log, TEXT("[Net] 로그인 성공 (playerId=%d)"), Pkt->playerId);
+					UE_LOG(LogTemp, Log, TEXT("[Net] 로그인 성공 (playerId=%d, new=%d)"),
+						Pkt->playerId, Pkt->isNewAccount);
 					myId = Pkt->playerId;
 
-					// 로비 입장 요청
-					CS_LobbyEnter LobbyPkt{};
-					LobbyPkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
-					LobbyPkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
-					TArray<uint8> Buf;
-					Buf.SetNumUninitialized(CS_LOBBY_ENTER_PACKET_SIZE);
-					FMemory::Memcpy(Buf.GetData(), &LobbyPkt, CS_LOBBY_ENTER_PACKET_SIZE);
-					EnqueSendPacket(MoveTemp(Buf));
-
-					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
+					// 로비 진입은 LoginWidget이 결정(신규 가입이면 안내 팝업 확인 후 진입)
+					OnLoginSucceeded.Broadcast(Pkt->isNewAccount != 0);
 				}
 				else
 				{
 					UE_LOG(LogTemp, Warning, TEXT("[Net] 로그인 실패 (result=%d)"), Pkt->result);
-					OnLoginFailed.Broadcast(TEXT("아이디 또는 비밀번호가 올바르지 않습니다."));
+					const FString Msg = (Pkt->result == static_cast<uint8>(ERROR_CODE::USER_ALREADY_LOGGED_IN))
+						? TEXT("이미 접속 중인 계정입니다.")
+						: TEXT("아이디 또는 비밀번호가 올바르지 않습니다.");
+					OnLoginFailed.Broadcast(Msg);
 				}
 			break;
 			}
@@ -137,6 +133,10 @@ void UNetSubsystem::Tick(float DeltaTime)
 				else
 				{
 					UE_LOG(LogTemp, Warning, TEXT("[Net] 방 입장 실패 (result=%d)"), Pkt->result);
+					const FString Msg = (Pkt->result == static_cast<uint8>(ERROR_CODE::ROOM_TITLE_DUP))
+						? TEXT("같은 제목의 방이 이미 있습니다.")
+						: TEXT("방에 입장할 수 없습니다. (정원 초과 또는 게임 중)");
+					OnRoomEnterFailed.Broadcast(Msg);
 				}
 			break;
 			}
@@ -175,32 +175,33 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
 				// 수신되는 건 항상 다른 플레이어의 움직임
-				// 서버는 2D (x, y) 좌표 사용 → Unreal (X, Y)로 매핑, 높이(Z)는 고정
-				auto ToUnrealLoc = [](float sx, float sy) -> FVector
+				// 서버는 월드 2D (x, y) 좌표 사용 → Unreal (X, Y) 그대로, 높이(Z)는 바닥 고정
+				auto ToUnrealLoc = [GroundZ = OpponentGroundZ](float sx, float sy) -> FVector
 				{
-					return FVector(sx, sy, 0.f);
+					return FVector(sx, sy, GroundZ);
 				};
+
+				const FVector NewLocation = ToUnrealLoc(Pkt->x, Pkt->y);
+				const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 
 				if (players.Contains(Pkt->userIndex))
 				{
-					AOpponentCharacter* Opponent = players[Pkt->userIndex];
-					if (Opponent)
-					{
-						FVector NewLocation = ToUnrealLoc(Pkt->x, Pkt->y);
-						FRotator NewRotation(0.f, Pkt->yaw, 0.f);
-						Opponent->SetActorLocationAndRotation(NewLocation, NewRotation);
-					}
+					if (AOpponentCharacter* Opponent = players[Pkt->userIndex])
+						Opponent->UpdateNetState(NewLocation, NewRotation);
 				}
 				else
 				{
 					// 처음 보는 플레이어 → 스폰
 					if (OpponentClass && GetWorld())
 					{
-						FVector SpawnPos = ToUnrealLoc(Pkt->x, Pkt->y);
+						FActorSpawnParameters Params;
+						Params.SpawnCollisionHandlingOverride =
+							ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 						AOpponentCharacter* NewOpponent = GetWorld()->SpawnActor<AOpponentCharacter>(
-							OpponentClass, SpawnPos, FRotator(0.f, Pkt->yaw, 0.f));
+							OpponentClass, NewLocation, NewRotation, Params);
 						if (NewOpponent)
 						{
+							NewOpponent->UpdateNetState(NewLocation, NewRotation);
 							players.Emplace(Pkt->userIndex, NewOpponent);
 							UE_LOG(LogTemp, Log, TEXT("[Net] 상대방 스폰 (userId=%d)"), Pkt->userIndex);
 						}
@@ -254,6 +255,38 @@ TStatId UNetSubsystem::GetStatId() const
 void UNetSubsystem::EnqueSendPacket(TArray<uint8>&& packet)
 {
 	Networker->EnqueSendPacket(MoveTemp(packet));
+}
+
+void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
+{
+	CS_IngameReady Pkt{};
+	Pkt.size = CS_INGAME_READY_PACKET_SIZE;
+	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_INGAME_READY);
+	Pkt.x    = X;
+	Pkt.y    = Y;
+	Pkt.yaw  = Yaw;
+
+	TArray<uint8> Buf;
+	Buf.SetNumUninitialized(CS_INGAME_READY_PACKET_SIZE);
+	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_INGAME_READY_PACKET_SIZE);
+	EnqueSendPacket(MoveTemp(Buf));
+
+	UE_LOG(LogTemp, Log, TEXT("[Net] 인게임 준비 완료 통지"));
+}
+
+void UNetSubsystem::EnterLobby()
+{
+	// CS_LOBBY_ENTER 전송 후 로비 레벨 로드
+	CS_LobbyEnter LobbyPkt{};
+	LobbyPkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
+	LobbyPkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
+
+	TArray<uint8> Buf;
+	Buf.SetNumUninitialized(CS_LOBBY_ENTER_PACKET_SIZE);
+	FMemory::Memcpy(Buf.GetData(), &LobbyPkt, CS_LOBBY_ENTER_PACKET_SIZE);
+	EnqueSendPacket(MoveTemp(Buf));
+
+	UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
 }
 
 void UNetSubsystem::EnterRoom(int32 RoomIndex)

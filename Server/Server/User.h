@@ -43,6 +43,7 @@ private:
 	void OnRoomChatRequest(const Packet& packet);
 	void OnRoomStartRequest(const Packet& packet);
 	void OnMove(const Packet& packet);
+	void OnIngameReady(const Packet& packet);
 	void OnNpcChat(const Packet& packet);
 
 	// ---------- Helpers ----------

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Network">
+      <UniqueIdentifier>{a1b2c3d4-0001-4a10-9f01-100000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game">
+      <UniqueIdentifier>{a1b2c3d4-0002-4a10-9f01-100000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{a1b2c3d4-0003-4a10-9f01-100000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{a1b2c3d4-0004-4a10-9f01-100000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Data">
+      <UniqueIdentifier>{a1b2c3d4-0005-4a10-9f01-100000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Database">
+      <UniqueIdentifier>{a1b2c3d4-0006-4a10-9f01-100000000006}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Session.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="IOCPNetwork.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="GameServer.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="GameMain.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="User.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Room.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="NpcTick.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="MonsterScript.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="ObstacleMap.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Database.cpp">
+      <Filter>Database</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Log.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Define.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Ebr.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Mpsc.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Pool.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Globals.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Session.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="IOCPNetwork.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="GameServer.h">
+      <Filter>Network</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="NPC.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="NpcTick.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="User.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Room.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="MonsterScript.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="ObstacleMap.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Database.h">
+      <Filter>Database</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Common\Protocol.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Common\Type.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Monster.lua">
+      <Filter>Data</Filter>
+    </None>
+    <None Include="map.dat">
+      <Filter>Data</Filter>
+    </None>
+    <None Include="sql\01_account.sql">
+      <Filter>Data</Filter>
+    </None>
+    <None Include="sql\02_account_procs.sql">
+      <Filter>Data</Filter>
+    </None>
+    <None Include="sql\README.md">
+      <Filter>Data</Filter>
+    </None>
+  </ItemGroup>
+</Project>
