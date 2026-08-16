@@ -85,7 +85,7 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 		if (InputFlag > 0)
 		{
 			UNetSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetSubsystem>();
-			if (NetSubsystem)
+			if (NetSubsystem && !NetSubsystem->IsSinglePlay())
 			{
 				// 캐릭터 실제 facing (이동 방향 회전 포함)
 				float CurrentYaw = GetActorRotation().Yaw;
@@ -106,8 +106,10 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 				FMemory::Memcpy(SendBuffer.GetData(), &MovePacket, CS_MOVE_PACKET_SIZE);
 
 				NetSubsystem->EnqueSendPacket(MoveTemp(SendBuffer));
-				InputFlag = 0;
 			}
+
+			// 싱글 모드에서도 매 주기 비워준다(누적 방지)
+			InputFlag = 0;
 		}
 	}
 }

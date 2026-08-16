@@ -21,6 +21,8 @@ void ULoginWidget::NativeConstruct()
 		LoginButton->OnClicked.AddDynamic(this, &ULoginWidget::OnLoginButtonClicked);
 	if (SettingsButton)
 		SettingsButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSettingsButtonClicked);
+	if (SinglePlayButton)
+		SinglePlayButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSinglePlayButtonClicked);
 
 	// 엔터 입력 시 로그인 시도 (ID/PW 칸 어느 쪽에서 눌러도)
 	if (UserIDInput)
@@ -33,7 +35,22 @@ void ULoginWidget::NativeConstruct()
 	{
 		Net->OnLoginFailed.AddDynamic(this, &ULoginWidget::ShowError);
 		Net->OnLoginSucceeded.AddDynamic(this, &ULoginWidget::OnLoginSucceeded);
+
+		// 로그인 화면으로 돌아온 경우 싱글 상태를 초기화
+		Net->StartMultiPlay();
 	}
+}
+
+void ULoginWidget::OnSinglePlayButtonClicked()
+{
+	if (ActivePopup)
+	{
+		ActivePopup->RemoveFromParent();
+		ActivePopup = nullptr;
+	}
+
+	if (UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>())
+		Net->StartSinglePlay();
 }
 
 void ULoginWidget::OnSettingsButtonClicked()

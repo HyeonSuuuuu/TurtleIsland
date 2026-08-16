@@ -24,6 +24,10 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	class UButton* SettingsButton;
 
+	// 싱글 플레이 진입 버튼. WBP_Login에 없어도 컴파일되도록 Optional.
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UButton* SinglePlayButton;
+
 	UPROPERTY(meta = (BindWidget))
 	class UEditableText* UserIDInput;
 
@@ -52,6 +56,10 @@ protected:
 
 	UFUNCTION()
 	void OnSettingsButtonClicked();
+
+	// 서버 접속 없이 바로 인게임으로
+	UFUNCTION()
+	void OnSinglePlayButtonClicked();
 
 	UFUNCTION()
 	void OnServerIPSaved(FString NewIP);

@@ -8,6 +8,14 @@
 #include "OpponentCharacter.h"
 #include "NetSubsystem.generated.h"
 
+// 플레이 모드. Single이면 서버에 접속하지 않고 패킷도 전혀 주고받지 않는다.
+UENUM(BlueprintType)
+enum class EPlayMode : uint8
+{
+	Multi  UMETA(DisplayName = "멀티"),
+	Single UMETA(DisplayName = "싱글")
+};
+
 USTRUCT(BlueprintType)
 struct FRoomData
 {
@@ -91,6 +99,32 @@ public:
 	// 로비 입장(CS_LOBBY_ENTER 전송 + Lv1_Lobby 로드). 로그인 성공 후 호출.
 	void EnterLobby();
 
+	// ---- 플레이 모드 ----
+
+	// 싱글 플레이 시작. 네트워크를 끊고 로그인/로비/방을 건너뛰어 바로 인게임으로 진입.
+	UFUNCTION(BlueprintCallable, Category = "PlayMode")
+	void StartSinglePlay();
+
+	// 멀티 플레이 모드로 전환(로그인 화면 기본 상태). 실제 접속은 로그인 시 Reconnect가 담당.
+	UFUNCTION(BlueprintCallable, Category = "PlayMode")
+	void StartMultiPlay();
+
+	UFUNCTION(BlueprintPure, Category = "PlayMode")
+	bool IsSinglePlay() const { return PlayMode == EPlayMode::Single; }
+
+	UFUNCTION(BlueprintPure, Category = "PlayMode")
+	EPlayMode GetPlayMode() const { return PlayMode; }
+
+	// 인게임에서 타이틀(로그인) 화면으로 복귀. 접속을 끊고 세션 상태를 비운다.
+	UFUNCTION(BlueprintCallable, Category = "PlayMode")
+	void ReturnToTitle();
+
+	// 싱글 플레이로 들어갈 인게임 레벨 이름
+	static const FName IngameLevelName;
+
+	// 타이틀(로그인) 레벨 이름
+	static const FName LoginLevelName;
+
 	// 인게임 로딩 완료 통지(CS_INGAME_READY) + 실제 스폰 위치 → 서버가 다른 플레이어/NPC 상태 응답
 	void NotifyIngameReady(float X, float Y, float Yaw);
 
@@ -149,8 +183,18 @@ public:
 	FString CurrentRoomHost;
 
 protected:
+	// 소켓 스레드 생성/정리. 싱글 모드에서는 아예 만들지 않는다.
+	void StartNetwork();
+	void ShutdownNetwork();
+
+	// 방/유저 등 접속 세션에 묶인 상태를 전부 비운다.
+	void ResetSessionState();
+
 	UPROPERTY(BlueprintReadOnly, Category = "Network")
 	bool IsConnect = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "PlayMode")
+	EPlayMode PlayMode = EPlayMode::Multi;
 
 	FString StoredServerIP = TEXT("127.0.0.1");
 	FString StoredUserID;

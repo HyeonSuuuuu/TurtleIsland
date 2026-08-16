@@ -9,7 +9,9 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "_Turtle/Network/NetSubsystem.h"
+#include "_Turtle/UI/PauseMenuWidget.h"
 #include "TurtleIsland.h"
+#include "Kismet/GameplayStatics.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 void ATurtleIslandPlayerController::BeginPlay()
@@ -28,7 +30,8 @@ void ATurtleIslandPlayerController::BeginPlay()
 		// 인게임 로딩 완료 → 서버에 현재 상태(다른 플레이어/NPC) 요청
 		if (UGameInstance* GI = GetGameInstance())
 		{
-			if (UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>())
+			UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>();
+			if (Net && !Net->IsSinglePlay())
 			{
 				FVector Loc = FVector::ZeroVector;
 				float Yaw = 0.f;
@@ -86,7 +89,53 @@ void ATurtleIslandPlayerController::SetupInputComponent()
 				}
 			}
 		}
+
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ATurtleIslandPlayerController::TogglePauseMenu);
 	}
+}
+
+void ATurtleIslandPlayerController::TogglePauseMenu()
+{
+	if (PauseMenuWidget)
+	{
+		ClosePauseMenu();
+		return;
+	}
+
+	// 이 컨트롤러는 로비/방에서도 쓰이므로 인게임에서만 연다
+	if (!GetWorld() || !GetWorld()->GetMapName().Contains(UNetSubsystem::IngameLevelName.ToString()))
+		return;
+
+	if (!PauseMenuWidgetClass) return;
+
+	PauseMenuWidget = CreateWidget<UPauseMenuWidget>(this, PauseMenuWidgetClass);
+	if (!PauseMenuWidget) return;
+
+	PauseMenuWidget->AddToViewport(100);
+
+	SetShowMouseCursor(true);
+	SetInputMode(FInputModeUIOnly());
+
+	// 멀티에서 멈추면 서버 패킷만 쌓이므로 싱글에서만 일시정지
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>();
+		if (Net && Net->IsSinglePlay())
+			UGameplayStatics::SetGamePaused(this, true);
+	}
+}
+
+void ATurtleIslandPlayerController::ClosePauseMenu()
+{
+	if (!PauseMenuWidget) return;
+
+	PauseMenuWidget->RemoveFromParent();
+	PauseMenuWidget = nullptr;
+
+	UGameplayStatics::SetGamePaused(this, false);
+
+	SetShowMouseCursor(false);
+	SetInputMode(FInputModeGameOnly());
 }
 
 bool ATurtleIslandPlayerController::ShouldUseTouchControls() const
