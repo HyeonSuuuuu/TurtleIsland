@@ -81,3 +81,13 @@ $RECYCLE.BIN/
 
 # --- Claude Code worktrees (작업용 임시 폴더) ---
 **/.claude/worktrees/
+# 마을 이식용 T3D 작업 파일 (재생성 가능, 68MB x2)
+Client/TurtleIsland/t3d/
+Client/TurtleIsland/이거.txt
+
+# MedievalVillage 팩 중 미사용분 (참조 0건)
+Client/TurtleIsland/Content/MedievalVillage/Demo/
+Client/TurtleIsland/Content/MedievalVillage/Sequences/
+Client/TurtleIsland/Content/MedievalVillage/UI/
+Client/TurtleIsland/Content/MedievalVillage/Levels/*.umap
+Client/TurtleIsland/Content/MedievalVillage/Levels/Light_Layers/
