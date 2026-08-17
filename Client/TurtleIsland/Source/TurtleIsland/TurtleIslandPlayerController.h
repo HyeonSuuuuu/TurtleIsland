@@ -17,7 +17,17 @@ UCLASS(abstract)
 class ATurtleIslandPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
+public:
+
+	/** ESC 메뉴 토글 (인게임에서만 동작) */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePauseMenu();
+
+	/** ESC 메뉴를 닫고 게임 입력으로 복귀 */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ClosePauseMenu();
+
 protected:
 
 	/** Input Mapping Contexts */
@@ -35,6 +45,14 @@ protected:
 	/** Pointer to the mobile controls widget */
 	UPROPERTY()
 	TObjectPtr<UUserWidget> MobileControlsWidget;
+
+	/** ESC로 띄울 일시정지 메뉴 위젯 (WBP_PauseMenu) */
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<class UPauseMenuWidget> PauseMenuWidgetClass;
+
+	/** 현재 떠 있는 일시정지 메뉴 */
+	UPROPERTY()
+	TObjectPtr<class UPauseMenuWidget> PauseMenuWidget;
 
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")

@@ -8,6 +8,9 @@ Client/Assets/
 # 작업용 임시 캡처 (MCP/스크린샷)
 Client/TurtleIsland/*.png
 
+# 로컬 전용 에디터 플러그인 (각자 클론해서 사용)
+Client/TurtleIsland/Plugins/VibeUE/
+
 # --- AI & LLM (LFS 관리 대상이므로 Ignore에서 제외) ---
 # 기존에 막혀있던 부분을 주석 처리하거나 삭제하여 Git이 인식하게 합니다.
 !AI/lib/*.lib
@@ -78,3 +81,13 @@ $RECYCLE.BIN/
 
 # --- Claude Code worktrees (작업용 임시 폴더) ---
 **/.claude/worktrees/
+# 마을 이식용 T3D 작업 파일 (재생성 가능, 68MB x2)
+Client/TurtleIsland/t3d/
+Client/TurtleIsland/이거.txt
+
+# MedievalVillage 팩 중 미사용분 (참조 0건)
+Client/TurtleIsland/Content/MedievalVillage/Demo/
+Client/TurtleIsland/Content/MedievalVillage/Sequences/
+Client/TurtleIsland/Content/MedievalVillage/UI/
+Client/TurtleIsland/Content/MedievalVillage/Levels/*.umap
+Client/TurtleIsland/Content/MedievalVillage/Levels/Light_Layers/

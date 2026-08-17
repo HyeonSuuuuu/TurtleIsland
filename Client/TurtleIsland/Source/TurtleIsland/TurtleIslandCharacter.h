@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+#include "CombatDamageable.h"
 #include "TurtleIslandCharacter.generated.h"
 
 class USpringArmComponent;
@@ -19,7 +20,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class ATurtleIslandCharacter : public ACharacter
+class ATurtleIslandCharacter : public ACharacter, public ICombatDamageable
 {
 	GENERATED_BODY()
 
@@ -87,6 +88,45 @@ public:
 	/** Handles jump pressed inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoJumpEnd();
+
+public:
+
+	/** 최대 체력 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Damage")
+	float MaxHP = 100.f;
+
+	/** 현재 체력. BeginPlay 에서 MaxHP 로 채운다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Damage")
+	float CurrentHP = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Damage")
+	bool bIsDead = false;
+
+	/** 사망 후 조작 불가 상태로 남기는 시간(초) */
+	UPROPERTY(EditAnywhere, Category="Damage")
+	float DeathDisableTime = 3.f;
+
+	/** 피격 연출 — 블루프린트에서 구현 */
+	UFUNCTION(BlueprintImplementableEvent, Category="Damage")
+	void OnDamaged(float Damage, float HPRatio, AActor* Causer);
+
+	/** 사망 연출 — 블루프린트에서 구현 */
+	UFUNCTION(BlueprintImplementableEvent, Category="Damage")
+	void OnDied();
+
+	/** 체력 비율 0~1 */
+	UFUNCTION(BlueprintPure, Category="Damage")
+	float GetHPRatio() const { return MaxHP > 0.f ? FMath::Clamp(CurrentHP / MaxHP, 0.f, 1.f) : 0.f; }
+
+	// --- ICombatDamageable ---
+	virtual void ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse) override;
+	virtual void HandleDeath() override;
+	virtual void ApplyHealing(float Healing, AActor* Healer) override;
+	virtual void NotifyDanger(const FVector& DangerLocation, AActor* DangerSource) override;
+
+protected:
+
+	virtual void BeginPlay() override;
 
 public:
 	/** Returns CameraBoom subobject **/

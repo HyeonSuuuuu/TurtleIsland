@@ -7,6 +7,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Controller.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
@@ -85,7 +87,7 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 		if (InputFlag > 0)
 		{
 			UNetSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetSubsystem>();
-			if (NetSubsystem)
+			if (NetSubsystem && !NetSubsystem->IsSinglePlay())
 			{
 				// 캐릭터 실제 facing (이동 방향 회전 포함)
 				float CurrentYaw = GetActorRotation().Yaw;
@@ -106,8 +108,10 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 				FMemory::Memcpy(SendBuffer.GetData(), &MovePacket, CS_MOVE_PACKET_SIZE);
 
 				NetSubsystem->EnqueSendPacket(MoveTemp(SendBuffer));
-				InputFlag = 0;
 			}
+
+			// 싱글 모드에서도 매 주기 비워준다(누적 방지)
+			InputFlag = 0;
 		}
 	}
 }
@@ -172,4 +176,100 @@ void ATurtleIslandCharacter::DoJumpEnd()
 {
 	// signal the character to stop jumping
 	StopJumping();
+}
+
+// ---------------------------------------------------------------------------
+// ICombatDamageable — 몬스터(ACombatEnemy)의 근접 트레이스가 이 인터페이스를 통해
+// 플레이어에게 피해를 준다. DoAttackTrace 는 "Player" 태그도 함께 확인한다.
+// ---------------------------------------------------------------------------
+
+void ATurtleIslandCharacter::BeginPlay()
+{
+	CurrentHP = MaxHP;
+	bIsDead = false;
+
+	// 몬스터 공격 트레이스가 태그로 대상을 거르므로 코드에서도 보장
+	if (!ActorHasTag(TEXT("Player")))
+	{
+		Tags.Add(TEXT("Player"));
+	}
+
+	Super::BeginPlay();
+}
+
+void ATurtleIslandCharacter::ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse)
+{
+	if (bIsDead || Damage <= 0.f)
+	{
+		return;
+	}
+
+	CurrentHP = FMath::Max(0.f, CurrentHP - Damage);
+
+	OnDamaged(Damage, GetHPRatio(), DamageCauser);
+
+	if (CurrentHP <= 0.f)
+	{
+		HandleDeath();
+		return;
+	}
+
+	// 넉백
+	if (!DamageImpulse.IsNearlyZero())
+	{
+		LaunchCharacter(DamageImpulse, true, true);
+	}
+}
+
+void ATurtleIslandCharacter::HandleDeath()
+{
+	if (bIsDead)
+	{
+		return;
+	}
+	bIsDead = true;
+
+	GetCharacterMovement()->DisableMovement();
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	if (AController* C = GetController())
+	{
+		C->SetIgnoreMoveInput(true);
+		C->SetIgnoreLookInput(true);
+	}
+
+	OnDied();
+
+	// 일정 시간 뒤 체력만 복구(리스폰 연출은 블루프린트 OnDied 에서 처리)
+	FTimerHandle Handle;
+	GetWorldTimerManager().SetTimer(Handle, [this]()
+	{
+		if (!IsValid(this))
+		{
+			return;
+		}
+		CurrentHP = MaxHP;
+		bIsDead = false;
+		GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		if (AController* C = GetController())
+		{
+			C->SetIgnoreMoveInput(false);
+			C->SetIgnoreLookInput(false);
+		}
+	}, DeathDisableTime, false);
+}
+
+void ATurtleIslandCharacter::ApplyHealing(float Healing, AActor* Healer)
+{
+	if (bIsDead || Healing <= 0.f)
+	{
+		return;
+	}
+	CurrentHP = FMath::Min(MaxHP, CurrentHP + Healing);
+}
+
+void ATurtleIslandCharacter::NotifyDanger(const FVector& DangerLocation, AActor* DangerSource)
+{
+	// 회피 연출용 훅 — 현재는 사용하지 않음
 }

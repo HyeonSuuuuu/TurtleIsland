@@ -43,6 +43,30 @@
 		{
 			"Name": "EditorToolset",
 			"Enabled": true
+		},
+		{
+			"Name": "MeshPartition",
+			"Enabled": true
+		},
+		{
+			"Name": "MeshTerrainMode",
+			"Enabled": true
+		},
+		{
+			"Name": "MCPClientToolset",
+			"Enabled": true
+		},
+		{
+			"Name": "WaterAdvanced",
+			"Enabled": true
+		},
+		{
+			"Name": "WaterExtras",
+			"Enabled": true
+		},
+		{
+			"Name": "ProceduralVegetationEditor",
+			"Enabled": true
 		}
 	]
 }

@@ -9,19 +9,36 @@
 #include "FNetworker.h"
 #include "Kismet/GameplayStatics.h"
 
+const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
+const FName UNetSubsystem::LoginLevelName(TEXT("Lv0_Login"));
+
 void UNetSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
+	OpponentClass = UNetSettings::Get()->OpponentClass;
+
+	// 소켓은 여기서 열지 않는다. 싱글 모드로 시작할 수 있으므로
+	// 실제 접속은 멀티 로그인 시점(Reconnect)까지 미룬다.
+}
+
+void UNetSubsystem::Deinitialize()
+{
+	ShutdownNetwork();
+	Super::Deinitialize();
+}
+
+void UNetSubsystem::StartNetwork()
+{
+	if (Networker) return;
+
 	Networker = new FNetworker(StoredServerIP);
 	Thread = FRunnableThread::Create(Networker, TEXT("Network Thread"));
-
-	OpponentClass = UNetSettings::Get()->OpponentClass;
 
 	UE_LOG(LogTemp, Warning, TEXT("Network Thread Started!"));
 }
 
-void UNetSubsystem::Deinitialize()
+void UNetSubsystem::ShutdownNetwork()
 {
 	if (Networker)
 	{
@@ -40,7 +57,49 @@ void UNetSubsystem::Deinitialize()
 		delete Networker;
 		Networker = nullptr;
 	}
-	Super::Deinitialize();
+}
+
+void UNetSubsystem::ResetSessionState()
+{
+	RoomList.Reset();
+	RoomMembers.Reset();
+	CurrentRoomTitle.Empty();
+	CurrentRoomHost.Empty();
+	players.Reset();
+	myId = 0;
+}
+
+void UNetSubsystem::StartSinglePlay()
+{
+	PlayMode = EPlayMode::Single;
+
+	// 멀티에서 남은 연결/상태를 모두 정리
+	ShutdownNetwork();
+	ResetSessionState();
+
+	UE_LOG(LogTemp, Log, TEXT("[Mode] 싱글 플레이 시작"));
+	UGameplayStatics::OpenLevel(GetWorld(), IngameLevelName);
+}
+
+void UNetSubsystem::StartMultiPlay()
+{
+	PlayMode = EPlayMode::Multi;
+}
+
+void UNetSubsystem::ReturnToTitle()
+{
+	UWorld* World = GetWorld();
+
+	// 일시정지 상태로 나가면 로그인 화면까지 멈춘 채로 넘어간다
+	if (World)
+		UGameplayStatics::SetGamePaused(World, false);
+
+	ShutdownNetwork();
+	ResetSessionState();
+	PlayMode = EPlayMode::Multi;
+
+	UE_LOG(LogTemp, Log, TEXT("[Mode] 타이틀로 복귀"));
+	UGameplayStatics::OpenLevel(World, LoginLevelName);
 }
 
 void UNetSubsystem::Tick(float DeltaTime)
@@ -235,7 +294,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 				if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
 				{
 					// Ingame (맵 파일명과 대소문자 일치 필요: Lv3_Ingame)
-					UGameplayStatics::OpenLevel(GetWorld(), FName("Lv3_Ingame"));
+					UGameplayStatics::OpenLevel(GetWorld(), IngameLevelName);
 
 				}
 				UE_LOG(LogTemp, Log, TEXT("Ingame 패킷 수신"));
@@ -254,6 +313,9 @@ TStatId UNetSubsystem::GetStatId() const
 
 void UNetSubsystem::EnqueSendPacket(TArray<uint8>&& packet)
 {
+	// 싱글 모드거나 아직 접속 전이면 소켓 스레드가 없다
+	if (Networker == nullptr) return;
+
 	Networker->EnqueSendPacket(MoveTemp(packet));
 }
 
@@ -377,12 +439,11 @@ void UNetSubsystem::Reconnect(const FString& IP)
 {
 	StoredServerIP = IP;
 
-	if (Networker) Networker->Stop();
-	if (Thread) { Thread->Kill(true); delete Thread; Thread = nullptr; }
-	if (Networker) { delete Networker; Networker = nullptr; }
+	// 접속을 시도한다는 건 멀티 모드라는 뜻
+	PlayMode = EPlayMode::Multi;
 
-	Networker = new FNetworker(StoredServerIP);
-	Thread = FRunnableThread::Create(Networker, TEXT("Network Thread"));
+	ShutdownNetwork();
+	StartNetwork();
 
 	UE_LOG(LogTemp, Log, TEXT("[Net] 서버 재연결: %s"), *StoredServerIP);
 }
