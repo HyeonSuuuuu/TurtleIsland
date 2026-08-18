@@ -5,6 +5,7 @@
 #include "Protocol.h"
 #include "ServerSettingsWidget.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 void ULoginWidget::NativeConstruct()
 {
@@ -17,18 +18,13 @@ void ULoginWidget::NativeConstruct()
 		PC->SetInputMode(FInputModeUIOnly());
 	}
 
-	if (LoginButton)
-		LoginButton->OnClicked.AddDynamic(this, &ULoginWidget::OnLoginButtonClicked);
-	if (SettingsButton)
-		SettingsButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSettingsButtonClicked);
 	if (SinglePlayButton)
 		SinglePlayButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSinglePlayButtonClicked);
-
-	// 엔터 입력 시 로그인 시도 (ID/PW 칸 어느 쪽에서 눌러도)
-	if (UserIDInput)
-		UserIDInput->OnTextCommitted.AddDynamic(this, &ULoginWidget::OnLoginTextCommitted);
-	if (UserPWInput)
-		UserPWInput->OnTextCommitted.AddDynamic(this, &ULoginWidget::OnLoginTextCommitted);
+	if (MultiPlayButton)
+		MultiPlayButton->OnClicked.AddDynamic(this, &ULoginWidget::OnMultiPlayButtonClicked);
+	// OptionButton은 아직 동작이 없어 클릭을 연결하지 않는다
+	if (ExitButton)
+		ExitButton->OnClicked.AddDynamic(this, &ULoginWidget::OnExitButtonClicked);
 
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (Net)
@@ -41,6 +37,24 @@ void ULoginWidget::NativeConstruct()
 	}
 }
 
+void ULoginWidget::NativeDestruct()
+{
+	GetWorld()->GetTimerManager().ClearTimer(LoginRetryHandle);
+
+	CloseLoginPopup();
+
+	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
+	if (Net)
+	{
+		Net->OnLoginFailed.RemoveDynamic(this, &ULoginWidget::ShowError);
+		Net->OnLoginSucceeded.RemoveDynamic(this, &ULoginWidget::OnLoginSucceeded);
+	}
+
+	Super::NativeDestruct();
+}
+
+// ---------------------------------------------------------------- 메뉴 동작
+
 void ULoginWidget::OnSinglePlayButtonClicked()
 {
 	if (ActivePopup)
@@ -49,11 +63,64 @@ void ULoginWidget::OnSinglePlayButtonClicked()
 		ActivePopup = nullptr;
 	}
 
+	CloseLoginPopup();
+
 	if (UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>())
 		Net->StartSinglePlay();
 }
 
-void ULoginWidget::OnSettingsButtonClicked()
+void ULoginWidget::OnMultiPlayButtonClicked()
+{
+	if (!LoginPopupClass) return;
+
+	// 이미 떠 있으면 다시 만들지 않는다
+	if (ActiveLoginPopup) return;
+
+	ActiveLoginPopup = CreateWidget<ULoginPopupWidget>(GetOwningPlayer(), LoginPopupClass);
+	if (ActiveLoginPopup)
+	{
+		ActiveLoginPopup->OnLoginSubmitted.AddDynamic(this, &ULoginWidget::OnLoginSubmitted);
+		ActiveLoginPopup->OnCancelled.AddDynamic(this, &ULoginWidget::OnLoginCancelled);
+		ActiveLoginPopup->OnSettingsRequested.AddDynamic(this, &ULoginWidget::OpenServerSettings);
+		// 오류 팝업(10)보다 아래에 깔리도록
+		ActiveLoginPopup->AddToViewport(5);
+
+		SetMenuInteractable(false);
+	}
+}
+
+void ULoginWidget::OnLoginCancelled()
+{
+	// 팝업이 스스로 RemoveFromParent 하므로 참조만 정리
+	ActiveLoginPopup = nullptr;
+	SetMenuInteractable(true);
+}
+
+void ULoginWidget::CloseLoginPopup()
+{
+	if (ActiveLoginPopup)
+	{
+		ActiveLoginPopup->RemoveFromParent();
+		ActiveLoginPopup = nullptr;
+	}
+
+	SetMenuInteractable(true);
+}
+
+void ULoginWidget::SetMenuInteractable(bool bEnabled)
+{
+	if (SinglePlayButton) SinglePlayButton->SetIsEnabled(bEnabled);
+	if (MultiPlayButton)  MultiPlayButton->SetIsEnabled(bEnabled);
+	if (OptionButton)     OptionButton->SetIsEnabled(bEnabled);
+	if (ExitButton)       ExitButton->SetIsEnabled(bEnabled);
+}
+
+void ULoginWidget::OnExitButtonClicked()
+{
+	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);
+}
+
+void ULoginWidget::OpenServerSettings()
 {
 	if (!SettingsPopupClass) return;
 
@@ -84,19 +151,7 @@ void ULoginWidget::OnServerIPSaved(FString NewIP)
 	ActiveSettingsPopup = nullptr;
 }
 
-void ULoginWidget::NativeDestruct()
-{
-	GetWorld()->GetTimerManager().ClearTimer(LoginRetryHandle);
-
-	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
-	if (Net)
-	{
-		Net->OnLoginFailed.RemoveDynamic(this, &ULoginWidget::ShowError);
-		Net->OnLoginSucceeded.RemoveDynamic(this, &ULoginWidget::OnLoginSucceeded);
-	}
-
-	Super::NativeDestruct();
-}
+// ---------------------------------------------------------------- 로그인
 
 void ULoginWidget::ShowError(FString Message)
 {
@@ -120,6 +175,9 @@ void ULoginWidget::OnLoginSucceeded(bool bIsNewAccount)
 {
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (!Net) return;
+
+	// 로그인에 성공했으면 입력 팝업은 닫는다
+	CloseLoginPopup();
 
 	// 신규 가입이면 안내 팝업을 띄우고, 확인을 눌러야 로비로 진입(레벨 전환에 팝업이 사라지지 않게)
 	if (bIsNewAccount && ErrorPopupClass)
@@ -151,14 +209,7 @@ void ULoginWidget::OnAccountCreatedConfirmed()
 		Net->EnterLobby();
 }
 
-void ULoginWidget::OnLoginTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
-{
-	// 엔터로 커밋된 경우에만 로그인 시도(포커스 이동/클릭아웃은 무시)
-	if (CommitMethod == ETextCommit::OnEnter)
-		OnLoginButtonClicked();
-}
-
-void ULoginWidget::OnLoginButtonClicked()
+void ULoginWidget::OnLoginSubmitted(FString ID, FString PW)
 {
 	if (ActivePopup)
 	{
@@ -166,8 +217,8 @@ void ULoginWidget::OnLoginButtonClicked()
 		ActivePopup = nullptr;
 	}
 
-	PendingID = UserIDInput ? UserIDInput->GetText().ToString() : TEXT("");
-	PendingPW = UserPWInput ? UserPWInput->GetText().ToString() : TEXT("");
+	PendingID = ID;
+	PendingPW = PW;
 
 	if (PendingID.TrimStartAndEnd().IsEmpty() || PendingPW.TrimStartAndEnd().IsEmpty())
 	{
