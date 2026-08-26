@@ -11,6 +11,9 @@
 #include "TimerManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Kismet/GameplayStatics.h"
+#include "TurtleIslandCharacter.h"
+#include "PlayerStatsComponent.h"
 
 ACombatEnemy::ACombatEnemy()
 {
@@ -243,11 +246,30 @@ void ACombatEnemy::HandleDeath()
 	// enable full ragdoll physics
 	GetMesh()->SetSimulatePhysics(true);
 
+	// 경험치/골드 지급
+	GrantKillReward();
+
 	// call the died delegate to notify any subscribers
 	OnEnemyDied.Broadcast();
 
 	// set up the death timer
 	GetWorld()->GetTimerManager().SetTimer(DeathTimer, this, &ACombatEnemy::RemoveFromLevel, DeathRemovalTime);
+}
+
+void ACombatEnemy::GrantKillReward()
+{
+	// 서버 권위로 옮기면 여기 대신 서버가 스탯 패킷을 내려준다
+	ATurtleIslandCharacter* Player = Cast<ATurtleIslandCharacter>(UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!Player)
+	{
+		return;
+	}
+
+	if (UPlayerStatsComponent* PlayerStats = Player->GetStats())
+	{
+		PlayerStats->AddExp(ExpReward);
+		PlayerStats->AddGold(GoldReward);
+	}
 }
 
 void ACombatEnemy::ApplyHealing(float Healing, AActor* Healer)

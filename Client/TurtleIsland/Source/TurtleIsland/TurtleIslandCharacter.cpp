@@ -14,6 +14,7 @@
 #include "InputActionValue.h"
 #include "TurtleIsland.h"
 #include "NetSubsystem.h"
+#include "PlayerStatsComponent.h"
 #include "Protocol.h"
 
 ATurtleIslandCharacter::ATurtleIslandCharacter()
@@ -49,6 +50,8 @@ ATurtleIslandCharacter::ATurtleIslandCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	Stats = CreateDefaultSubobject<UPlayerStatsComponent>(TEXT("Stats"));
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
