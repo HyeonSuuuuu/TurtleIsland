@@ -195,6 +195,21 @@ public:
 	/** Handles death events */
 	virtual void HandleDeath() override;
 
+public:
+
+	/** 처치 시 플레이어에게 주는 경험치 */
+	UPROPERTY(EditAnywhere, Category="Reward")
+	int32 ExpReward = 20;
+
+	/** 처치 시 플레이어에게 주는 골드 */
+	UPROPERTY(EditAnywhere, Category="Reward")
+	int32 GoldReward = 10;
+
+protected:
+
+	/** 사망 시 보상 지급. 싱글 기준이라 0번 로컬 플레이어에게 준다. */
+	void GrantKillReward();
+
 	/** Handles healing events */
 	virtual void ApplyHealing(float Healing, AActor* Healer) override;
 

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "NetSubsystem.h"
@@ -66,6 +66,8 @@ void UNetSubsystem::ResetSessionState()
 	CurrentRoomTitle.Empty();
 	CurrentRoomHost.Empty();
 	players.Reset();
+	ChatLines.Reset();
+	ChatTimes.Reset();
 	myId = 0;
 }
 
@@ -104,6 +106,8 @@ void UNetSubsystem::ReturnToTitle()
 
 void UNetSubsystem::Tick(float DeltaTime)
 {
+	PruneChatLines();
+
 	if (Networker == nullptr) return;
 
 	TArray<uint8> RecvData = Networker->DequeRecvPacket();
@@ -225,6 +229,27 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 					UE_LOG(LogTemp, Log, TEXT("[Net] 방 참가자 합류 (%s, idx=%d)"), *JoinedID, JoinedIdx);
 					OnRoomMembersUpdated.Broadcast();
+				}
+			break;
+			}
+		case PACKET_ID::SC_ROOM_CHAT_RESPONSE:
+			{
+				SC_RoomChatResponse* Pkt = reinterpret_cast<SC_RoomChatResponse*>(RecvData.GetData());
+				if (Pkt->result != static_cast<uint8>(ERROR_CODE::NONE))
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Net] 채팅 전송 실패 (result=%d)"), Pkt->result);
+				}
+			break;
+			}
+		case PACKET_ID::SC_ROOM_CHAT_NOTIFY:
+			{
+				SC_RoomChatNotify* Pkt = reinterpret_cast<SC_RoomChatNotify*>(RecvData.GetData());
+
+				const int32   SenderIdx = static_cast<int32>(Pkt->userIndex);
+				const FString Msg       = FString(UTF8_TO_TCHAR(Pkt->chatMsg));
+				if (!Msg.IsEmpty())
+				{
+					EmitChat(FString::Printf(TEXT("[%s] %s"), *FindUserNameByIndex(SenderIdx), *Msg));
 				}
 			break;
 			}
@@ -451,6 +476,85 @@ void UNetSubsystem::Reconnect(const FString& IP)
 bool UNetSubsystem::IsConnected() const
 {
 	return Networker && Networker->IsConnected();
+}
+
+void UNetSubsystem::SendChat(const FString& Message)
+{
+	const FString Trimmed = Message.TrimStartAndEnd();
+	if (Trimmed.IsEmpty()) return;
+
+	const FString MyName = StoredUserID.IsEmpty() ? TEXT("나") : StoredUserID;
+
+	// 싱글은 서버가 없으니 로컬에만 찍는다
+	if (IsSinglePlay() || !IsConnected())
+	{
+		EmitChat(FString::Printf(TEXT("[%s] %s"), *MyName, *Trimmed));
+		return;
+	}
+
+	// 서버가 보낸 사람에게도 SC_ROOM_CHAT_NOTIFY 를 되돌려주므로 로컬 에코는 하지 않는다
+	CS_RoomChat Pkt{};
+	Pkt.size = CS_ROOM_CHAT_PACKET_SIZE;
+	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_CHAT_REQUEST);
+	CopyStringToBuffer(Pkt.chatMsg, MAX_CHAT_MSG_LEN + 1, Trimmed);
+
+	TArray<uint8> Buf;
+	Buf.SetNumUninitialized(CS_ROOM_CHAT_PACKET_SIZE);
+	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_CHAT_PACKET_SIZE);
+	EnqueSendPacket(MoveTemp(Buf));
+}
+
+void UNetSubsystem::EmitChat(const FString& Line)
+{
+	ChatLines.Add(Line);
+	ChatTimes.Add(FPlatformTime::Seconds());
+
+	const int32 Cap = FMath::Max(1, MaxChatLines);
+	while (ChatLines.Num() > Cap)
+	{
+		ChatLines.RemoveAt(0);
+		ChatTimes.RemoveAt(0);
+	}
+
+	OnChatMessage.Broadcast(Line);
+}
+
+void UNetSubsystem::PruneChatLines()
+{
+	if (ChatLifeSec <= 0.f || ChatLines.Num() == 0) return;
+
+	const double Now = FPlatformTime::Seconds();
+	bool bRemoved = false;
+
+	// 오래된 것이 앞에 있으므로 앞에서부터 걷어낸다
+	while (ChatTimes.Num() > 0 && Now - ChatTimes[0] > ChatLifeSec)
+	{
+		ChatLines.RemoveAt(0);
+		ChatTimes.RemoveAt(0);
+		bRemoved = true;
+	}
+
+	if (bRemoved)
+	{
+		OnChatMessage.Broadcast(FString());
+	}
+}
+
+FString UNetSubsystem::GetChatText() const
+{
+	return FString::Join(ChatLines, TEXT("\n"));
+}
+
+FString UNetSubsystem::FindUserNameByIndex(int32 UserIndex) const
+{
+	for (const FRoomMember& M : RoomMembers)
+	{
+		if (M.UserIndex == UserIndex)
+		{
+			return M.UserID;
+		}
+	}
+	return FString::Printf(TEXT("유저 %d"), UserIndex);
 }
 
 void UNetSubsystem::CopyStringToBuffer(char* Dest, int32 DestSize, const FString& Source)

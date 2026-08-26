@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -60,6 +60,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginSucceeded, bool, bIsNewAccou
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRoomEnterFailed, FString, Message);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomMembersUpdated);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessage, FString, Line);
 
 UCLASS()
 class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -98,6 +99,33 @@ public:
 
 	// 로비 입장(CS_LOBBY_ENTER 전송 + Lv1_Lobby 로드). 로그인 성공 후 호출.
 	void EnterLobby();
+
+	// ---- 채팅 ----
+	// 인게임에서도 서버상 유저 상태가 Room 이라 방 채팅 패킷을 그대로 재사용한다.
+
+	// 채팅 전송. 싱글 모드에서는 소켓을 타지 않고 로컬에만 표시한다.
+	UFUNCTION(BlueprintCallable, Category = "Chat")
+	void SendChat(const FString& Message);
+
+	// 최근 채팅 줄 (오래된 것 → 최신 순)
+	UPROPERTY(BlueprintReadOnly, Category = "Chat")
+	TArray<FString> ChatLines;
+
+	// 새 줄이 추가되거나 오래된 줄이 사라질 때마다 브로드캐스트
+	UPROPERTY(BlueprintAssignable, Category = "Chat")
+	FOnChatMessage OnChatMessage;
+
+	// ChatLines 를 개행으로 이어붙인 문자열 (TextBlock 한 개에 바로 넣을 때)
+	UFUNCTION(BlueprintPure, Category = "Chat")
+	FString GetChatText() const;
+
+	// 화면에 남길 최대 줄 수
+	UPROPERTY(EditAnywhere, Category = "Chat")
+	int32 MaxChatLines = 8;
+
+	// 줄이 사라지기까지의 시간(초). 0 이하면 사라지지 않는다.
+	UPROPERTY(EditAnywhere, Category = "Chat")
+	float ChatLifeSec = 12.f;
 
 	// ---- 플레이 모드 ----
 
@@ -189,6 +217,18 @@ protected:
 
 	// 방/유저 등 접속 세션에 묶인 상태를 전부 비운다.
 	void ResetSessionState();
+
+	// 채팅 줄 추가(캡 적용) + 브로드캐스트
+	void EmitChat(const FString& Line);
+
+	// 수명이 다한 줄 제거. 지운 게 있으면 브로드캐스트.
+	void PruneChatLines();
+
+	// userIndex(=서버 playerId) → 표시 이름. 못 찾으면 "유저 N".
+	FString FindUserNameByIndex(int32 UserIndex) const;
+
+	// ChatLines 와 같은 인덱스의 추가 시각(초)
+	TArray<double> ChatTimes;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Network")
 	bool IsConnect = false;

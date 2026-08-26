@@ -11,6 +11,7 @@
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
+class UPlayerStatsComponent;
 struct FInputActionValue;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
@@ -31,6 +32,10 @@ class ATurtleIslandCharacter : public ACharacter, public ICombatDamageable
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FollowCamera;
+
+	/** 레벨/경험치/골드 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats", meta = (AllowPrivateAccess = "true"))
+	UPlayerStatsComponent* Stats;
 	
 protected:
 
@@ -117,6 +122,10 @@ public:
 	/** 체력 비율 0~1 */
 	UFUNCTION(BlueprintPure, Category="Damage")
 	float GetHPRatio() const { return MaxHP > 0.f ? FMath::Clamp(CurrentHP / MaxHP, 0.f, 1.f) : 0.f; }
+
+	/** 스탯 컴포넌트 (몬스터 보상 지급/HUD 바인딩용) */
+	UFUNCTION(BlueprintPure, Category="Stats")
+	UPlayerStatsComponent* GetStats() const { return Stats; }
 
 	// --- ICombatDamageable ---
 	virtual void ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse) override;

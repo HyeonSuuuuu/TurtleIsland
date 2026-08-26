@@ -30,6 +30,7 @@ public class TurtleIsland : ModuleRules
 			"TurtleIsland",
 			"TurtleIsland/_Turtle",
 			"TurtleIsland/_Turtle/Character",
+			"TurtleIsland/_Turtle/Gameplay",
 			"TurtleIsland/_Turtle/Network",
 			"TurtleIsland/_Turtle/UI",
 			"TurtleIsland/Variant_Platforming",
