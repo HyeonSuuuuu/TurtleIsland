@@ -91,3 +91,8 @@ Client/TurtleIsland/Content/MedievalVillage/Sequences/
 Client/TurtleIsland/Content/MedievalVillage/UI/
 Client/TurtleIsland/Content/MedievalVillage/Levels/*.umap
 Client/TurtleIsland/Content/MedievalVillage/Levels/Light_Layers/
+
+# MCP 원격조작 도구가 남기는 응답 덤프 (재현 가능, 커밋 불필요)
+Tools/mcp/mcp_dumps/
+Tools/mcp/.mcp_session
+**/__pycache__/

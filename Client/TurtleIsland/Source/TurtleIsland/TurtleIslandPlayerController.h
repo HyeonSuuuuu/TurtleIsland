@@ -28,6 +28,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ClosePauseMenu();
 
+	/** 엔터: 채팅 입력창에 포커스를 준다 */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void OpenChat();
+
 protected:
 
 	/** Input Mapping Contexts */
@@ -66,5 +70,16 @@ protected:
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+
+	/**
+	 *  화면에 떠 있는 메인 HUD를 찾는다(없으면 nullptr).
+	 *  HUD는 블루프린트에서 생성하므로 컨트롤러가 직접 들고 있지 않다.
+	 *  매번 훑지 않도록 찾은 뒤 캐시한다.
+	 */
+	class UIngameHUDWidget* GetIngameHUD();
+
+	/** GetIngameHUD 캐시 */
+	UPROPERTY(Transient)
+	TObjectPtr<class UIngameHUDWidget> CachedHUDWidget;
 
 };
