@@ -10,8 +10,6 @@
 #include "Engine/GameInstance.h"
 #include "_Turtle/Network/NetSubsystem.h"
 #include "_Turtle/UI/PauseMenuWidget.h"
-#include "_Turtle/UI/IngameHUDWidget.h"
-#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "TurtleIsland.h"
 #include "Kismet/GameplayStatics.h"
 #include "Widgets/Input/SVirtualJoystick.h"
@@ -93,56 +91,11 @@ void ATurtleIslandPlayerController::SetupInputComponent()
 		}
 
 		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ATurtleIslandPlayerController::TogglePauseMenu);
-
-		// 채팅 열기. 채팅 중에는 EditableText가 포커스를 갖고 엔터를 소비하므로
-		// 여기까지 안 온다 — 그래서 "열기"만 있으면 되고 토글이 아니다.
-		InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ATurtleIslandPlayerController::OpenChat);
-	}
-}
-
-UIngameHUDWidget* ATurtleIslandPlayerController::GetIngameHUD()
-{
-	if (IsValid(CachedHUDWidget) && CachedHUDWidget->IsInViewport())
-	{
-		return CachedHUDWidget;
-	}
-
-	CachedHUDWidget = nullptr;
-
-	TArray<UUserWidget*> Found;
-	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Found, UIngameHUDWidget::StaticClass(), true);
-	if (Found.Num() > 0)
-	{
-		CachedHUDWidget = Cast<UIngameHUDWidget>(Found[0]);
-	}
-	return CachedHUDWidget;
-}
-
-void ATurtleIslandPlayerController::OpenChat()
-{
-	// ESC 메뉴가 떠 있으면 채팅을 열지 않는다
-	if (PauseMenuWidget) return;
-
-	if (UIngameHUDWidget* HUD = GetIngameHUD())
-	{
-		HUD->FocusChat();
 	}
 }
 
 void ATurtleIslandPlayerController::TogglePauseMenu()
 {
-	// 채팅 중이면 ESC는 채팅만 닫는다. 메뉴까지 뜨면 두 개가 겹친다.
-	// (보통은 위젯이 포커스를 갖고 있어 여기까지 안 오지만, 포커스를 잃은 채
-	//  채팅이 열려 있는 경우를 대비한 방어선)
-	if (UIngameHUDWidget* HUD = GetIngameHUD())
-	{
-		if (HUD->IsChatFocused())
-		{
-			HUD->CloseChat(false);
-			return;
-		}
-	}
-
 	if (PauseMenuWidget)
 	{
 		ClosePauseMenu();
