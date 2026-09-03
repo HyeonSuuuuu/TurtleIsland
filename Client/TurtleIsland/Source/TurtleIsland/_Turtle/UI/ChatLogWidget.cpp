@@ -15,6 +15,15 @@
 #include "_Turtle/Network/NetSubsystem.h"
 #include "TurtleIsland.h"
 
+namespace
+{
+	/** 포커스 감시 주기(초). */
+	constexpr float FocusWatchdogPeriod = 0.1f;
+
+	/** 이만큼 포커스를 못 잡고 있으면 채팅이 끝난 것으로 본다. */
+	constexpr float FocusLostGrace = 0.3f;
+}
+
 UNetSubsystem* UChatLogWidget::GetNet() const
 {
 	UGameInstance* GI = GetGameInstance();
@@ -114,19 +123,59 @@ void UChatLogWidget::NativeDestruct()
 		Net->OnChatMessage.RemoveDynamic(this, &UChatLogWidget::HandleChatMessage);
 	}
 
+	// 채팅 중에 위젯이 사라지면 무시 카운터가 올라간 채로 남아 조작이 영영 막힌다.
+	// 입력 모드는 건드리지 않는다 — 로비로 나가는 길이면 커서가 필요하다.
+	if (bChatInputActive)
+	{
+		bChatInputActive = false;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(FocusWatchdogHandle);
+		}
+		if (APlayerController* PC = GetOwningPlayer())
+		{
+			PC->SetIgnoreLookInput(false);
+			PC->SetIgnoreMoveInput(false);
+		}
+	}
+
 	Super::NativeDestruct();
 }
 
 void UChatLogWidget::ReturnFocusToGame()
 {
+	APlayerController* PC = GetOwningPlayer();
+
+	// SetIgnore*Input 은 누적 카운터다. 진입 때 올린 만큼만 정확히 내려야 한다 —
+	// 짝이 안 맞으면 조작이 영영 막히거나, 채팅 중인데 시점이 돌아간다.
+	if (bChatInputActive)
+	{
+		bChatInputActive = false;
+		FocusLostSeconds = 0.f;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(FocusWatchdogHandle);
+		}
+		if (PC)
+		{
+			PC->SetIgnoreLookInput(false);
+			PC->SetIgnoreMoveInput(false);
+		}
+	}
+
 	// 열 때와 닫을 때가 대칭이어야 한다. 한쪽만 입력 모드를 건드리면 상태가 어긋나
 	// "나왔는데 WASD 가 안 되거나" "다시 들어갔는데 타이핑이 안 되는" 일이 생긴다.
 	if (FSlateApplication::IsInitialized())
 	{
 		FSlateApplication::Get().ClearKeyboardFocus(EFocusCause::SetDirectly);
+
+		// GameOnly 가 거는 포커스 이동·마우스 캡처는 FReply 로 쌓였다가 "다음 입력
+		// 이벤트" 때 적용된다. 그때까지 뷰포트가 마우스를 안 잡아서 커서가 화면에
+		// 그대로 남는다. 여기서 직접 넘겨야 커서가 바로 사라진다.
+		FSlateApplication::Get().SetAllUserFocusToGameViewport(EFocusCause::SetDirectly);
 	}
 
-	if (APlayerController* PC = GetOwningPlayer())
+	if (PC)
 	{
 		PC->SetInputMode(FInputModeGameOnly());
 		PC->SetShowMouseCursor(false);
@@ -157,9 +206,54 @@ void UChatLogWidget::FocusChatInput()
 		// GameAndUI 에서 커서를 숨기면 뷰포트가 마우스를 캡처하면서 키보드 포커스까지
 		// 되가져간다. 커서를 띄워야 포커스가 붙어 있는다.
 		PC->SetShowMouseCursor(bMouseCursorWhileChatting);
+
+		// GameAndUI 는 키만 위젯으로 보내고 마우스 "이동"은 계속 게임으로 흘린다.
+		// 그래서 커서를 움직이면 시점까지 같이 돌아간다. 채팅 동안은 아예 막는다.
+		// (마우스 캡처로 막으면 커서가 UI 를 못 만지므로 컨트롤러 쪽에서 무시시킨다.)
+		if (!bChatInputActive)
+		{
+			bChatInputActive = true;
+			FocusLostSeconds = 0.f;
+			PC->SetIgnoreLookInput(true);
+			PC->SetIgnoreMoveInput(true);
+
+			if (bExitChatOnFocusLoss)
+			{
+				if (UWorld* World = GetWorld())
+				{
+					World->GetTimerManager().SetTimer(
+						FocusWatchdogHandle, this, &UChatLogWidget::WatchChatFocus,
+						FocusWatchdogPeriod, true);
+				}
+			}
+		}
 	}
 
 	ChatInput->SetKeyboardFocus();
+}
+
+void UChatLogWidget::WatchChatFocus()
+{
+	if (!bChatInputActive)
+	{
+		return;
+	}
+
+	// 입력창이 포커스를 놓쳤다 = 뷰포트를 클릭했거나 다른 UI 로 넘어갔다는 뜻.
+	// 이걸 안 보면 아무도 ReturnFocusToGame 을 안 불러서 GameAndUI 로 남고,
+	// 커서가 화면에 계속 떠 있게 된다.
+	const bool bStillTyping =
+		ChatInput &&
+		(ChatInput->HasKeyboardFocus() || ChatInput->HasAnyUserFocus() ||
+		 ChatInput->HasUserFocusedDescendants(GetOwningPlayer()));
+
+	// 전송 버튼을 누른 직후처럼 한두 틱 비는 경우가 있어 유예를 둔다.
+	FocusLostSeconds = bStillTyping ? 0.f : FocusLostSeconds + FocusWatchdogPeriod;
+	if (FocusLostSeconds >= FocusLostGrace)
+	{
+		UE_LOG(LogTurtleIsland, Verbose, TEXT("[Chat] 입력창이 포커스를 잃어 채팅을 닫는다"));
+		ReturnFocusToGame();
+	}
 }
 
 void UChatLogWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
@@ -207,6 +301,7 @@ void UChatLogWidget::HandleSendClicked()
 	if (ChatInput)
 	{
 		ChatInput->SetKeyboardFocus();
+		FocusLostSeconds = 0.f;   // 버튼으로 포커스가 잠깐 넘어간 걸 이탈로 세지 않는다
 	}
 }
 

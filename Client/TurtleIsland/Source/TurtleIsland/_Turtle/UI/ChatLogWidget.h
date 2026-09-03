@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Engine/TimerHandle.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Styling/SlateColor.h"
 #include "ChatLogWidget.generated.h"
@@ -52,6 +53,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Chat")
 	void FocusChatInput();
 
+	/** 지금 채팅 입력 중인지. 블루프린트에서 엔터 키를 가로챌지 판단할 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Chat")
+	bool IsChatInputActive() const { return bChatInputActive; }
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -99,6 +104,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Chat")
 	bool bMouseCursorWhileChatting = true;
 
+	/**
+	 *  입력창이 포커스를 잃으면(뷰포트를 클릭했다든지) 채팅을 자동으로 끝낸다.
+	 *  이게 없으면 Game and UI 상태로 남아 커서가 계속 떠 있고 시점도 안 돌아온다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Chat")
+	bool bExitChatOnFocusLoss = true;
+
 	UFUNCTION()
 	void HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
@@ -114,6 +126,17 @@ private:
 
 	/** 디자이너 줄에서 폰트·색을 베껴 온다. 새로 만드는 줄에 그대로 쓴다. */
 	void CacheLineStyle();
+
+	/** 입력창이 아직 포커스를 쥐고 있는지 지켜본다. 채팅 중에만 돈다. */
+	void WatchChatFocus();
+
+	/** 채팅 중인가. 시점/이동 무시 카운터를 정확히 한 번씩만 올리고 내리려고 들고 있다. */
+	bool bChatInputActive = false;
+
+	/** 포커스를 놓친 채 흐른 시간. 한 틱 튀는 것과 진짜 이탈을 구분한다. */
+	float FocusLostSeconds = 0.f;
+
+	FTimerHandle FocusWatchdogHandle;
 
 	FSlateFontInfo CachedFont;
 	FSlateColor CachedColour;
