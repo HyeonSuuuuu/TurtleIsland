@@ -96,3 +96,7 @@ Client/TurtleIsland/Content/MedievalVillage/Levels/Light_Layers/
 Tools/mcp/mcp_dumps/
 Tools/mcp/.mcp_session
 **/__pycache__/
+
+# 임시 로그·백업 (작업 중 손으로 남기는 것들)
+Client/TurtleIsland/log.txt
+*.ini.bak
