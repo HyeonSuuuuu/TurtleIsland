@@ -18,6 +18,11 @@ Client/TurtleIsland/Plugins/VibeUE/
 !*.gguf
 !*.safetensors
 
+# Visual Studio 사용자별 설정 (시작 프로젝트, 디버깅 인자 등) — 커밋 대상 아님
+*.vcxproj.user
+*.sln.docstates
+.vs/
+
 # --- Unreal Engine ---
 Binaries/
 Build/

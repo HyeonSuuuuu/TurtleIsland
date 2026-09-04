@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -122,6 +122,17 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+  </ItemDefinitionGroup>
+  <!-- 런타임 DLL 을 exe 옆으로 복사한다. AI/lib 은 git 에 들어가지만
+       $(OutDir)(x64/) 는 .gitignore 라, 이 스텝이 없으면 clone 후 빌드해도 실행이 안 된다.
+       /D 는 최신본만 복사하므로 매 빌드마다 다시 긁지 않는다.
+       GPU 백엔드(ggml-cuda/ggml-vulkan)는 여기 없다 — 하드웨어별로 각자 빌드해
+       exe 옆에 두면 ggml_backend_load_all 이 알아서 집어 쓴다. -->
+  <ItemDefinitionGroup>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D /I "$(ProjectDir)..\..\lib\*.dll" "$(OutDir)"</Command>
+      <Message>llama.cpp 런타임 DLL 복사</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "NetSubsystem.h"
@@ -325,6 +325,26 @@ void UNetSubsystem::Tick(float DeltaTime)
 				UE_LOG(LogTemp, Log, TEXT("Ingame 패킷 수신"));
 			}
 			break;
+		case PACKET_ID::SC_NPC_CHAT:
+			{
+				// 헤더 뒤가 전부 UTF-8 텍스트다. 널 종단이 없으므로 남은 길이로 자른다.
+				const int32 TextLen = RecvData.Num() - SC_NPC_CHAT_PACKET_SIZE;
+				if (TextLen <= 0)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Npc] 빈 응답 수신"));
+					break;
+				}
+
+				// 널을 직접 붙여 변환한다. 길이 지정 변환은 널 종단을 보장하지 않는다.
+				TArray<uint8> Utf8Bytes;
+				Utf8Bytes.Append(RecvData.GetData() + SC_NPC_CHAT_PACKET_SIZE, TextLen);
+				Utf8Bytes.Add(0);
+				const FString Say = UTF8_TO_TCHAR(reinterpret_cast<const ANSICHAR*>(Utf8Bytes.GetData()));
+
+				UE_LOG(LogTemp, Log, TEXT("[Npc] 답변 수신 (%d바이트): %s"), TextLen, *Say);
+				OnNpcChatReceived.Broadcast(Say);
+			}
+			break;
 		}
 		RecvData = Networker->DequeRecvPacket();
 	}
@@ -502,6 +522,45 @@ void UNetSubsystem::SendChat(const FString& Message)
 	Buf.SetNumUninitialized(CS_ROOM_CHAT_PACKET_SIZE);
 	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_CHAT_PACKET_SIZE);
 	EnqueSendPacket(MoveTemp(Buf));
+}
+
+void UNetSubsystem::SendNpcChat(int32 NpcIndex, const FString& Message)
+{
+	const FString Trimmed = Message.TrimStartAndEnd();
+	if (Trimmed.IsEmpty()) return;
+
+	if (IsSinglePlay() || !IsConnected())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Npc] 미접속 상태 — NPC 대화를 보낼 수 없다"));
+		return;
+	}
+
+	// 헤더 뒤에 UTF-8 텍스트를 그대로 붙인다. 서버 수신 버퍼가 1024B 라
+	// 넘치면 통째로 버려지므로 여기서 잘라 보낸다.
+	FTCHARToUTF8 Utf8(*Trimmed);
+	int32 TextLen = Utf8.Length();
+	const int32 MaxText = MaxPacketBytes - CS_NPC_CHAT_PACKET_SIZE;
+	if (TextLen > MaxText)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Npc] 메시지가 길어 %d→%d바이트로 자른다"), TextLen, MaxText);
+		TextLen = MaxText;
+	}
+
+	const int32 Total = CS_NPC_CHAT_PACKET_SIZE + TextLen;
+	TArray<uint8> Buf;
+	Buf.SetNumZeroed(Total);
+
+	auto* Pkt      = reinterpret_cast<CS_NpcChat*>(Buf.GetData());
+	Pkt->size      = static_cast<uint16>(Total);
+	Pkt->id        = static_cast<uint16>(PACKET_ID::CS_NPC_CHAT);
+	Pkt->userIndex = myId;
+	Pkt->npcIndex  = static_cast<uint32>(NpcIndex);
+	if (TextLen > 0)
+		FMemory::Memcpy(Buf.GetData() + CS_NPC_CHAT_PACKET_SIZE, Utf8.Get(), TextLen);
+
+	EnqueSendPacket(MoveTemp(Buf));
+	UE_LOG(LogTemp, Log, TEXT("[Npc] 대화 전송 (npcIndex=%d, %d바이트): %s"),
+		NpcIndex, TextLen, *Trimmed);
 }
 
 void UNetSubsystem::EmitChat(const FString& Line)

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -61,6 +61,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRoomEnterFailed, FString, Message
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomMembersUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessage, FString, Line);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNpcChatReceived, FString, Say);
 
 UCLASS()
 class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -128,6 +129,22 @@ public:
 	// 화면 위에 잠깐 떴다 사라지는 알림이 필요하면 그건 토스트로 따로 만드는 게 맞다.
 	UPROPERTY(EditAnywhere, Category = "Chat")
 	float ChatLifeSec = 0.f;
+
+	// ---- NPC(상점) 대화 ----
+	// 클라 CS_NPC_CHAT → 게임서버가 SA_AI 로 AI 서버에 전달 → AS_AI 응답을
+	// 게임서버가 SC_NPC_CHAT 으로 중계한다. 방 채팅과 달리 텍스트가 고정 버퍼가
+	// 아니라 헤더 뒤에 UTF-8 로 가변 길이로 붙는다(널 종단 없음, 길이는 size 로).
+
+	// NPC 에게 말 걸기. 서버 유저 상태가 Room 일 때만 서버가 받아준다(= 인게임 포함).
+	UFUNCTION(BlueprintCallable, Category = "Npc")
+	void SendNpcChat(int32 NpcIndex, const FString& Message);
+
+	// NPC 답변 수신. 서버가 중계한 텍스트 그대로 넘어온다.
+	UPROPERTY(BlueprintAssignable, Category = "Npc")
+	FOnNpcChatReceived OnNpcChatReceived;
+
+	// 와이어 패킷 최대 크기. 서버 Define.h 의 MAX_SOCKBUF 와 같아야 한다.
+	static constexpr int32 MaxPacketBytes = 1024;
 
 	// ---- 플레이 모드 ----
 

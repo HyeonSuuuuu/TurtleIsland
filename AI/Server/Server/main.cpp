@@ -9,8 +9,9 @@
 //   (C) GenerateBatchResponses 내부 타이밍 출력
 //        → prefill/생성 시간 + 총 생성 토큰 + aggregate tok/s.
 //
-//  ※ 네트워크 코드는 손대지 않음. 배칭은 프로토콜과 독립이므로,
-//    Step 5에서 네트워크를 바이너리로 바꿔도 배칭은 그대로 동작한다.
+//  ※ 네트워크는 바이너리 프레이밍(Common/Protocol.h 의 SA_AI/AS_AI)으로 전환됨.
+//    게임서버와 소켓 하나를 공유하고 userIndex 로 손님을 구분한다. 배칭은 프로토콜과
+//    독립이라 그대로 동작한다.
 // ============================================================================
 
 #include "stdafx.h"
@@ -24,15 +25,17 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-#pragma comment(lib, "llamaCpp/llama.lib")
-#pragma comment(lib, "llamaCpp/ggml.lib")
-#pragma comment(lib, "llamaCpp/ggml-base.lib")
-#pragma comment(lib, "llamaCpp/ggml-cpu.lib")
+// lib/dll 은 AI/lib 에 모아 둔다(.gitattributes 가 그 경로를 LFS 로 지정).
+// 헤더만 llamaCpp 에 남는다. 경로는 프로젝트 폴더 기준.
+#pragma comment(lib, "../../lib/llama.lib")
+#pragma comment(lib, "../../lib/ggml.lib")
+#pragma comment(lib, "../../lib/ggml-base.lib")
+#pragma comment(lib, "../../lib/ggml-cpu.lib")
 
 // GPU 백엔드(CUDA/Vulkan)는 ggml_backend_load_all()로 런타임 DLL 로드.
 // 링크 에러 날 때만 아래를 켠다.
-// #pragma comment(lib, "llamaCpp/ggml-cuda.lib")
-// #pragma comment(lib, "llamaCpp/ggml-vulkan.lib")
+// #pragma comment(lib, "../../lib/ggml-cuda.lib")
+// #pragma comment(lib, "../../lib/ggml-vulkan.lib")
 
 #include <atomic>
 #include <chrono>
@@ -123,11 +126,15 @@ constexpr int kReservedTokens = 512;
 constexpr int kPromptBudgetPerSeq = kContextTokensPerSeq - kMaxGenTokens - kReservedTokens;
 constexpr int kMaxClientCount = 4;
 constexpr int kRecvBufferSize = 2048;
+
+// 게임서버의 MAX_SOCKBUF(Define.h) 와 같아야 한다. 이보다 큰 패킷은 게임서버가 통째로 버린다.
+constexpr int kMaxWirePacketBytes = 1024;
 constexpr int kBatchGatherWaitMs = 15;
 constexpr bool kPrintPromptDebug = false;
 
-// 콘솔 테스트 루프 ON — 네트워크 켜기 전에 콘솔에서 대화/속도/배칭 확인.
-constexpr bool kEnableConsoleTestLoop = true;
+// 콘솔 테스트 루프. true 면 main 이 콘솔 입력에서 블로킹돼 네트워크 리슨까지 못 간다
+// (게임서버가 4444 연결에 실패하고 NpcChat 이 비활성된다). 평소에는 false.
+constexpr bool kEnableConsoleTestLoop = false;
 
 // 파일 I/O 테스트 모드 — input.txt(줄마다 JSON) → 추론 → output.txt(JSON) append.
 // who별로 history를 분리하므로, 손님이 섞여 들어와도 각각 따로 기억된다.
@@ -170,6 +177,12 @@ void RunFileIoMode(
 	const std::string& systemPrompt);
 
 bool SendAll(SOCKET socket, const std::string& text);
+
+bool SendAllBytes(SOCKET socket, const void* data, int length);
+
+bool SendAiResponse(SOCKET socket, uint32_t userIndex, const std::string& text);
+
+size_t Utf8SafeLength(const std::string& text, size_t maxBytes);
 
 void HandleClient(
 	SOCKET clientSocket,
@@ -330,6 +343,65 @@ bool SendAll(SOCKET socket, const std::string& text)
 	}
 
 	return true;
+}
+
+// UTF-8 문자 중간에서 자르면 깨진 글자가 남는다. 선행 바이트까지 물러난 길이를 준다.
+size_t Utf8SafeLength(const std::string& text, size_t maxBytes)
+{
+	if (text.size() <= maxBytes)
+		return text.size();
+
+	size_t cut = maxBytes;
+	while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
+		--cut;
+
+	return cut;
+}
+
+bool SendAllBytes(SOCKET socket, const void* data, int length)
+{
+	const char* cursor = static_cast<const char*>(data);
+	int totalSent = 0;
+
+	while (totalSent < length)
+	{
+		int sent = send(socket, cursor + totalSent, length - totalSent, 0);
+
+		if (sent <= 0)
+			return false;
+
+		totalSent += sent;
+	}
+
+	return true;
+}
+
+// AS_AI(헤더 + userIndex + 가변 UTF-8) 한 장으로 답을 실어 보낸다.
+// 게임서버는 이 userIndex 로 어느 플레이어에게 중계할지 찾는다.
+bool SendAiResponse(SOCKET socket, uint32_t userIndex, const std::string& text)
+{
+	// 게임서버 버퍼를 넘으면 통째로 버려지므로 여기서 잘라 보낸다.
+	const size_t maxTextBytes = kMaxWirePacketBytes - sizeof(AS_AI);
+	const size_t textLen = Utf8SafeLength(text, maxTextBytes);
+
+	if (textLen < text.size())
+	{
+		Log::Warning("Response truncated {} -> {} bytes (userIndex={})",
+			text.size(), textLen, userIndex);
+	}
+
+	const size_t totalSize = sizeof(AS_AI) + textLen;
+
+	std::vector<char> buffer(totalSize, 0);
+	auto* header = reinterpret_cast<AS_AI*>(buffer.data());
+	header->size = static_cast<uint16_t>(totalSize);
+	header->id = static_cast<uint16_t>(PACKET_ID::AS_AI);
+	header->userIndex = userIndex;
+
+	if (textLen > 0)
+		std::memcpy(buffer.data() + sizeof(AS_AI), text.data(), textLen);
+
+	return SendAllBytes(socket, buffer.data(), static_cast<int>(totalSize));
 }
 
 bool TokenToPiece(
@@ -741,12 +813,20 @@ void HandleClient(
 {
 	Log::Info("Client connected. clientId={}", clientId);
 
-	std::vector<ChatTurn> history;
+	// 게임서버는 모든 플레이어의 대화를 이 소켓 하나로 보낸다.
+	// history 를 연결 단위로 두면 손님끼리 대화가 섞이므로 userIndex 로 나눈다.
+	ConversationStore conversations;
+
+	// TCP 는 메시지 경계가 없다. 받은 바이트를 여기 쌓아 두고
+	// PacketHeader.size 만큼씩 떼어 한 패킷으로 처리한다.
+	std::string recvStream;
 	char recvBuf[kRecvBufferSize];
 
-	while (true)
+	bool keepRunning = true;
+
+	while (keepRunning)
 	{
-		int recvLen = recv(clientSocket, recvBuf, sizeof(recvBuf) - 1, 0);
+		int recvLen = recv(clientSocket, recvBuf, sizeof(recvBuf), 0);
 
 		if (recvLen <= 0)
 		{
@@ -754,80 +834,99 @@ void HandleClient(
 			break;
 		}
 
-		recvBuf[recvLen] = '\0';
+		recvStream.append(recvBuf, recvLen);
 
-		std::string userText = NormalizeReceivedText(std::string(recvBuf));
-
-		if (userText.empty())
-			continue;
-
-		if (userText == "/reset")
+		while (recvStream.size() >= sizeof(PacketHeader))
 		{
-			history.clear();
+			// 정렬을 보장할 수 없으므로 복사해서 읽는다.
+			PacketHeader header{};
+			std::memcpy(&header, recvStream.data(), sizeof(PacketHeader));
 
-			std::string resetText;
-			resetText += "[echo]\n";
-			resetText += userText;
-			resetText += "\n\n";
-			resetText += "[ai]\n";
-			resetText += "대화 기억을 초기화했습니다.";
-			resetText += "\n<<END>>\n";
-
-			if (!SendAll(clientSocket, resetText))
+			if (header.size < sizeof(SA_AI) || header.size > kMaxWirePacketBytes)
 			{
-				Log::Error("Failed to send reset response. clientId={}", clientId);
+				// 스트림이 어긋난 상태다. 어디서부터 다시 맞출지 알 수 없으니 끊는다.
+				Log::Error("Bad frame (size={}, id={}). Dropping connection. clientId={}",
+					header.size, header.id, clientId);
+				keepRunning = false;
 				break;
 			}
 
-			continue;
+			if (recvStream.size() < header.size)
+				break;   // 아직 덜 왔다 — 다음 recv 를 기다린다
+
+			// 한 패킷 확보. 헤더 뒤가 전부 UTF-8 텍스트(널 종단 없음)다.
+			SA_AI request{};
+			std::memcpy(&request, recvStream.data(), sizeof(SA_AI));
+
+			std::string userText(
+				recvStream.data() + sizeof(SA_AI),
+				header.size - sizeof(SA_AI));
+
+			recvStream.erase(0, header.size);
+
+			if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI))
+			{
+				Log::Warning("Unexpected packet id={} - skipped. clientId={}", header.id, clientId);
+				continue;
+			}
+
+			userText = NormalizeReceivedText(std::move(userText));
+
+			if (userText.empty())
+				continue;
+
+			const std::string who = std::to_string(request.userIndex);
+
+			if (userText == "/reset")
+			{
+				conversations.Reset(who);
+
+				if (!SendAiResponse(clientSocket, request.userIndex, "대화 기억을 초기화했습니다."))
+				{
+					Log::Error("Failed to send reset response. clientId={}", clientId);
+					keepRunning = false;
+					break;
+				}
+
+				continue;
+			}
+
+			// 종료 명령은 두지 않는다. 게임서버와의 연결은 공유 링크라
+			// 플레이어가 친 한 마디로 끊기면 모두의 NPC 대화가 죽는다.
+
+			Log::Info("Received. clientId={} userIndex={} npcIndex={} text={}",
+				clientId, request.userIndex, request.npcIndex, userText);
+
+			// 워커가 이 history 에 user/assistant 턴을 직접 쌓는다.
+			// ConversationStore 는 std::map 이라 참조가 살아 있다.
+			std::vector<ChatTurn>& history = conversations.GetOrCreate(who);
+
+			std::string aiText;
+
+			try
+			{
+				aiText = aiQueue.Submit(clientId, userText, history).get();
+			}
+			catch (const std::exception& e)
+			{
+				Log::Error("Failed to get AI response. clientId={}, error={}", clientId, e.what());
+				aiText = "(Failed to get AI response)";
+			}
+			catch (...)
+			{
+				Log::Error("Failed to get AI response. clientId={}", clientId);
+				aiText = "(Failed to get AI response)";
+			}
+
+			if (!SendAiResponse(clientSocket, request.userIndex, aiText))
+			{
+				Log::Error("Failed to send response. clientId={}", clientId);
+				keepRunning = false;
+				break;
+			}
+
+			Log::Info("Response sent. clientId={} userIndex={}", clientId, request.userIndex);
 		}
-
-		if (userText == "/quit" || userText == "exit")
-		{
-			Log::Info("Client requested quit. clientId={}", clientId);
-			break;
-		}
-
-		Log::Info("Received text from clientId={}: {}", clientId, userText);
-
-		std::future<std::string> future =
-			aiQueue.Submit(clientId, userText, history);
-
-		std::string aiText;
-
-		try
-		{
-			aiText = future.get();
-		}
-		catch (const std::exception& e)
-		{
-			Log::Error("Failed to get AI response. clientId={}, error={}",
-				clientId,
-				e.what());
-
-			aiText = "(Failed to get AI response)";
-		}
-		catch (...)
-		{
-			Log::Error("Failed to get AI response. clientId={}", clientId);
-			aiText = "(Failed to get AI response)";
-		}
-
-		std::string sendText;
-		sendText += "[echo]\n";
-		sendText += userText;
-		sendText += "\n\n";
-		sendText += "[ai]\n";
-		sendText += aiText;
-		sendText += "\n<<END>>\n";
-
-		if (!SendAll(clientSocket, sendText))
-		{
-			Log::Error("Failed to send response. clientId={}", clientId);
-			break;
-		}
-
-		Log::Info("Response sent. clientId={}", clientId);
 	}
 
 	closesocket(clientSocket);
@@ -1171,14 +1270,8 @@ int main()
 			Log::Warning("Client rejected: server is full. activeClientCount={}",
 				currentActive);
 
-			const std::string busyText =
-				"[echo]\n"
-				"(server)\n\n"
-				"[ai]\n"
-				"서버가 현재 가득 찼습니다. 잠시 후 다시 접속해 주세요.\n"
-				"<<END>>\n";
-
-			SendAll(clientSocket, busyText);
+			// 안내 문구를 평문으로 보내면 상대(게임서버)가 프레임 헤더로 읽어 스트림이 어긋난다.
+			// userIndex 를 알 수 없어 AS_AI 로 감쌀 수도 없으므로 그냥 끊는다.
 			closesocket(clientSocket);
 			continue;
 		}
