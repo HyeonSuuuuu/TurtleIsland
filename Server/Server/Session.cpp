@@ -210,12 +210,21 @@ bool Session::Send(const std::span<const uint8_t> msg)
 	over->m_wsa.len   = static_cast<uint32_t>(msg.size());
 	over->m_operation = IOOperation::SEND;
 
+	// 큐 push 와 등록 플래그 전이는 반드시 같은 락 안에서.
+	// 나누면 SendCompleted 가 큐를 비운 뒤 플래그를 내리기 직전에 push 가 끼어들어
+	// 아무도 BindSend 를 부르지 않는 상태로 패킷이 큐에 갇힌다.
+	bool needBind = false;
 	{
 		std::lock_guard lock(m_sendMutex);
 		m_sendQueue.push(over);
+		if (!m_sendRegistered)
+		{
+			m_sendRegistered = true;
+			needBind = true;
+		}
 	}
 
-	if (!m_sendRegistered.exchange(true))
+	if (needBind)
 		BindSend();
 
 	return true;
@@ -259,13 +268,13 @@ void Session::SendCompleted(uint32_t /*bytesSent*/)
 		over = m_sendQueue.front();
 		m_sendQueue.pop();
 		hasMore = !m_sendQueue.empty();
+		if (!hasMore)
+			m_sendRegistered = false;   // 큐 비움과 같은 락 안에서 내려야 push 와 어긋나지 않는다
 	}
 	g_sendPool.Release(over);
 
 	if (hasMore)
 		BindSend();
-	else
-		m_sendRegistered = false;
 }
 
 bool Session::RegisterIOCP(HANDLE iocpHandle, uint32_t slotIndex) const
