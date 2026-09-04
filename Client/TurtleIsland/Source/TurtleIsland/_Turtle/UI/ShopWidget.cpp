@@ -2,9 +2,13 @@
 
 #include "ShopWidget.h"
 
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
 #include "Components/PanelWidget.h"
+#include "Components/SizeBox.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -63,6 +67,8 @@ void UShopWidget::NativeConstruct()
 	{
 		MessageContainer->ClearChildren();
 	}
+	TypingBubble = nullptr;
+	bHasLastSpeaker = false;
 
 	Super::NativeConstruct();
 
@@ -192,55 +198,157 @@ void UShopWidget::SendToNpc(const FString& Message)
 		return;
 	}
 
-	// 서버는 보낸 사람에게 에코를 돌려주지 않는다. 내가 친 줄은 여기서 찍는다.
-	const FString MyName = Net->GetUserID().IsEmpty() ? TEXT("나") : Net->GetUserID();
-	AppendLine(FString::Printf(TEXT("[%s] %s"), *MyName, *Trimmed), false);
+	// 서버는 보낸 사람에게 에코를 돌려주지 않는다. 내 말풍선은 여기서 찍는다.
+	AppendMessage(Trimmed, false);
 
 	Net->SendNpcChat(NpcIndex, Trimmed);
+
+	// CPU 추론이 3~4초라 아무 반응이 없으면 먹통처럼 보인다.
+	ShowTyping();
 }
 
 void UShopWidget::HandleNpcChat(FString Say)
 {
-	AppendLine(FString::Printf(TEXT("[%s] %s"), *NpcDisplayName, *Say), true);
+	HideTyping();
+	AppendMessage(Say, true);
 }
 
-void UShopWidget::AppendLine(const FString& Line, bool bFromNpc)
+bool UShopWidget::WasScrolledToBottom() const
+{
+	if (!DialogueScrollBox || !bFollowOnlyWhenAtBottom)
+	{
+		return true;
+	}
+	return DialogueScrollBox->GetScrollOffset() >= DialogueScrollBox->GetScrollOffsetOfEnd() - 1.f;
+}
+
+void UShopWidget::AppendMessage(const FString& Message, bool bFromNpc)
+{
+	AddBubble(Message, bFromNpc, false);
+}
+
+void UShopWidget::AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping)
 {
 	UPanelWidget* Target = MessageContainer
 		? static_cast<UPanelWidget*>(MessageContainer.Get())
 		: static_cast<UPanelWidget*>(DialogueScrollBox.Get());
 	if (!Target)
 	{
-		UE_LOG(LogTurtleIsland, Warning, TEXT("[Shop] 대화 로그를 붙일 곳이 없다: %s"), *Line);
+		UE_LOG(LogTurtleIsland, Warning, TEXT("[Shop] 대화 로그를 붙일 곳이 없다: %s"), *Text);
 		return;
 	}
 
-	// 붙이기 전에 "지금 맨 아래를 보고 있었나"를 기억해 둔다.
-	// 위로 올려 지난 대화를 읽는 중이라면 따라 내려가면 안 된다.
-	bool bWasAtBottom = true;
-	if (DialogueScrollBox && bFollowOnlyWhenAtBottom)
+	const bool bWasAtBottom = WasScrolledToBottom();
+
+	// 슬롯 정렬·여백을 한 곳에서 처리한다. VerticalBox 든 ScrollBox 든 같은 API 를 쓴다.
+	auto PlaceInContainer =
+		[Target, bFromNpc](UWidget* Child, const FMargin& Pad)
+		{
+			UPanelSlot* Slot = Target->AddChild(Child);
+			const EHorizontalAlignment HAlign = bFromNpc ? HAlign_Left : HAlign_Right;
+			if (UVerticalBoxSlot* AsVBox = Cast<UVerticalBoxSlot>(Slot))
+			{
+				AsVBox->SetHorizontalAlignment(HAlign);
+				AsVBox->SetPadding(Pad);
+			}
+			else if (UScrollBoxSlot* AsScroll = Cast<UScrollBoxSlot>(Slot))
+			{
+				AsScroll->SetHorizontalAlignment(HAlign);
+				AsScroll->SetPadding(Pad);
+			}
+		};
+
+	// 이름표는 상대 것만, 화자가 바뀔 때만 붙인다(카톡과 같은 규칙).
+	// 대기 말풍선은 곧 지워지므로 이름표를 새로 만들지 않는다.
+	const bool bSpeakerChanged = !bHasLastSpeaker || bLastWasNpc != bFromNpc;
+	if (bFromNpc && bSpeakerChanged && !bIsTyping)
 	{
-		bWasAtBottom =
-			DialogueScrollBox->GetScrollOffset() >= DialogueScrollBox->GetScrollOffsetOfEnd() - 1.f;
+		if (UTextBlock* NameLabel = NewObject<UTextBlock>(this))
+		{
+			NameLabel->SetText(FText::FromString(NpcDisplayName));
+			if (bStyleCached)
+			{
+				FSlateFontInfo NameFont = CachedFont;
+				NameFont.Size = FMath::Max(10.f, CachedFont.Size * 0.8f);
+				NameLabel->SetFont(NameFont);
+			}
+			NameLabel->SetColorAndOpacity(SpeakerNameColour);
+			PlaceInContainer(NameLabel, FMargin(4.f, 8.f, 4.f, 2.f));
+		}
 	}
 
-	UTextBlock* Row = NewObject<UTextBlock>(this);
-	if (!Row)
+	// 말풍선 본체: SizeBox(최대 폭) > Border(둥근 바탕) > TextBlock(자동 줄바꿈)
+	USizeBox* Limit = NewObject<USizeBox>(this);
+	UBorder*  Bubble = NewObject<UBorder>(this);
+	UTextBlock* Body = NewObject<UTextBlock>(this);
+	if (!Limit || !Bubble || !Body)
 	{
 		return;
 	}
-	Row->SetText(FText::FromString(Line));
+
+	Body->SetText(FText::FromString(bIsTyping ? TEXT("• • •") : Text));
 	if (bStyleCached)
 	{
-		// 디자이너에서 잡아둔 폰트 그대로. 안 그러면 새 줄만 기본 폰트로 튄다.
-		Row->SetFont(CachedFont);
+		Body->SetFont(CachedFont);
 	}
-	Row->SetColorAndOpacity(bFromNpc ? NpcColour : LineColour);
-	Row->SetAutoWrapText(true);
-	Target->AddChild(Row);
+	Body->SetColorAndOpacity(bFromNpc ? NpcTextColour : SelfTextColour);
+	Body->SetAutoWrapText(true);
+
+	// DrawAs=Box 는 ResourceObject 가 없으면 아무것도 안 그린다. 단색 채움은 RoundedBox.
+	// 꼬리 쪽 모서리 하나만 작게 줘서 어느 쪽 말인지 보이게 한다.
+	const float R = BubbleCornerRadius;
+	const float Tail = FMath::Min(4.f, R);
+	FSlateBrush BubbleBrush;
+	BubbleBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
+	BubbleBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+	BubbleBrush.OutlineSettings.CornerRadii = bFromNpc
+		? FVector4(Tail, R, R, R)    // 왼쪽 말풍선 — 왼쪽 위가 각짐
+		: FVector4(R, Tail, R, R);   // 오른쪽 말풍선 — 오른쪽 위가 각짐
+	BubbleBrush.TintColor = FSlateColor(bFromNpc ? NpcBubbleColour : SelfBubbleColour);
+	Bubble->SetBrush(BubbleBrush);
+
+	// UBorder 는 패딩을 슬롯과 위젯 두 군데에 들고 있고 동기화되지 않는다.
+	// Slate 가 실제로 그리는 건 위젯 쪽이라 여기를 설정해야 글자가 테두리를 안 뚫는다.
+	Bubble->SetPadding(FMargin(14.f, 9.f, 14.f, 9.f));
+	Bubble->SetBrushColor(FLinearColor::White);   // 브러시 틴트를 그대로 살린다
+	Bubble->SetContent(Body);
+
+	Limit->SetMaxDesiredWidth(BubbleMaxWidth);
+	Limit->AddChild(Bubble);
+
+	PlaceInContainer(Limit, FMargin(4.f, 0.f, 4.f, 6.f));
+
+	if (bIsTyping)
+	{
+		TypingBubble = Limit;
+	}
+	else
+	{
+		bLastWasNpc = bFromNpc;
+		bHasLastSpeaker = true;
+	}
 
 	if (DialogueScrollBox && bWasAtBottom)
 	{
 		DialogueScrollBox->ScrollToEnd();
 	}
+}
+
+void UShopWidget::ShowTyping()
+{
+	if (TypingBubble)
+	{
+		return;   // 이미 떠 있다
+	}
+	AddBubble(FString(), true, true);
+}
+
+void UShopWidget::HideTyping()
+{
+	if (!TypingBubble)
+	{
+		return;
+	}
+	TypingBubble->RemoveFromParent();
+	TypingBubble = nullptr;
 }

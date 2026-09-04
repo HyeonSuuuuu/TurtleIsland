@@ -48,9 +48,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shop")
 	void SendToNpc(const FString& Message);
 
-	/** 대화 로그에 줄을 하나 붙인다. bFromNpc 면 NPC 색으로 찍는다. */
+	/** 대화 로그에 말풍선을 하나 붙인다. bFromNpc 면 왼쪽, 아니면 오른쪽 정렬. */
 	UFUNCTION(BlueprintCallable, Category = "Shop")
-	void AppendLine(const FString& Line, bool bFromNpc = false);
+	void AppendMessage(const FString& Message, bool bFromNpc);
 
 	UFUNCTION(BlueprintPure, Category = "Shop")
 	int32 GetNpcIndex() const { return NpcIndex; }
@@ -84,13 +84,33 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Shop")
 	FSlateFontInfo LineFont;
 
-	/** 내가 친 줄의 색(본문 회색). */
-	UPROPERTY(EditDefaultsOnly, Category = "Shop")
-	FSlateColor LineColour = FSlateColor(FLinearColor(0.701102f, 0.701102f, 0.701102f, 1.f));
+	/** NPC 말풍선 바탕(UI 강조색 계열). */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	FLinearColor NpcBubbleColour = FLinearColor(0.054480f, 0.250158f, 0.230740f, 1.f);
 
-	/** NPC 줄의 색(UI 강조색). */
-	UPROPERTY(EditDefaultsOnly, Category = "Shop")
-	FSlateColor NpcColour = FSlateColor(FLinearColor(0.160f, 0.780f, 0.860f, 1.f));
+	/** 내 말풍선 바탕(시안). */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	FLinearColor SelfBubbleColour = FLinearColor(0.160f, 0.780f, 0.860f, 1.f);
+
+	/** NPC 말풍선 글자색(본문 회색). */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	FSlateColor NpcTextColour = FSlateColor(FLinearColor(0.701102f, 0.701102f, 0.701102f, 1.f));
+
+	/** 내 말풍선 글자색. 바탕이 밝아서 검정이어야 읽힌다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	FSlateColor SelfTextColour = FSlateColor(FLinearColor(0.02f, 0.05f, 0.06f, 1.f));
+
+	/** 화자 이름(카톡처럼 상대 것만, 연속이면 생략) 색. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	FSlateColor SpeakerNameColour = FSlateColor(FLinearColor(0.701102f, 0.701102f, 0.701102f, 0.65f));
+
+	/** 말풍선 최대 폭(px). 넘으면 줄바꿈된다. 이게 없으면 패널 끝까지 늘어나 카톡 느낌이 안 난다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	float BubbleMaxWidth = 420.f;
+
+	/** 말풍선 모서리 반경. 꼬리 쪽 모서리 하나만 작게 줘서 방향을 준다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
+	float BubbleCornerRadius = 14.f;
 
 	/** 새 줄이 와도, 스크롤을 위로 올려 지난 대화를 보는 중이면 따라 내려가지 않는다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Shop")
@@ -112,9 +132,27 @@ private:
 	/** 디자이너 줄에서 폰트·색을 베껴 온다. 새로 만드는 줄에 그대로 쓴다. */
 	void CacheLineStyle();
 
+	/** 말풍선 하나(이름표 포함)를 만들어 컨테이너에 붙인다. */
+	void AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping);
+
+	/** 답을 기다리는 동안 띄우는 "···" 말풍선. 답이 오면 지운다. */
+	void ShowTyping();
+	void HideTyping();
+
+	/** 맨 아래를 보고 있었는지 기억했다가, 그랬을 때만 따라 내려간다. */
+	bool WasScrolledToBottom() const;
+
 	/** 대화 상대 NPC. OpenShop 으로 정해진다. */
 	int32 NpcIndex = 0;
 
 	FSlateFontInfo CachedFont;
 	bool bStyleCached = false;
+
+	/** 직전 화자. 같은 화자가 이어지면 이름표를 생략한다(카톡과 같은 규칙). */
+	bool bLastWasNpc = false;
+	bool bHasLastSpeaker = false;
+
+	/** 지금 떠 있는 "···" 말풍선. 없으면 nullptr. */
+	UPROPERTY()
+	TObjectPtr<UWidget> TypingBubble;
 };
