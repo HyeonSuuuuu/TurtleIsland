@@ -25,15 +25,17 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
-#pragma comment(lib, "llamaCpp/llama.lib")
-#pragma comment(lib, "llamaCpp/ggml.lib")
-#pragma comment(lib, "llamaCpp/ggml-base.lib")
-#pragma comment(lib, "llamaCpp/ggml-cpu.lib")
+// lib/dll 은 AI/lib 에 모아 둔다(.gitattributes 가 그 경로를 LFS 로 지정).
+// 헤더만 llamaCpp 에 남는다. 경로는 프로젝트 폴더 기준.
+#pragma comment(lib, "../../lib/llama.lib")
+#pragma comment(lib, "../../lib/ggml.lib")
+#pragma comment(lib, "../../lib/ggml-base.lib")
+#pragma comment(lib, "../../lib/ggml-cpu.lib")
 
 // GPU 백엔드(CUDA/Vulkan)는 ggml_backend_load_all()로 런타임 DLL 로드.
 // 링크 에러 날 때만 아래를 켠다.
-// #pragma comment(lib, "llamaCpp/ggml-cuda.lib")
-// #pragma comment(lib, "llamaCpp/ggml-vulkan.lib")
+// #pragma comment(lib, "../../lib/ggml-cuda.lib")
+// #pragma comment(lib, "../../lib/ggml-vulkan.lib")
 
 #include <atomic>
 #include <chrono>
