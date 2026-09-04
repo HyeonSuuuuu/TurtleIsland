@@ -112,9 +112,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Shop|Bubble")
 	float BubbleCornerRadius = 14.f;
 
-	/** 새 줄이 와도, 스크롤을 위로 올려 지난 대화를 보는 중이면 따라 내려가지 않는다. */
+	/**
+	 *  켜면 스크롤을 위로 올려 지난 대화를 보는 중일 때 따라 내려가지 않는다.
+	 *  기본은 끔 — 상점 대화는 짧고 답이 3~4초 뒤에 오므로 항상 최신이 보이는 게 낫다.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Shop")
-	bool bFollowOnlyWhenAtBottom = true;
+	bool bFollowOnlyWhenAtBottom = false;
+
+	/**
+	 *  "맨 아래를 보고 있다"로 칠 여유(px). 위젯을 막 붙이거나 뗀 직후에는 레이아웃이
+	 *  아직 갱신되지 않아 스크롤 끝값이 몇 px 어긋난다. 1px 로 재면 그 순간을
+	 *  "위로 올려 본 것"으로 오해해 그 뒤로 따라 내려가지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop")
+	float FollowSlackPx = 32.f;
 
 	UFUNCTION()
 	void HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
@@ -132,6 +143,9 @@ private:
 	/** 디자이너 줄에서 폰트·색을 베껴 온다. 새로 만드는 줄에 그대로 쓴다. */
 	void CacheLineStyle();
 
+	/** 내 말풍선 위에 붙일 이름. 로그인 ID 를 쓰고, 없으면 "나". */
+	FString GetSelfDisplayName() const;
+
 	/** 말풍선 하나(이름표 포함)를 만들어 컨테이너에 붙인다. */
 	void AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping);
 
@@ -139,8 +153,11 @@ private:
 	void ShowTyping();
 	void HideTyping();
 
-	/** 맨 아래를 보고 있었는지 기억했다가, 그랬을 때만 따라 내려간다. */
+	/** 맨 아래를 보고 있었는지. bFollowOnlyWhenAtBottom 이 꺼져 있으면 항상 참. */
 	bool WasScrolledToBottom() const;
+
+	/** 레이아웃이 갱신된 다음 틱에 실제로 끝까지 내린다. */
+	void ScrollToBottomNow();
 
 	/** 대화 상대 NPC. OpenShop 으로 정해진다. */
 	int32 NpcIndex = 0;

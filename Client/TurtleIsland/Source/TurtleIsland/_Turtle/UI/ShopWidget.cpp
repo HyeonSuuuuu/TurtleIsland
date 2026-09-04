@@ -13,6 +13,8 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "_Turtle/Network/NetSubsystem.h"
@@ -213,13 +215,29 @@ void UShopWidget::HandleNpcChat(FString Say)
 	AppendMessage(Say, true);
 }
 
+FString UShopWidget::GetSelfDisplayName() const
+{
+	UNetSubsystem* Net = GetNet();
+	const FString Id = Net ? Net->GetUserID() : FString();
+	return Id.IsEmpty() ? TEXT("나") : Id;
+}
+
 bool UShopWidget::WasScrolledToBottom() const
 {
 	if (!DialogueScrollBox || !bFollowOnlyWhenAtBottom)
 	{
 		return true;
 	}
-	return DialogueScrollBox->GetScrollOffset() >= DialogueScrollBox->GetScrollOffsetOfEnd() - 1.f;
+	return DialogueScrollBox->GetScrollOffset()
+		>= DialogueScrollBox->GetScrollOffsetOfEnd() - FollowSlackPx;
+}
+
+void UShopWidget::ScrollToBottomNow()
+{
+	if (DialogueScrollBox)
+	{
+		DialogueScrollBox->ScrollToEnd();
+	}
 }
 
 void UShopWidget::AppendMessage(const FString& Message, bool bFromNpc)
@@ -258,14 +276,14 @@ void UShopWidget::AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping)
 			}
 		};
 
-	// 이름표는 상대 것만, 화자가 바뀔 때만 붙인다(카톡과 같은 규칙).
+	// 이름표는 화자가 바뀔 때만 붙인다. 연속으로 말하면 묶여 보인다.
 	// 대기 말풍선은 곧 지워지므로 이름표를 새로 만들지 않는다.
 	const bool bSpeakerChanged = !bHasLastSpeaker || bLastWasNpc != bFromNpc;
-	if (bFromNpc && bSpeakerChanged && !bIsTyping)
+	if (bSpeakerChanged && !bIsTyping)
 	{
 		if (UTextBlock* NameLabel = NewObject<UTextBlock>(this))
 		{
-			NameLabel->SetText(FText::FromString(NpcDisplayName));
+			NameLabel->SetText(FText::FromString(bFromNpc ? NpcDisplayName : GetSelfDisplayName()));
 			if (bStyleCached)
 			{
 				FSlateFontInfo NameFont = CachedFont;
@@ -328,9 +346,15 @@ void UShopWidget::AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping)
 		bHasLastSpeaker = true;
 	}
 
+	// 지금 한 번, 다음 틱에 한 번 더 부른다. 방금 붙인 말풍선의 레이아웃이 아직
+	// 반영되지 않아서, 지금 부른 것만으로는 "예전 끝"까지만 내려간다.
 	if (DialogueScrollBox && bWasAtBottom)
 	{
 		DialogueScrollBox->ScrollToEnd();
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimerForNextTick(this, &UShopWidget::ScrollToBottomNow);
+		}
 	}
 }
 
