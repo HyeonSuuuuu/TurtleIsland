@@ -119,13 +119,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Chat")
 	FString GetChatText() const;
 
-	// 화면에 남길 최대 줄 수
+	// 기록에 남길 최대 줄 수. 스크롤로 거슬러 올라갈 수 있는 범위다.
 	UPROPERTY(EditAnywhere, Category = "Chat")
-	int32 MaxChatLines = 8;
+	int32 MaxChatLines = 100;
 
 	// 줄이 사라지기까지의 시간(초). 0 이하면 사라지지 않는다.
+	// 채팅창이 스크롤 방식이라 시간으로 지우면 지난 대화를 못 본다. 그래서 끈다.
+	// 화면 위에 잠깐 떴다 사라지는 알림이 필요하면 그건 토스트로 따로 만드는 게 맞다.
 	UPROPERTY(EditAnywhere, Category = "Chat")
-	float ChatLifeSec = 12.f;
+	float ChatLifeSec = 0.f;
 
 	// ---- 플레이 모드 ----
 
