@@ -18,18 +18,7 @@
 	],
 	"Plugins": [
 		{
-			"Name": "ModelingToolsEditorMode",
-			"Enabled": true,
-			"TargetAllowList": [
-				"Editor"
-			]
-		},
-		{
 			"Name": "StateTree",
-			"Enabled": true
-		},
-		{
-			"Name": "GameplayStateTree",
 			"Enabled": true
 		},
 		{
@@ -37,19 +26,7 @@
 			"Enabled": true
 		},
 		{
-			"Name": "Terminal",
-			"Enabled": true
-		},
-		{
 			"Name": "EditorToolset",
-			"Enabled": true
-		},
-		{
-			"Name": "MeshPartition",
-			"Enabled": true
-		},
-		{
-			"Name": "MeshTerrainMode",
 			"Enabled": true
 		},
 		{
@@ -67,6 +44,13 @@
 		{
 			"Name": "ProceduralVegetationEditor",
 			"Enabled": true
+		},
+		{
+			"Name": "AndroidFileServer",
+			"Enabled": false
 		}
+	],
+	"TargetPlatforms": [
+		"Windows"
 	]
 }
