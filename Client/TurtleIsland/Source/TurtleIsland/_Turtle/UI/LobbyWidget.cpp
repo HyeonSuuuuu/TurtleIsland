@@ -72,10 +72,7 @@ void ULobbyWidget::OnRefreshClicked()
 	CS_LobbyEnter Pkt{};
 	Pkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
 	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_LOBBY_ENTER_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_LOBBY_ENTER_PACKET_SIZE);
-	Net->EnqueSendPacket(MoveTemp(Buf));
+	Net->SendPacket(Pkt);
 }
 
 void ULobbyWidget::OnSearchTextChanged(const FText& Text)

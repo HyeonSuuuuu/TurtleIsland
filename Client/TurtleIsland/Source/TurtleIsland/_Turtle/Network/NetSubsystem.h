@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
+#include <Protocol.h>
+#include <type_traits>
 #include "OpponentCharacter.h"
 #include "NetSubsystem.generated.h"
 
@@ -81,6 +83,19 @@ public:
 	void DequeRecvPacket();
 
 	void EnqueSendPacket(TArray<uint8>&& packet);
+
+	// 헤더의 size 만큼 그대로 바이트로 보낸다. size, id 는 호출 전에 채워둘 것.
+	template<typename TPacket>
+	void SendPacket(const TPacket& Pkt)
+	{
+		static_assert(std::is_base_of_v<PacketHeader, TPacket>, "PacketHeader 상속 필요");
+		check(Pkt.size >= PACKET_HEADER_SIZE && Pkt.size <= MaxPacketBytes);
+
+		TArray<uint8> Buf;
+		Buf.SetNumUninitialized(Pkt.size);
+		FMemory::Memcpy(Buf.GetData(), &Pkt, Pkt.size);
+		EnqueSendPacket(MoveTemp(Buf));
+	}
 
 	// 특정 방 입장 요청 (LobbyWidget에서 호출)
 	UFUNCTION(BlueprintCallable, Category = "Network")

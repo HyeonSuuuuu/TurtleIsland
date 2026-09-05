@@ -110,9 +110,12 @@ void UNetSubsystem::Tick(float DeltaTime)
 
 	if (Networker == nullptr) return;
 
-	TArray<uint8> RecvData = Networker->DequeRecvPacket();
-	while (RecvData.Num() > 0)
+	while (true)
 	{
+		TArray<uint8> RecvData = Networker->DequeRecvPacket();
+		if (RecvData.Num() == 0) break;
+
+		// 큐엔 헤더 이상 크기만 들어오지만, 어긋나면 버리고 다음 패킷으로
 		if (RecvData.Num() < PACKET_HEADER_SIZE) continue;
 		PacketHeader* Header = reinterpret_cast<PacketHeader*>(RecvData.GetData());
 		PACKET_ID Id = static_cast<PACKET_ID>(Header->id);
@@ -346,7 +349,6 @@ void UNetSubsystem::Tick(float DeltaTime)
 			}
 			break;
 		}
-		RecvData = Networker->DequeRecvPacket();
 	}
 
 }
@@ -373,10 +375,7 @@ void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
 	Pkt.y    = Y;
 	Pkt.yaw  = Yaw;
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_INGAME_READY_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_INGAME_READY_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 
 	UE_LOG(LogTemp, Log, TEXT("[Net] 인게임 준비 완료 통지"));
 }
@@ -388,10 +387,7 @@ void UNetSubsystem::EnterLobby()
 	LobbyPkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
 	LobbyPkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_LOBBY_ENTER_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &LobbyPkt, CS_LOBBY_ENTER_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(LobbyPkt);
 
 	UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
 }
@@ -416,10 +412,7 @@ void UNetSubsystem::EnterRoom(int32 RoomIndex)
 	Pkt.id        = static_cast<uint16>(PACKET_ID::CS_ROOM_ENTER_REQUEST);
 	Pkt.roomIndex = static_cast<uint32>(RoomIndex);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_ROOM_ENTER_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_ENTER_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 
 	UE_LOG(LogTemp, Log, TEXT("[Net] 방 입장 요청 (roomIndex=%d)"), RoomIndex);
 }
@@ -436,10 +429,7 @@ void UNetSubsystem::CreateRoom(const FString& Title)
 	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_CREATE_REQUEST);
 	CopyStringToBuffer(Pkt.roomTitle, MAX_ROOM_TITLE_LEN, Title);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_ROOM_CREATE_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_CREATE_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 
 	UE_LOG(LogTemp, Log, TEXT("[Net] 방 생성 요청 (title=%s)"), *Title);
 }
@@ -450,10 +440,7 @@ void UNetSubsystem::LeaveRoom()
 	Pkt.size = CS_ROOM_LEAVE_PACKET_SIZE;
 	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_LEAVE_REQUEST);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_ROOM_LEAVE_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_LEAVE_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 
 	// 로컬 상태 정리 후 로비로 복귀
 	RoomMembers.Reset();
@@ -471,10 +458,7 @@ void UNetSubsystem::StartRoom()
 	Pkt.size = CS_ROOM_START_PACKET_SIZE;
 	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_START_REQUEST);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_ROOM_START_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_START_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 
 	// 실제 레벨 이동은 서버의 SC_ROOM_START_NOTIFY 수신 시 처리
 	UE_LOG(LogTemp, Log, TEXT("[Net] 방 시작 요청"));
@@ -518,10 +502,7 @@ void UNetSubsystem::SendChat(const FString& Message)
 	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_ROOM_CHAT_REQUEST);
 	CopyStringToBuffer(Pkt.chatMsg, MAX_CHAT_MSG_LEN + 1, Trimmed);
 
-	TArray<uint8> Buf;
-	Buf.SetNumUninitialized(CS_ROOM_CHAT_PACKET_SIZE);
-	FMemory::Memcpy(Buf.GetData(), &Pkt, CS_ROOM_CHAT_PACKET_SIZE);
-	EnqueSendPacket(MoveTemp(Buf));
+	SendPacket(Pkt);
 }
 
 void UNetSubsystem::SendNpcChat(int32 NpcIndex, const FString& Message)

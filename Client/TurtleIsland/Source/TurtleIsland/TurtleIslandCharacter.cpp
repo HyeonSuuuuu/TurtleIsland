@@ -106,11 +106,7 @@ void ATurtleIslandCharacter::Tick(float DeltaTime)
 				MovePacket.x = Loc.X;
 				MovePacket.y = Loc.Y;
 
-				TArray<uint8> SendBuffer;
-				SendBuffer.SetNumUninitialized(CS_MOVE_PACKET_SIZE);
-				FMemory::Memcpy(SendBuffer.GetData(), &MovePacket, CS_MOVE_PACKET_SIZE);
-
-				NetSubsystem->EnqueSendPacket(MoveTemp(SendBuffer));
+				NetSubsystem->SendPacket(MovePacket);
 			}
 
 			// 싱글 모드에서도 매 주기 비워준다(누적 방지)
