@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+#include "TurtleIslandObject.h"
 #include "TurtleIslandCharacter.generated.h"
 
 class USpringArmComponent;
@@ -20,7 +21,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class ATurtleIslandCharacter : public ACharacter
+class ATurtleIslandCharacter : public ATurtleIslandObject
 {
 	GENERATED_BODY()
 
@@ -94,14 +95,6 @@ public:
 	virtual void DoJumpEnd();
 
 public:
-
-	/** 최대 체력 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Damage")
-	float MaxHP = 100.f;
-
-	/** 현재 체력. BeginPlay 에서 MaxHP 로 채운다 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Damage")
-	float CurrentHP = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category="Damage")
 	bool bIsDead = false;
