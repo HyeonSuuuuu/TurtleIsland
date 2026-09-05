@@ -14,6 +14,14 @@ class TURTLEISLAND_API ATurtleIslandObject : public ACharacter
 public:
 	// Sets default values for this character's properties
 	ATurtleIslandObject();
+	
+	/** 최대 체력 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Damage")
+	float MaxHP = 100.f;
+
+	/** 현재 체력. BeginPlay 에서 MaxHP 로 채운다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Damage")
+	float CurrentHP = 0.f;
 
 protected:
 	// Called when the game starts or when spawned
