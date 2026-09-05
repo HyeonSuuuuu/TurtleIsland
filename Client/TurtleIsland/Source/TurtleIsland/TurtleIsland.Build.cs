@@ -14,9 +14,6 @@ public class TurtleIsland : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
-			"AIModule",
-			"StateTreeModule",
-			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
 			"SlateCore",
@@ -26,26 +23,9 @@ public class TurtleIsland : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
+		// 모듈 루트 + 공통 프로토콜만. 하위 폴더는 "Network/NetSubsystem.h" 처럼 경로를 명시해 참조한다.
 		PublicIncludePaths.AddRange(new string[] {
 			"TurtleIsland",
-			"TurtleIsland/_Turtle",
-			"TurtleIsland/_Turtle/Character",
-			"TurtleIsland/_Turtle/Gameplay",
-			"TurtleIsland/_Turtle/Network",
-			"TurtleIsland/_Turtle/UI",
-			"TurtleIsland/Variant_Platforming",
-			"TurtleIsland/Variant_Platforming/Animation",
-			"TurtleIsland/Variant_Combat",
-			"TurtleIsland/Variant_Combat/AI",
-			"TurtleIsland/Variant_Combat/Animation",
-			"TurtleIsland/Variant_Combat/Gameplay",
-			"TurtleIsland/Variant_Combat/Interfaces",
-			"TurtleIsland/Variant_Combat/UI",
-			"TurtleIsland/Variant_SideScrolling",
-			"TurtleIsland/Variant_SideScrolling/AI",
-			"TurtleIsland/Variant_SideScrolling/Gameplay",
-			"TurtleIsland/Variant_SideScrolling/Interfaces",
-			"TurtleIsland/Variant_SideScrolling/UI",
 			"../../../Common"
 		});
 

@@ -181,7 +181,7 @@ CombatPanel   [Border]  └ CombatLog [ScrollBox] └ CombatLog_Box └ MessageC
 StatusPanel   [Border]  └ HPProgressBar [ProgressBar] / LvText [TextBlock]
 ```
 
-HP 는 `GetHPRatio` → `SetPercent` 로 Tick 에서 갱신 (`TurtleIslandCharacter`).
+HP 는 `GetHPRatio` → `SetPercent` 로 Tick 에서 갱신 (`TurtleCharacter`).
 **MP·XP·스탯·스킬 슬롯·인벤토리·증강은 아직 없음.**
 
 ---
