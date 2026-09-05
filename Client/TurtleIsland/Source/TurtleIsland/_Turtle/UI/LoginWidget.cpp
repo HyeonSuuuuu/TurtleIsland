@@ -259,10 +259,6 @@ void ULoginWidget::TrySendLogin()
 	Net->CopyStringToBuffer(LoginPacket.userID, MAX_USER_ID_LEN + 1, PendingID);
 	Net->CopyStringToBuffer(LoginPacket.userPW, MAX_USER_PW_LEN + 1, PendingPW);
 
-	TArray<uint8> SendBuffer;
-	SendBuffer.SetNumUninitialized(sizeof(CS_Login));
-	FMemory::Memcpy(SendBuffer.GetData(), &LoginPacket, sizeof(CS_Login));
-
-	Net->EnqueSendPacket(MoveTemp(SendBuffer));
+	Net->SendPacket(LoginPacket);
 	UE_LOG(LogTemp, Log, TEXT("[Login] 패킷 전송"));
 }
