@@ -79,9 +79,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 
-	void EnqueRecvPacket();
-	void DequeRecvPacket();
-
 	void EnqueSendPacket(TArray<uint8>&& packet);
 
 	// 헤더의 size 만큼 그대로 바이트로 보낸다. size, id 는 호출 전에 채워둘 것.

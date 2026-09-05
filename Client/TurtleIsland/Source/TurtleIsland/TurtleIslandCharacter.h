@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
-#include "CombatDamageable.h"
 #include "TurtleIslandCharacter.generated.h"
 
 class USpringArmComponent;
@@ -21,7 +20,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class ATurtleIslandCharacter : public ACharacter, public ICombatDamageable
+class ATurtleIslandCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
@@ -127,11 +126,11 @@ public:
 	UFUNCTION(BlueprintPure, Category="Stats")
 	UPlayerStatsComponent* GetStats() const { return Stats; }
 
-	// --- ICombatDamageable ---
-	virtual void ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse) override;
-	virtual void HandleDeath() override;
-	virtual void ApplyHealing(float Healing, AActor* Healer) override;
-	virtual void NotifyDanger(const FVector& DangerLocation, AActor* DangerSource) override;
+	// 피격/회복/사망. 전투가 서버로 가면 SC_ 핸들러가 여기를 호출한다.
+	virtual void ApplyDamage(float Damage, AActor* DamageCauser, const FVector& DamageLocation, const FVector& DamageImpulse);
+	virtual void HandleDeath();
+	virtual void ApplyHealing(float Healing, AActor* Healer);
+
 
 protected:
 

@@ -178,8 +178,8 @@ void ATurtleIslandCharacter::DoJumpEnd()
 }
 
 // ---------------------------------------------------------------------------
-// ICombatDamageable — 몬스터(ACombatEnemy)의 근접 트레이스가 이 인터페이스를 통해
-// 플레이어에게 피해를 준다. DoAttackTrace 는 "Player" 태그도 함께 확인한다.
+// 피격/사망 처리. 싱글 전투(Variant_Combat)가 빠지면서 호출자가 없다.
+// 서버 전투를 붙이면 SC_ 패킷 핸들러가 여기를 호출하게 된다.
 // ---------------------------------------------------------------------------
 
 void ATurtleIslandCharacter::BeginPlay()
@@ -268,7 +268,3 @@ void ATurtleIslandCharacter::ApplyHealing(float Healing, AActor* Healer)
 	CurrentHP = FMath::Min(MaxHP, CurrentHP + Healing);
 }
 
-void ATurtleIslandCharacter::NotifyDanger(const FVector& DangerLocation, AActor* DangerSource)
-{
-	// 회피 연출용 훅 — 현재는 사용하지 않음
-}

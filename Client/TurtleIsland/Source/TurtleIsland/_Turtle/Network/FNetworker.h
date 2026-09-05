@@ -21,7 +21,6 @@ public:
 	virtual void Stop() override;
 
 
-	void SendLoginPacket(const FString& userID, const FString& userPW);
 	bool IsConnected() const { return bConnected.load(); }
 
 private:
