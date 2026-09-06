@@ -263,33 +263,32 @@ void UNetSubsystem::Tick(float DeltaTime)
 				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
 				// 수신되는 건 항상 다른 플레이어의 움직임
 				// 서버는 월드 2D (x, y) 좌표 사용 → Unreal (X, Y) 그대로, 높이(Z)는 바닥 고정
-				auto ToUnrealLoc = [GroundZ = OpponentGroundZ](float sx, float sy) -> FVector
-				{
-					return FVector(sx, sy, GroundZ);
-				};
-
-				const FVector NewLocation = ToUnrealLoc(Pkt->x, Pkt->y);
+				// Z 는 여기서 정하지 않는다. UNetInputProvider 가 GroundDetector 로 지형에 맞춰 구한다.
+				// (예전에는 OpponentGroundZ = 92.f 상수라 언덕에서 파묻히거나 떴다)
 				const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 
 				if (players.Contains(Pkt->userIndex))
 				{
-					if (AOpponentCharacter* Opponent = players[Pkt->userIndex])
-						Opponent->UpdateNetState(NewLocation, NewRotation);
+					if (AServerAgent* Agent = players[Pkt->userIndex])
+						Agent->UpdateNetState(Pkt->x, Pkt->y, Pkt->yaw);
 				}
 				else
 				{
 					// 처음 보는 플레이어 → 스폰
 					if (OpponentClass && GetWorld())
 					{
+						// 첫 프레임에 지면을 찾을 때까지 쓸 임시 높이
+						const FVector SpawnLocation(Pkt->x, Pkt->y, OpponentGroundZ);
+
 						FActorSpawnParameters Params;
 						Params.SpawnCollisionHandlingOverride =
 							ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-						AOpponentCharacter* NewOpponent = GetWorld()->SpawnActor<AOpponentCharacter>(
-							OpponentClass, NewLocation, NewRotation, Params);
-						if (NewOpponent)
+						AServerAgent* NewAgent = GetWorld()->SpawnActor<AServerAgent>(
+							OpponentClass, SpawnLocation, NewRotation, Params);
+						if (NewAgent)
 						{
-							NewOpponent->UpdateNetState(NewLocation, NewRotation);
-							players.Emplace(Pkt->userIndex, NewOpponent);
+							NewAgent->UpdateNetState(Pkt->x, Pkt->y, Pkt->yaw);
+							players.Emplace(Pkt->userIndex, NewAgent);
 							UE_LOG(LogTemp, Log, TEXT("[Net] 상대방 스폰 (userId=%d)"), Pkt->userIndex);
 						}
 					}
@@ -300,7 +299,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 			{
 				SC_RoomLeaveNotify* Pkt = reinterpret_cast<SC_RoomLeaveNotify*>(RecvData.GetData());
 
-				AOpponentCharacter** Found = players.Find(Pkt->userIndex);
+				AServerAgent** Found = players.Find(Pkt->userIndex);
 				if (Found && *Found)
 				{
 					(*Found)->Destroy();

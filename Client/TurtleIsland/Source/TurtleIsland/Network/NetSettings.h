@@ -16,7 +16,7 @@ class TURTLEISLAND_API UNetSettings : public UDeveloperSettings
 
 public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Classes")
-    TSubclassOf<class AOpponentCharacter> OpponentClass;
+    TSubclassOf<class AServerAgent> OpponentClass;
 
     // 싱글톤처럼 어디서든 설정값을 가져오기 위한 헬퍼 함수
     static const UNetSettings* Get() { return GetDefault<UNetSettings>(); }
