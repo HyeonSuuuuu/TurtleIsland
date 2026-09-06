@@ -1,4 +1,4 @@
-c#pragma once
+#pragma once
 #include "CoreMinimal.h"
 #include "Sockets.h"
 #include <atomic>

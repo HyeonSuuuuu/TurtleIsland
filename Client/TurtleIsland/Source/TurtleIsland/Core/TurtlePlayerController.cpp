@@ -27,22 +27,9 @@ void ATurtlePlayerController::BeginPlay()
 		SetInputMode(FInputModeGameOnly());
 		SetShowMouseCursor(false);
 
-		// 인게임 로딩 완료 → 서버에 현재 상태(다른 플레이어/NPC) 요청
-		if (UGameInstance* GI = GetGameInstance())
-		{
-			UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>();
-			if (Net && !Net->IsSinglePlay())
-			{
-				FVector Loc = FVector::ZeroVector;
-				float Yaw = 0.f;
-				if (APawn* P = GetPawn())
-				{
-					Loc = P->GetActorLocation();
-					Yaw = P->GetActorRotation().Yaw;
-				}
-				Net->NotifyIngameReady(Loc.X, Loc.Y, Yaw);
-			}
-		}
+		// 인게임 진입 통지(NotifyIngameReady)는 UNetSyncComponent::BeginPlay 로 옮겼다.
+		// 그 컴포넌트는 멀티에서만 붙으므로 여기서 IsSinglePlay() 를 물을 필요가 없어졌고,
+		// 폰이 확실히 존재·배치된 시점이라 좌표도 더 정확하다.
 	}
 
 	// only spawn touch controls on local player controllers

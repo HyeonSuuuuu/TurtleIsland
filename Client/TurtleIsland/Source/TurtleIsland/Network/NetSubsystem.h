@@ -7,7 +7,7 @@
 #include "Tickable.h"
 #include <Protocol.h>
 #include <type_traits>
-#include "Character/OpponentCharacter.h"
+#include "Character/ServerAgent.h"
 #include "NetSubsystem.generated.h"
 
 // 플레이 모드. Single이면 서버에 접속하지 않고 패킷도 전혀 주고받지 않는다.
@@ -201,10 +201,10 @@ public:
 
 	// 상대방 캐릭터 BP 클래스 끌어다 사용
 	UPROPERTY(EditAnywhere, Category = "Network")
-	TSubclassOf<class AOpponentCharacter> OpponentClass;
+	TSubclassOf<class AServerAgent> OpponentClass;
 
-	// 상대방을 배치할 아레나 바닥 높이(Z). 서버는 월드 2D(x,y)만 보내므로 Z는 고정값 사용.
-	// Lv3_Ingame PlayerStart Z(=92)에 맞춤. 캐릭터가 바닥에 안 맞으면 여기만 조정.
+	// 스폰 직후 UGroundDetector 가 지면을 찾기 전까지만 쓰는 임시 높이.
+	// 실제 Z 는 UNetInputProvider 가 지형에 맞춰 매 갱신마다 구한다.
 	UPROPERTY(EditAnywhere, Category = "Network")
 	float OpponentGroundZ = 92.f;
 
@@ -274,7 +274,7 @@ protected:
 	FRunnableThread* Thread = nullptr;
 
 	UPROPERTY()
-	TMap<uint32, AOpponentCharacter*> players;
+	TMap<uint32, AServerAgent*> players;
 
 	uint32 myId = 0;
 };

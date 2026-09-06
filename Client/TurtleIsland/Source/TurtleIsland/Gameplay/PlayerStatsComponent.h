@@ -13,7 +13,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLevelUp, int32, NewLevel);
  * 레벨/경험치/골드를 들고 있는 플레이어 스탯 컴포넌트.
  * 현재는 클라가 값을 직접 굴리지만, 서버 권위로 옮길 때는 AddExp/AddGold 대신
  * ApplyServerStats 만 호출하도록 바꾸면 UI 쪽은 그대로 둘 수 있다.
- * (HP 는 ATurtleCharacter 가 계속 소유 — 전투 인터페이스와 묶여 있음)
+ * (HP 는 UHealthComponent 가 따로 소유한다)
  */
 UCLASS(ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
 class TURTLEISLAND_API UPlayerStatsComponent : public UActorComponent
