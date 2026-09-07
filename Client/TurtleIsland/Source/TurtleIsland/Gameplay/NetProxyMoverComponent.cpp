@@ -42,9 +42,9 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	const FVector Target  = NetInput->GetTargetLocation();
 
 	FVector NewLocation;
-	if (FVector::Dist2D(Current, Target) > NetInput->SnapDistance)
+	if (!bPlacedOnce || FVector::Dist2D(Current, Target) > SnapDistance)
 	{
-		// 오차가 너무 크면 따라가지 않고 즉시 맞춘다
+		// 첫 배치이거나 오차가 너무 크면 따라가지 않고 즉시 맞춘다
 		NewLocation = Target;
 	}
 	else
@@ -66,5 +66,9 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	Owner->SetActorLocation(NewLocation);
 
 	const FRotator TargetRot(0.f, NetInput->GetFacingYaw(), 0.f);
-	Owner->SetActorRotation(FMath::RInterpTo(Owner->GetActorRotation(), TargetRot, DeltaTime, InterpSpeed));
+	Owner->SetActorRotation(bPlacedOnce
+		? FMath::RInterpTo(Owner->GetActorRotation(), TargetRot, DeltaTime, InterpSpeed)
+		: TargetRot);
+
+	bPlacedOnce = true;
 }

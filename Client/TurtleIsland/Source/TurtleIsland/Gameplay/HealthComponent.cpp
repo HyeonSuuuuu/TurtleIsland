@@ -21,6 +21,16 @@ void UHealthComponent::ResetTo(int32 InMaxHP, int32 InHP)
 	OnHealthChanged.Broadcast();
 }
 
+void UHealthComponent::ResetToFull()
+{
+	ResetTo(MaxHP, MaxHP);
+}
+
+void UHealthComponent::ResetHP(int32 InHP)
+{
+	ResetTo(MaxHP, InHP);
+}
+
 float UHealthComponent::GetHPRatio() const
 {
 	return MaxHP > 0 ? FMath::Clamp(static_cast<float>(CurrentHP) / static_cast<float>(MaxHP), 0.f, 1.f) : 0.f;

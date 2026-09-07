@@ -46,6 +46,8 @@ enum class PACKET_ID : uint16_t
 
 	CS_INGAME_READY = 281,   // 인게임 레벨 로딩 완료 → 현재 상태 요청
 
+	CS_ATTACK = 291,         // 공격/스킬 시전 요청 (의도만. 판정은 전적으로 서버)
+
 	// Server To Client (300 ~ 399)
 	SC_LOGIN_RESPONSE = 301,
 
@@ -67,6 +69,9 @@ enum class PACKET_ID : uint16_t
 
 	SC_NPC_SPAWN = 381,
 	SC_NPC_MOVE  = 382,
+
+	SC_ATTACK_NOTIFY = 391,  // 시전 성공 → 전원이 모션 재생
+	SC_DAMAGE_NOTIFY = 392,  // 피해 결과 → 전원이 HP/연출 반영
 
 
 	// AI To Server (3000 ~ 3099)
@@ -221,6 +226,13 @@ struct SC_RoomStart : public PacketHeader
 inline constexpr uint16_t SC_ROOM_START_PACKET_SIZE = sizeof(SC_RoomStart);
 
 //  --------------- InGame ----------------
+
+// CS_Move.inputFlag 비트. 클라와 서버가 같은 값을 봐야 하므로 여기서 한 번만 정의한다.
+inline constexpr uint16_t MOVE_FLAG_W      = 1 << 0;
+inline constexpr uint16_t MOVE_FLAG_A      = 1 << 1;
+inline constexpr uint16_t MOVE_FLAG_S      = 1 << 2;
+inline constexpr uint16_t MOVE_FLAG_D      = 1 << 3;
+
 struct CS_Move : public PacketHeader
 {
 	uint16_t inputFlag;
@@ -264,6 +276,42 @@ struct SC_NpcMove : public PacketHeader
 };
 inline constexpr uint16_t SC_NPC_MOVE_PACKET_SIZE = sizeof(SC_NpcMove);
 
+
+// --------------- 전투 ----------------
+// 클라는 판정하지 않는다. 의도만 보내고, 모션조차 서버 통지를 받은 뒤에 재생한다.
+// 그래서 예측 취소용 일련번호도, 거절 패킷도 없다 — 서버가 SC_ATTACK_NOTIFY 를
+// 안 보내면 그것으로 끝이다.
+
+inline constexpr uint16_t SKILL_ID_BASIC_ATTACK = 0;
+
+struct CS_Attack : public PacketHeader
+{
+	uint16_t skillId;    // 0 = 기본공격
+	uint32_t targetId;   // 타겟 지정형일 때. 논타겟이면 0
+	float    yaw;        // 시전 순간 바라본 방향 (서버가 가진 yaw 는 최대 한 주기 낡다)
+};
+inline constexpr uint16_t CS_ATTACK_PACKET_SIZE = sizeof(CS_Attack);
+
+// 시전 성공 통지. 시전자 본인도 이걸 받고 나서야 모션을 재생한다.
+struct SC_AttackNotify : public PacketHeader
+{
+	uint32_t casterId;
+	uint16_t skillId;
+	float    yaw;
+};
+inline constexpr uint16_t SC_ATTACK_NOTIFY_PACKET_SIZE = sizeof(SC_AttackNotify);
+
+// 피해 결과. 모션과 시점이 달라 별도 패킷으로 둔다(선딜 뒤에 맞아야 한다).
+// 광역기는 대상 수만큼 여러 번 온다.
+struct SC_DamageNotify : public PacketHeader
+{
+	uint32_t targetId;
+	uint32_t causerId;
+	int32_t  damage;
+	int32_t  remainHP;
+	uint8_t  flags;      // 1=크리티컬 2=회피 4=막기
+};
+inline constexpr uint16_t SC_DAMAGE_NOTIFY_PACKET_SIZE = sizeof(SC_DamageNotify);
 
 //  --------------- NPC ----------------
 struct CS_NpcChat : public PacketHeader

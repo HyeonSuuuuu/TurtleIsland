@@ -45,15 +45,8 @@ void UNetInputProvider::UpdateNetState(float WorldX, float WorldY, float Yaw)
 	TargetLocation = FVector(WorldX, WorldY, ResolveZ(WorldX, WorldY));
 	TargetYaw      = Yaw;
 
-	// 첫 패킷은 보간 없이 그 자리에 놓는다
-	if (!bHasTarget)
-	{
-		bHasTarget = true;
-		if (AActor* Owner = GetOwner())
-		{
-			Owner->SetActorLocationAndRotation(TargetLocation, FRotator(0.f, TargetYaw, 0.f));
-		}
-	}
+	// 액터를 직접 움직이지 않는다. 첫 목표를 그 자리에 놓는 건 Mover 의 일이다.
+	bHasTarget = true;
 }
 
 FVector2D UNetInputProvider::GetMovementInput() const

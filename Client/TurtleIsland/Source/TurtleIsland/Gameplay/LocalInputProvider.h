@@ -40,6 +40,7 @@ public:
 	UPROPERTY(EditAnywhere, Category="Input")
 	UInputAction* JumpAction = nullptr;
 
+
 	/** 소유 액터에 카메라가 없을 때 만들 스프링암 길이 */
 	UPROPERTY(EditAnywhere, Category="Camera")
 	float ArmLength = 400.f;
@@ -50,18 +51,9 @@ public:
 	/** 폰의 SetupPlayerInputComponent 에서 불러준다 */
 	void BindInput(UInputComponent* PlayerInputComponent);
 
-	/**
-	 * 예전에 캐릭터 클래스에 물려두었던 InputAction 에셋을 넘겨받는다.
-	 * 비어 있는 슬롯만 채우므로, 블루프린트를 리페어런팅하지 않아도 기존 세팅이 그대로 산다.
-	 */
-	void AdoptLegacyActions(UInputAction* InMove, UInputAction* InLook, UInputAction* InMouseLook, UInputAction* InJump);
-
-	/** 모바일 가상 조이스틱 등 Enhanced Input 밖에서 들어오는 입력용 (Right, Forward) */
-	void InjectMoveAxis(const FVector2D& LocalAxis);
-	void InjectLookAxis(const FVector2D& LookAxis);
-
 	virtual FVector2D GetMovementInput() const override { return CachedWorldDirection; }
 	virtual float GetFacingYaw() const override;
+	virtual float GetViewYaw() const override;
 	virtual bool WantsFacingOverride() const override { return false; }
 
 	UFUNCTION(BlueprintPure, Category="Camera")
@@ -94,4 +86,5 @@ private:
 
 	/** 월드 XY 방향. Enhanced Input 의 Triggered/Completed 로 갱신된다 */
 	FVector2D CachedWorldDirection = FVector2D::ZeroVector;
+
 };

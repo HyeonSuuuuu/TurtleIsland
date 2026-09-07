@@ -1,14 +1,14 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Character/PlayerAgent.h"
-#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Gameplay/LocalInputProvider.h"
 #include "Gameplay/LocalMoverComponent.h"
+#include "Gameplay/SkillInputComponent.h"
+#include "Gameplay/InteractionComponent.h"
 #include "Gameplay/PlayerStatsComponent.h"
 #include "Network/NetSubsystem.h"
 #include "Network/NetSyncComponent.h"
@@ -37,22 +37,15 @@ APlayerAgent::APlayerAgent()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
-	// 카메라는 여기서 만든다. 블루프린트에 튜닝해둔 값을 지키려고 남긴 것이고,
-	// ULocalInputProvider 가 BeginPlay 에서 이걸 채택해 쓴다.
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f;
-	CameraBoom->bUsePawnControlRotation = true;
-
-	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
-	FollowCamera->bUsePawnControlRotation = false;
-
+	// 카메라는 ULocalInputProvider 가 소유한다. 뷰 기준축을 그쪽이 갖고 있어서,
+	// 카메라를 따로 두면 소유자가 둘로 갈린다.
 	Stats = CreateDefaultSubobject<UPlayerStatsComponent>(TEXT("Stats"));
 
 	// 로컬 플레이어용 컴포넌트 세트
 	LocalInput = CreateDefaultSubobject<ULocalInputProvider>(TEXT("LocalInput"));
-	Mover      = CreateDefaultSubobject<ULocalMoverComponent>(TEXT("Mover"));
+	Mover       = CreateDefaultSubobject<ULocalMoverComponent>(TEXT("Mover"));
+	SkillInput  = CreateDefaultSubobject<USkillInputComponent>(TEXT("SkillInput"));
+	Interaction = CreateDefaultSubobject<UInteractionComponent>(TEXT("Interaction"));
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character)
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
@@ -86,33 +79,8 @@ void APlayerAgent::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		return;
 	}
 
-	// 블루프린트에 남아 있는 InputAction 에셋을 Provider 로 넘긴다. 비어 있는 슬롯만 채운다.
-	LocalInput->AdoptLegacyActions(MoveAction, LookAction, MouseLookAction, JumpAction);
 	LocalInput->BindInput(PlayerInputComponent);
-}
 
-void APlayerAgent::DoMove(float Right, float Forward)
-{
-	if (LocalInput)
-	{
-		LocalInput->InjectMoveAxis(FVector2D(Right, Forward));
-	}
-}
-
-void APlayerAgent::DoLook(float Yaw, float Pitch)
-{
-	if (LocalInput)
-	{
-		LocalInput->InjectLookAxis(FVector2D(Yaw, Pitch));
-	}
-}
-
-void APlayerAgent::DoJumpStart()
-{
-	Jump();
-}
-
-void APlayerAgent::DoJumpEnd()
-{
-	StopJumping();
+	if (SkillInput)  { SkillInput->BindInput(PlayerInputComponent); }
+	if (Interaction) { Interaction->BindInput(PlayerInputComponent); }
 }

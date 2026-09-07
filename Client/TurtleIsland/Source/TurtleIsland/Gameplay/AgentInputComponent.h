@@ -33,6 +33,14 @@ public:
 	/** true 면 Mover 가 GetFacingYaw() 로 강제 회전. false 면 이동 방향을 따른다 */
 	virtual bool WantsFacingOverride() const { return false; }
 
+	/**
+	 * GetMovementInput() 을 만들 때 기준으로 삼은 월드 yaw.
+	 * 이 값을 아는 건 방향을 만든 쪽뿐이라, 필요한 곳이 다시 유도하지 않게 여기서 내준다.
+	 */
+	UFUNCTION(BlueprintPure, Category="Agent|Input")
+	virtual float GetViewYaw() const;
+
+
 	/** 점프는 상태가 아니라 이벤트라 Intent 에 넣지 않는다 */
 	DECLARE_MULTICAST_DELEGATE(FAgentJumpSignal);
 	FAgentJumpSignal OnJumpPressed;

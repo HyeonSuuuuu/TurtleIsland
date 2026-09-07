@@ -2,9 +2,9 @@
 
 #include "Character/TurtleAgent.h"
 #include "Gameplay/HealthComponent.h"
-#include "Gameplay/AgentInputComponent.h"
-#include "Gameplay/NetInputProvider.h"
+#include "Gameplay/AgentSkillComponent.h"
 #include "Core/TurtleGameMode.h"
+#include "TurtleIsland.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -15,57 +15,44 @@ ATurtleAgent::ATurtleAgent()
 	PrimaryActorTick.bCanEverTick = true;
 
 	Health = CreateDefaultSubobject<UHealthComponent>(TEXT("Health"));
+	Skill  = CreateDefaultSubobject<UAgentSkillComponent>(TEXT("Skill"));
 }
 
 void ATurtleAgent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// HP 초기화는 UHealthComponent::BeginPlay 가 자기 MaxHP 로 직접 한다.
+	// 여기서는 연출을 붙이기 위해 델리게이트만 구독한다.
 	if (Health)
 	{
-		// 블루프린트에 저작해둔 MaxHP 를 컴포넌트로 옮긴다
-		const int32 Authored = FMath::Max(1, FMath::RoundToInt(MaxHP));
-		Health->ResetTo(Authored, Authored);
-
 		Health->OnDamaged.AddDynamic(this, &ATurtleAgent::HandleDamaged);
 		Health->OnDied.AddDynamic(this, &ATurtleAgent::HandleDied);
-		Health->OnHealthChanged.AddDynamic(this, &ATurtleAgent::HandleHealthChanged);
-
-		HandleHealthChanged();
-	}
-}
-
-float ATurtleAgent::GetHPRatio() const
-{
-	return Health ? Health->GetHPRatio() : 0.f;
-}
-
-void ATurtleAgent::HandleHealthChanged()
-{
-	if (Health)
-	{
-		CurrentHP = static_cast<float>(Health->CurrentHP);
-		bIsDead   = Health->bIsDead;
 	}
 }
 
 void ATurtleAgent::HandleDamaged(int32 Damage, float HPRatio, AActor* Causer)
 {
-	HandleHealthChanged();
 	OnDamaged(static_cast<float>(Damage), HPRatio, Causer);
 }
 
 void ATurtleAgent::HandleDied(AActor* Killer)
 {
-	HandleHealthChanged();
 	EnterDeadState();
 	OnDied();
 
 	// 리스폰 "실행"은 GameMode 한 곳에만 있다. 싱글이면 타이머, 멀티면 서버 통지를 기다린다.
-	if (ATurtleGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ATurtleGameMode>() : nullptr)
+	ATurtleGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ATurtleGameMode>() : nullptr;
+	if (!GM)
 	{
-		GM->ScheduleRespawn(this, DeathDisableTime);
+		// 조용히 넘어가면 "죽었는데 영영 안 살아나는" 증상으로만 드러난다.
+		UE_LOG(LogTurtleIsland, Error,
+			TEXT("%s: 현재 GameMode 가 ATurtleGameMode 파생이 아니라 리스폰을 예약할 수 없다. ")
+			TEXT("레벨의 GameMode 블루프린트를 TurtleGameMode 파생으로 바꿔야 한다."),
+			*GetNameSafe(this));
+		return;
 	}
+	GM->ScheduleRespawn(this, DeathDisableTime);
 }
 
 void ATurtleAgent::EnterDeadState()
@@ -89,7 +76,9 @@ void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 {
 	if (Health)
 	{
-		Health->ResetTo(Health->MaxHP, HP > 0 ? HP : Health->MaxHP);
+		// 서버가 값을 주면 그 값으로, 아니면 컴포넌트가 알아서 최대치로
+		if (HP > 0) { Health->ResetHP(HP); }
+		else        { Health->ResetToFull(); }
 	}
 
 	if (!At.IsNearlyZero())
@@ -111,13 +100,4 @@ void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 		C->SetIgnoreLookInput(false);
 	}
 
-	HandleHealthChanged();
-}
-
-void ATurtleAgent::UpdateNetState(float WorldX, float WorldY, float Yaw)
-{
-	if (UNetInputProvider* NetInput = FindComponentByClass<UNetInputProvider>())
-	{
-		NetInput->UpdateNetState(WorldX, WorldY, Yaw);
-	}
 }

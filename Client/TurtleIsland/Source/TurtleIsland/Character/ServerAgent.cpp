@@ -16,12 +16,10 @@ AServerAgent::AServerAgent()
 	Ground   = CreateDefaultSubobject<UGroundDetector>(TEXT("Ground"));
 }
 
-void AServerAgent::Tick(float DeltaTime)
+void AServerAgent::UpdateNetState(float WorldX, float WorldY, float Yaw)
 {
-	Super::Tick(DeltaTime);
-
-	if (Mover)
+	if (NetInput)
 	{
-		Speed = Mover->GetSpeed2D();
+		NetInput->UpdateNetState(WorldX, WorldY, Yaw);
 	}
 }

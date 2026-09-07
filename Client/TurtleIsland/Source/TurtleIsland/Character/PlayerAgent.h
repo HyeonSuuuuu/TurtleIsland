@@ -7,12 +7,11 @@
 #include "Character/TurtleAgent.h"
 #include "PlayerAgent.generated.h"
 
-class USpringArmComponent;
-class UCameraComponent;
-class UInputAction;
 class UPlayerStatsComponent;
 class ULocalInputProvider;
 class ULocalMoverComponent;
+class USkillInputComponent;
+class UInteractionComponent;
 
 
 /**
@@ -30,14 +29,6 @@ class APlayerAgent : public ATurtleAgent
 {
 	GENERATED_BODY()
 
-	/** Camera boom positioning the camera behind the character */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	USpringArmComponent* CameraBoom;
-
-	/** Follow camera */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	UCameraComponent* FollowCamera;
-
 	/** 레벨/경험치/골드 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats", meta = (AllowPrivateAccess = "true"))
 	UPlayerStatsComponent* Stats;
@@ -50,24 +41,15 @@ class APlayerAgent : public ATurtleAgent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	ULocalMoverComponent* Mover;
 
+	/** 좌클릭/Q/E → CS_ATTACK. 판정도 모션도 여기서 하지 않는다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	USkillInputComponent* SkillInput;
+
+	/** F → 근처 대상 탐색 + 상호작용 델리게이트 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	UInteractionComponent* Interaction;
+
 protected:
-
-	/**
-	 * InputAction 에셋 — 원래 자리가 여기라 블루프린트에 물려둔 값을 지키기 위해 남긴다.
-	 * SetupPlayerInputComponent 에서 ULocalInputProvider 로 넘긴다.
-	 * 새 세팅은 Provider 쪽에 직접 물리면 되고, 그때 이 슬롯들은 비워두면 된다.
-	 */
-	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* JumpAction;
-
-	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* MoveAction;
-
-	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* LookAction;
-
-	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* MouseLookAction;
 
 public:
 
@@ -81,29 +63,8 @@ protected:
 
 public:
 
-	/** Handles move inputs from either controls or UI interfaces */
-	UFUNCTION(BlueprintCallable, Category="Input")
-	virtual void DoMove(float Right, float Forward);
-
-	/** Handles look inputs from either controls or UI interfaces */
-	UFUNCTION(BlueprintCallable, Category="Input")
-	virtual void DoLook(float Yaw, float Pitch);
-
-	/** Handles jump pressed inputs from either controls or UI interfaces */
-	UFUNCTION(BlueprintCallable, Category="Input")
-	virtual void DoJumpStart();
-
-	/** Handles jump released inputs from either controls or UI interfaces */
-	UFUNCTION(BlueprintCallable, Category="Input")
-	virtual void DoJumpEnd();
-
 	/** 스탯 컴포넌트 (몬스터 보상 지급/HUD 바인딩용) */
 	UFUNCTION(BlueprintPure, Category="Stats")
 	UPlayerStatsComponent* GetStats() const { return Stats; }
 
-	/** Returns CameraBoom subobject **/
-	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-
-	/** Returns FollowCamera subobject **/
-	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 };

@@ -74,31 +74,6 @@ void ULocalInputProvider::EnsureCamera()
 	}
 }
 
-void ULocalInputProvider::AdoptLegacyActions(UInputAction* InMove, UInputAction* InLook, UInputAction* InMouseLook, UInputAction* InJump)
-{
-	if (!MoveAction)      { MoveAction = InMove; }
-	if (!LookAction)      { LookAction = InLook; }
-	if (!MouseLookAction) { MouseLookAction = InMouseLook; }
-	if (!JumpAction)      { JumpAction = InJump; }
-}
-
-void ULocalInputProvider::InjectMoveAxis(const FVector2D& LocalAxis)
-{
-	CachedWorldDirection = ToWorldDirection(LocalAxis);
-}
-
-void ULocalInputProvider::InjectLookAxis(const FVector2D& LookAxis)
-{
-	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-	{
-		if (OwnerPawn->GetController())
-		{
-			OwnerPawn->AddControllerYawInput(LookAxis.X);
-			OwnerPawn->AddControllerPitchInput(LookAxis.Y);
-		}
-	}
-}
-
 void ULocalInputProvider::BindInput(UInputComponent* PlayerInputComponent)
 {
 	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent);
@@ -132,21 +107,23 @@ void ULocalInputProvider::BindInput(UInputComponent* PlayerInputComponent)
 	}
 }
 
+float ULocalInputProvider::GetViewYaw() const
+{
+	// 카메라 기준축 = 컨트롤 회전. 이동 방향을 만들 때 쓴 것과 같은 값이어야 한다.
+	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		if (const AController* C = OwnerPawn->GetController())
+		{
+			return C->GetControlRotation().Yaw;
+		}
+		return OwnerPawn->GetActorRotation().Yaw;
+	}
+	return 0.f;
+}
+
 FVector2D ULocalInputProvider::ToWorldDirection(const FVector2D& LocalAxis) const
 {
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn)
-	{
-		return FVector2D::ZeroVector;
-	}
-
-	float Yaw = OwnerPawn->GetActorRotation().Yaw;
-	if (const AController* C = OwnerPawn->GetController())
-	{
-		Yaw = C->GetControlRotation().Yaw;
-	}
-
-	const FRotator YawRotation(0.f, Yaw, 0.f);
+	const FRotator YawRotation(0.f, GetViewYaw(), 0.f);
 	const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector Right   = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 

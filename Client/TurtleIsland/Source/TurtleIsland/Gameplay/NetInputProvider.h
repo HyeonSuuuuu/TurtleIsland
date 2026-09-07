@@ -35,10 +35,6 @@ public:
 	bool HasTarget() const { return bHasTarget; }
 	FVector GetTargetLocation() const { return TargetLocation; }
 
-	/** 오차가 이보다 크면 보간하지 않고 즉시 스냅한다 */
-	UPROPERTY(EditAnywhere, Category="Net")
-	float SnapDistance = 600.f;
-
 	/** 이 거리 안이면 도착으로 보고 이동 입력을 0 으로 */
 	UPROPERTY(EditAnywhere, Category="Net")
 	float ArriveTolerance = 2.f;

@@ -7,6 +7,8 @@
 #include <Protocol.h>
 
 #include "Network/FNetworker.h"
+#include "Gameplay/AgentSkillComponent.h"
+#include "Gameplay/HealthComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
@@ -263,8 +265,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
 				// 수신되는 건 항상 다른 플레이어의 움직임
 				// 서버는 월드 2D (x, y) 좌표 사용 → Unreal (X, Y) 그대로, 높이(Z)는 바닥 고정
-				// Z 는 여기서 정하지 않는다. UNetInputProvider 가 GroundDetector 로 지형에 맞춰 구한다.
-				// (예전에는 OpponentGroundZ = 92.f 상수라 언덕에서 파묻히거나 떴다)
+				// Z 는 여기서 정하지 않는다. UNetInputProvider 가 UGroundDetector 로 지형에 맞춰 구한다.
 				const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 
 				if (players.Contains(Pkt->userIndex))
@@ -277,8 +278,8 @@ void UNetSubsystem::Tick(float DeltaTime)
 					// 처음 보는 플레이어 → 스폰
 					if (OpponentClass && GetWorld())
 					{
-						// 첫 프레임에 지면을 찾을 때까지 쓸 임시 높이
-						const FVector SpawnLocation(Pkt->x, Pkt->y, OpponentGroundZ);
+						// Z 는 스폰 직후 UpdateNetState 가 UGroundDetector 로 구해 곧바로 재배치한다
+						const FVector SpawnLocation(Pkt->x, Pkt->y, 0.f);
 
 						FActorSpawnParameters Params;
 						Params.SpawnCollisionHandlingOverride =
@@ -292,6 +293,34 @@ void UNetSubsystem::Tick(float DeltaTime)
 							UE_LOG(LogTemp, Log, TEXT("[Net] 상대방 스폰 (userId=%d)"), Pkt->userIndex);
 						}
 					}
+				}
+			break;
+			}
+		case PACKET_ID::SC_ATTACK_NOTIFY:
+			{
+				SC_AttackNotify* Pkt = reinterpret_cast<SC_AttackNotify*>(RecvData.GetData());
+
+				// 시전자 본인도 여기서 처음 재생한다. 예측이 없으니 로컬/원격이 같은 경로다.
+				if (ATurtleAgent* Caster = FindAgentById(Pkt->casterId))
+				{
+					if (UAgentSkillComponent* Skill = Caster->FindComponentByClass<UAgentSkillComponent>())
+					{
+						Skill->PlaySkill(static_cast<int32>(Pkt->skillId), Pkt->yaw);
+					}
+				}
+			break;
+			}
+		case PACKET_ID::SC_DAMAGE_NOTIFY:
+			{
+				SC_DamageNotify* Pkt = reinterpret_cast<SC_DamageNotify*>(RecvData.GetData());
+
+				ATurtleAgent* Target = FindAgentById(Pkt->targetId);
+				if (!Target) break;
+
+				if (UHealthComponent* Health = Target->FindComponentByClass<UHealthComponent>())
+				{
+					AActor* Causer = FindAgentById(Pkt->causerId);
+					Health->ApplyServerDamage(Pkt->remainHP, Pkt->damage, Causer);
 				}
 			break;
 			}
@@ -479,6 +508,41 @@ void UNetSubsystem::Reconnect(const FString& IP)
 bool UNetSubsystem::IsConnected() const
 {
 	return Networker && Networker->IsConnected();
+}
+
+ATurtleAgent* UNetSubsystem::FindAgentById(uint32 Id) const
+{
+	if (Id == myId)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			if (const APlayerController* PC = World->GetFirstPlayerController())
+			{
+				return Cast<ATurtleAgent>(PC->GetPawn());
+			}
+		}
+		return nullptr;
+	}
+
+	AServerAgent* const* Found = players.Find(Id);
+	return Found ? *Found : nullptr;
+}
+
+void UNetSubsystem::SendAttack(int32 SkillId, int64 TargetId, float Yaw)
+{
+	if (IsSinglePlay() || !IsConnected())
+	{
+		return;
+	}
+
+	CS_Attack Pkt{};
+	Pkt.size     = CS_ATTACK_PACKET_SIZE;
+	Pkt.id       = static_cast<uint16>(PACKET_ID::CS_ATTACK);
+	Pkt.skillId  = static_cast<uint16>(SkillId);
+	Pkt.targetId = static_cast<uint32>(TargetId);
+	Pkt.yaw      = Yaw;
+
+	SendPacket(Pkt);
 }
 
 void UNetSubsystem::SendChat(const FString& Message)
