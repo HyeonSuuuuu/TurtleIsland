@@ -19,6 +19,16 @@ class TURTLEISLAND_API UNetProxyMoverComponent : public UAgentMoverComponent
 {
 	GENERATED_BODY()
 
+private:
+	UPROPERTY(Transient)
+	UNetMovementInput* NetInput = nullptr;
+
+	/** 첫 목표는 보간 없이 그 자리에 놓는다 */
+	bool bPlacedOnce = false;
+
+protected:
+	virtual void BeginPlay() override;
+
 public:
 	UNetProxyMoverComponent();
 
@@ -31,14 +41,4 @@ public:
 	/** 오차가 이보다 크면 보간하지 않고 즉시 스냅한다 */
 	UPROPERTY(EditAnywhere, Category="Net")
 	float SnapDistance = 600.f;
-
-protected:
-	virtual void BeginPlay() override;
-
-private:
-	UPROPERTY(Transient)
-	UNetMovementInput* NetInput = nullptr;
-
-	/** 첫 목표는 보간 없이 그 자리에 놓는다 */
-	bool bPlacedOnce = false;
 };

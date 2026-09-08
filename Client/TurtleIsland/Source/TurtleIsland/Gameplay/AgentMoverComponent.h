@@ -20,13 +20,6 @@ class TURTLEISLAND_API UAgentMoverComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:
-	UAgentMoverComponent();
-
-	/** 애님 블루프린트가 읽는 현재 평면 속도 */
-	UFUNCTION(BlueprintPure, Category="Agent|Move")
-	float GetSpeed2D() const { return CurrentSpeed2D; }
-
 protected:
 	virtual void BeginPlay() override;
 
@@ -36,4 +29,11 @@ protected:
 	UAgentMovementInput* Input = nullptr;
 
 	float CurrentSpeed2D = 0.f;
+
+public:
+	UAgentMoverComponent();
+
+	/** 애님 블루프린트가 읽는 현재 평면 속도 */
+	UFUNCTION(BlueprintPure, Category="Agent|Move")
+	float GetSpeed2D() const { return CurrentSpeed2D; }
 };

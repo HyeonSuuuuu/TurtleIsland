@@ -23,6 +23,20 @@ class TURTLEISLAND_API UInteractionComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+private:
+	UPROPERTY(Transient)
+	AActor* CurrentTarget = nullptr;
+
+	float ScanAccum = 0.f;
+
+protected:
+	virtual void BeginPlay() override;
+
+	void HandleInteract();
+
+	/** 사거리 안에서 가장 가까운 대상을 찾는다 */
+	AActor* FindNearestTarget() const;
+
 public:
 	UInteractionComponent();
 
@@ -50,18 +64,4 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	AActor* GetCurrentTarget() const { return CurrentTarget; }
-
-protected:
-	virtual void BeginPlay() override;
-
-	void HandleInteract();
-
-	/** 사거리 안에서 가장 가까운 대상을 찾는다 */
-	AActor* FindNearestTarget() const;
-
-private:
-	UPROPERTY(Transient)
-	AActor* CurrentTarget = nullptr;
-
-	float ScanAccum = 0.f;
 };

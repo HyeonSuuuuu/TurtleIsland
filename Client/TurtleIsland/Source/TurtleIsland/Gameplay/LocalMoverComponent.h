@@ -17,16 +17,15 @@ class TURTLEISLAND_API ULocalMoverComponent : public UAgentMoverComponent
 {
 	GENERATED_BODY()
 
-public:
-	ULocalMoverComponent();
-
-
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
 protected:
 	virtual void BeginPlay() override;
 
 	void HandleJumpPressed();
 	void HandleJumpReleased();
 
+public:
+	ULocalMoverComponent();
+
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 };

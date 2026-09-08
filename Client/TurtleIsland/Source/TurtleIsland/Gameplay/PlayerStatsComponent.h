@@ -20,6 +20,12 @@ class TURTLEISLAND_API UPlayerStatsComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+protected:
+	virtual void BeginPlay() override;
+
+	/** 현재 Level 기준 ExpToNext 재계산 */
+	void RecalcExpToNext();
+
 public:
 	UPlayerStatsComponent();
 
@@ -80,10 +86,4 @@ public:
 
 	/** 서버 권위 전환용 진입점. 서버가 보낸 값으로 통째로 덮어쓴다. */
 	void ApplyServerStats(int32 InLevel, int32 InExp, int32 InExpToNext, int32 InGold);
-
-protected:
-	virtual void BeginPlay() override;
-
-	/** 현재 Level 기준 ExpToNext 재계산 */
-	void RecalcExpToNext();
 };

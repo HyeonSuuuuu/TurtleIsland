@@ -20,14 +20,14 @@ class TURTLEISLAND_API UNetSyncComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:
-	UNetSyncComponent();
+private:
+	UPROPERTY(Transient)
+	UAgentMovementInput* Input = nullptr;
 
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	float Accumulated = 0.f;
 
-	/** 초당 전송 횟수 */
-	UPROPERTY(EditAnywhere, Category="Net")
-	float SendRate = 30.f;
+	/** 전송 주기 사이에 누적된 입력 비트 */
+	uint16 PendingFlag = 0;
 
 protected:
 	virtual void BeginPlay() override;
@@ -38,12 +38,12 @@ protected:
 	 */
 	uint16 BuildInputFlag() const;
 
-private:
-	UPROPERTY(Transient)
-	UAgentMovementInput* Input = nullptr;
+public:
+	UNetSyncComponent();
 
-	float Accumulated = 0.f;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** 전송 주기 사이에 누적된 입력 비트 */
-	uint16 PendingFlag = 0;
+	/** 초당 전송 횟수 */
+	UPROPERTY(EditAnywhere, Category="Net")
+	float SendRate = 30.f;
 };

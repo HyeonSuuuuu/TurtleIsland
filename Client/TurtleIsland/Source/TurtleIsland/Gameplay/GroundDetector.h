@@ -18,6 +18,10 @@ class TURTLEISLAND_API UGroundDetector : public UActorComponent
 {
 	GENERATED_BODY()
 
+protected:
+	/** 소유 액터가 ACharacter 면 캡슐 절반 높이, 아니면 0 */
+	float GetFootOffset() const;
+
 public:
 	UGroundDetector();
 
@@ -39,8 +43,4 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="Ground")
 	float ResolveActorZ(float WorldX, float WorldY, float SearchAroundZ) const;
-
-protected:
-	/** 소유 액터가 ACharacter 면 캡슐 절반 높이, 아니면 0 */
-	float GetFootOffset() const;
 };

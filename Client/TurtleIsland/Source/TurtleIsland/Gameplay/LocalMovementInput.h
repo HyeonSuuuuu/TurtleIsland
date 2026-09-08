@@ -21,13 +21,9 @@ class TURTLEISLAND_API ULocalMovementInput : public UAgentMovementInput
 {
 	GENERATED_BODY()
 
-public:
-	ULocalMovementInput();
-
-	virtual FVector2D GetMovementInput() const override { return CachedWorldDirection; }
-	virtual float GetFacingYaw() const override;
-	virtual float GetViewYaw() const override;
-	virtual bool WantsFacingOverride() const override { return false; }
+private:
+	/** 월드 XY 방향. 키를 놓으면 0 으로 돌아간다 */
+	FVector2D CachedWorldDirection = FVector2D::ZeroVector;
 
 protected:
 	virtual void BeginPlay() override;
@@ -41,7 +37,11 @@ protected:
 	/** 컨트롤 회전 기준 축(Right, Forward) 을 월드 XY 방향으로 */
 	FVector2D ToWorldDirection(const FVector2D& LocalAxis) const;
 
-private:
-	/** 월드 XY 방향. 키를 놓으면 0 으로 돌아간다 */
-	FVector2D CachedWorldDirection = FVector2D::ZeroVector;
+public:
+	ULocalMovementInput();
+
+	virtual FVector2D GetMovementInput() const override { return CachedWorldDirection; }
+	virtual float GetFacingYaw() const override;
+	virtual float GetViewYaw() const override;
+	virtual bool WantsFacingOverride() const override { return false; }
 };

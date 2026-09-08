@@ -35,6 +35,7 @@ class APlayerAgent : public ATurtleAgent
 {
 	GENERATED_BODY()
 
+private:
 	/** 레벨/경험치/골드 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats", meta = (AllowPrivateAccess = "true"))
 	UPlayerStatsComponent* Stats;
@@ -63,23 +64,16 @@ class APlayerAgent : public ATurtleAgent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UInteractionComponent* Interaction;
 
-
 protected:
-
-public:
-
-	/** Constructor */
-	APlayerAgent();
-
-protected:
-
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void BeginPlay() override;
 
 public:
+	/** Constructor */
+	APlayerAgent();
+
 
 	/** 스탯 컴포넌트 (몬스터 보상 지급/HUD 바인딩용) */
 	UFUNCTION(BlueprintPure, Category="Stats")
 	UPlayerStatsComponent* GetStats() const { return Stats; }
-
 };

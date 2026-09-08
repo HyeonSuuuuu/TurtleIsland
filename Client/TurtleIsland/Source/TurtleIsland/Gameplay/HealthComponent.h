@@ -24,6 +24,9 @@ class TURTLEISLAND_API UHealthComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+protected:
+	virtual void BeginPlay() override;
+
 public:
 	UHealthComponent();
 
@@ -78,7 +81,4 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Health")
 	bool IsDead() const { return bIsDead; }
-
-protected:
-	virtual void BeginPlay() override;
 };

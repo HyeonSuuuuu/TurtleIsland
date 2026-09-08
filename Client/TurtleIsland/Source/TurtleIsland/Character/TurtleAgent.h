@@ -23,6 +23,26 @@ class TURTLEISLAND_API ATurtleAgent : public ACharacter
 {
 	GENERATED_BODY()
 
+protected:
+	virtual void BeginPlay() override;
+
+	/** 사망 시 조작/충돌을 막는다 */
+	virtual void EnterDeadState();
+
+	UFUNCTION()
+	void HandleDamaged(int32 Damage, float HPRatio, AActor* Causer);
+
+	UFUNCTION()
+	void HandleDied(AActor* Killer);
+
+	/** HP 의 소유자. 블루프린트에서는 이 변수로 직접 접근한다 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	UHealthComponent* Health;
+
+	/** 스킬 연출. 서버 통지를 받아 재생한다 — 로컬이든 원격이든 같은 경로 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	UAgentSkillComponent* Skill;
+
 public:
 	ATurtleAgent();
 
@@ -43,24 +63,4 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="Damage")
 	virtual void ResetForRespawn(const FVector& At, int32 HP);
-
-protected:
-	virtual void BeginPlay() override;
-
-	/** 사망 시 조작/충돌을 막는다 */
-	virtual void EnterDeadState();
-
-	UFUNCTION()
-	void HandleDamaged(int32 Damage, float HPRatio, AActor* Causer);
-
-	UFUNCTION()
-	void HandleDied(AActor* Killer);
-
-	/** HP 의 소유자. 블루프린트에서는 이 변수로 직접 접근한다 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-	UHealthComponent* Health;
-
-	/** 스킬 연출. 서버 통지를 받아 재생한다 — 로컬이든 원격이든 같은 경로 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-	UAgentSkillComponent* Skill;
 };

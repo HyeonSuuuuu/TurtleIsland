@@ -26,6 +26,15 @@ class TURTLEISLAND_API UAgentSkillComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+protected:
+	virtual void BeginPlay() override;
+
+	/** CS_ATTACK 송신. 여기서 몽타주를 재생하지 않는다 */
+	void RequestSkill(int32 SkillId);
+
+	/** 소유 액터의 AnimInstance. 없으면 null */
+	class UAnimInstance* GetAnimInstance() const;
+
 public:
 	UAgentSkillComponent();
 
@@ -53,13 +62,4 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Skill")
 	bool IsPlaying() const;
-
-protected:
-	virtual void BeginPlay() override;
-
-	/** CS_ATTACK 송신. 여기서 몽타주를 재생하지 않는다 */
-	void RequestSkill(int32 SkillId);
-
-	/** 소유 액터의 AnimInstance. 없으면 null */
-	class UAnimInstance* GetAnimInstance() const;
 };

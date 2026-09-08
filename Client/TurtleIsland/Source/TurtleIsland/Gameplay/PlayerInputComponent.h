@@ -24,6 +24,17 @@ class TURTLEISLAND_API UPlayerInputComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
+protected:
+	void HandleMove(const FInputActionValue& Value);
+	void HandleMoveEnd(const FInputActionValue& Value);
+	void HandleLook(const FInputActionValue& Value);
+	void HandleJumpStart(const FInputActionValue& Value);
+	void HandleJumpEnd(const FInputActionValue& Value);
+	void HandleInteract(const FInputActionValue& Value);
+
+	/** 스킬 ID 를 페이로드로 받는다. 스킬이 몇 개든 이 함수 하나면 된다 */
+	void HandleSkill(const FInputActionValue& Value, int32 SkillId);
+
 public:
 	UPlayerInputComponent();
 
@@ -47,15 +58,4 @@ public:
 	FOnButton OnJumpReleased;
 	FOnSkill  OnSkillPressed;
 	FOnButton OnInteractPressed;
-
-protected:
-	void HandleMove(const FInputActionValue& Value);
-	void HandleMoveEnd(const FInputActionValue& Value);
-	void HandleLook(const FInputActionValue& Value);
-	void HandleJumpStart(const FInputActionValue& Value);
-	void HandleJumpEnd(const FInputActionValue& Value);
-	void HandleInteract(const FInputActionValue& Value);
-
-	/** 스킬 ID 를 페이로드로 받는다. 스킬이 몇 개든 이 함수 하나면 된다 */
-	void HandleSkill(const FInputActionValue& Value, int32 SkillId);
 };
