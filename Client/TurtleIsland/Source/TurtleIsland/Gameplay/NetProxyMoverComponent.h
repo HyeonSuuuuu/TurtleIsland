@@ -6,13 +6,13 @@
 #include "Gameplay/AgentMoverComponent.h"
 #include "NetProxyMoverComponent.generated.h"
 
-class UNetInputProvider;
+class UNetMovementInput;
 
 /**
  * 원격 프록시(상대 플레이어 / NPC)용. 서버가 준 위치로 보간한다.
  *
  * CharacterMovementComponent 를 꺼버리므로 접지 판정도 같이 죽는다. 그래서 Z 는 GroundDetector 가 채운다
- * (UNetInputProvider 가 목표 위치를 만들 때 이미 해결해서 넘겨준다).
+ * (UNetMovementInput 가 목표 위치를 만들 때 이미 해결해서 넘겨준다).
  */
 UCLASS(ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
 class TURTLEISLAND_API UNetProxyMoverComponent : public UAgentMoverComponent
@@ -37,7 +37,7 @@ protected:
 
 private:
 	UPROPERTY(Transient)
-	UNetInputProvider* NetInput = nullptr;
+	UNetMovementInput* NetInput = nullptr;
 
 	/** 첫 목표는 보간 없이 그 자리에 놓는다 */
 	bool bPlacedOnce = false;

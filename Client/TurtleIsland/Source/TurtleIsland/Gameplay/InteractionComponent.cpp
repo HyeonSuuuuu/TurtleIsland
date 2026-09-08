@@ -1,23 +1,25 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Gameplay/InteractionComponent.h"
-#include "EnhancedInputComponent.h"
-#include "InputActionValue.h"
+#include "Gameplay/PlayerInputComponent.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
+#include "Engine/OverlapResult.h"
+#include "CollisionQueryParams.h"
 
 UInteractionComponent::UInteractionComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
 
-void UInteractionComponent::BindInput(UInputComponent* PlayerInputComponent)
+void UInteractionComponent::BeginPlay()
 {
-	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	Super::BeginPlay();
+
+	if (AActor* Owner = GetOwner())
 	{
-		if (InteractAction)
+		if (UPlayerInputComponent* PlayerInput = Owner->FindComponentByClass<UPlayerInputComponent>())
 		{
-			EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &UInteractionComponent::HandleInteract);
+			PlayerInput->OnInteractPressed.AddUObject(this, &UInteractionComponent::HandleInteract);
 		}
 	}
 }
@@ -32,21 +34,28 @@ AActor* UInteractionComponent::FindNearestTarget() const
 	}
 
 	const FVector From = Owner->GetActorLocation();
-	const float RangeSq = Range * Range;
+
+	// 월드의 모든 액터를 훑지 않는다. 콜리전에게 사거리 안의 후보만 물어본다.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(InteractScan), false, Owner);
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(
+		Overlaps, From, FQuat::Identity,
+		FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects),
+		FCollisionShape::MakeSphere(Range), Params);
 
 	AActor* Best = nullptr;
-	float BestSq = RangeSq;
+	float BestSq = TNumericLimits<float>::Max();
 
-	for (TActorIterator<AActor> It(World); It; ++It)
+	for (const FOverlapResult& O : Overlaps)
 	{
-		AActor* Candidate = *It;
+		AActor* Candidate = O.GetActor();
 		if (!IsValid(Candidate) || Candidate == Owner || !Candidate->ActorHasTag(InteractableTag))
 		{
 			continue;
 		}
 
 		const float DistSq = FVector::DistSquared(From, Candidate->GetActorLocation());
-		if (DistSq <= BestSq)
+		if (DistSq < BestSq)
 		{
 			BestSq = DistSq;
 			Best = Candidate;
@@ -74,7 +83,7 @@ void UInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 }
 
-void UInteractionComponent::HandleInteract(const FInputActionValue& Value)
+void UInteractionComponent::HandleInteract()
 {
 	if (CurrentTarget)
 	{

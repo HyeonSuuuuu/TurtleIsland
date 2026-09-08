@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "AgentInputComponent.generated.h"
+#include "AgentMovementInput.generated.h"
 
 /**
  * Agent 를 무엇이 조종하는지를 추상화한 베이스.
@@ -15,12 +15,12 @@
  * 덕분에 Mover 는 컨트롤러를 몰라도 된다.
  */
 UCLASS(Abstract, ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
-class TURTLEISLAND_API UAgentInputComponent : public UActorComponent
+class TURTLEISLAND_API UAgentMovementInput : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UAgentInputComponent();
+	UAgentMovementInput();
 
 	/** 월드 XY 기준 이동 방향. 길이 = 아날로그 강도 0~1 */
 	UFUNCTION(BlueprintPure, Category="Agent|Input")

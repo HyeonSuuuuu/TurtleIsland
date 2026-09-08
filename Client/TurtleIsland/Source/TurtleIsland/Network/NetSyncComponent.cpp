@@ -2,7 +2,7 @@
 
 #include "Network/NetSyncComponent.h"
 #include "Network/NetSubsystem.h"
-#include "Gameplay/AgentInputComponent.h"
+#include "Gameplay/AgentMovementInput.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "Engine/World.h"
@@ -21,7 +21,7 @@ void UNetSyncComponent::BeginPlay()
 	AActor* Owner = GetOwner();
 	if (Owner)
 	{
-		Input = Owner->FindComponentByClass<UAgentInputComponent>();
+		Input = Owner->FindComponentByClass<UAgentMovementInput>();
 	}
 
 	// 인게임 진입 통지. 이 컴포넌트는 멀티에서만 존재하므로 모드 검사가 필요 없다.
@@ -58,10 +58,10 @@ uint16 UNetSyncComponent::BuildInputFlag() const
 	const float RightAmount   = FVector::DotProduct(WorldDir, Right);
 
 	uint16 Flag = 0;
-	if (ForwardAmount >  0.1f) { Flag |= MOVE_FLAG_W; }
-	if (RightAmount   < -0.1f) { Flag |= MOVE_FLAG_A; }
-	if (ForwardAmount < -0.1f) { Flag |= MOVE_FLAG_S; }
-	if (RightAmount   >  0.1f) { Flag |= MOVE_FLAG_D; }
+	if (ForwardAmount >  0.1f) { Flag |= INPUT_FLAG_W; }
+	if (RightAmount   < -0.1f) { Flag |= INPUT_FLAG_A; }
+	if (ForwardAmount < -0.1f) { Flag |= INPUT_FLAG_S; }
+	if (RightAmount   >  0.1f) { Flag |= INPUT_FLAG_D; }
 	return Flag;
 }
 

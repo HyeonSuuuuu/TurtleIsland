@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Gameplay/LocalMoverComponent.h"
-#include "Gameplay/AgentInputComponent.h"
+#include "Gameplay/AgentMovementInput.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -14,7 +14,7 @@ void ULocalMoverComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UAgentInputComponent* In = GetInput())
+	if (UAgentMovementInput* In = GetInput())
 	{
 		In->OnJumpPressed.AddUObject(this, &ULocalMoverComponent::HandleJumpPressed);
 		In->OnJumpReleased.AddUObject(this, &ULocalMoverComponent::HandleJumpReleased);
@@ -47,7 +47,7 @@ void ULocalMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		return;
 	}
 
-	if (const UAgentInputComponent* In = GetInput())
+	if (const UAgentMovementInput* In = GetInput())
 	{
 		const FVector2D Dir = In->GetMovementInput();
 		if (!Dir.IsNearlyZero())

@@ -6,7 +6,7 @@
 #include "Character/TurtleAgent.h"
 #include "ServerAgent.generated.h"
 
-class UNetInputProvider;
+class UNetMovementInput;
 class UNetProxyMoverComponent;
 class UGroundDetector;
 
@@ -31,7 +31,7 @@ public:
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
-	UNetInputProvider* NetInput;
+	UNetMovementInput* NetInput;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
 	UNetProxyMoverComponent* Mover;

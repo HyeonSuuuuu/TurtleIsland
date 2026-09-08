@@ -8,9 +8,11 @@
 #include "PlayerAgent.generated.h"
 
 class UPlayerStatsComponent;
-class ULocalInputProvider;
 class ULocalMoverComponent;
-class USkillInputComponent;
+class USpringArmComponent;
+class UCameraComponent;
+class UPlayerInputComponent;
+class ULocalMovementInput;
 class UInteractionComponent;
 
 
@@ -20,6 +22,10 @@ class UInteractionComponent;
  *  로직은 전부 컴포넌트로 나갔다. 여기 남은 일은 두 가지뿐 —
  *   1) 로컬 플레이어용 컴포넌트 세트를 붙인다
  *   2) 싱글/멀티 분기를 BeginPlay 에서 딱 한 번 본다 (NetSync 를 붙일지 말지)
+ *
+ *  입력 부품들은 멤버로 들지 않는다. Agent 가 그것들을 알 이유가 없고,
+ *  서로 델리게이트로 붙기 때문이다. 여기서 입력에 하는 일은 바인딩 지점을
+ *  한 번 찾아 넘겨주는 것뿐이다.
  *
  *  BP_MyCharacter 가 이 클래스를 상속하고 있어 남겨둔다. 블루프린트를 ATurtleAgent 로
  *  리페어런팅한 뒤에는 이 클래스를 지워도 된다.
@@ -33,21 +39,30 @@ class APlayerAgent : public ATurtleAgent
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats", meta = (AllowPrivateAccess = "true"))
 	UPlayerStatsComponent* Stats;
 
-	/** 키보드/마우스 입력 소스 */
+	/** 카메라 붐. 컨트롤 회전을 따라간다 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	ULocalInputProvider* LocalInput;
+	USpringArmComponent* CameraBoom;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	UCameraComponent* FollowCamera;
 
 	/** CharacterMovementComponent 위임 Mover */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	ULocalMoverComponent* Mover;
 
-	/** 좌클릭/Q/E → CS_ATTACK. 판정도 모션도 여기서 하지 않는다 */
+	// 아래 참조들은 Agent 가 쓰려고 드는 게 아니다. 언리얼에서 네이티브 컴포넌트를
+	// 블루프린트에서 설정하려면 소유 클래스가 리플렉션으로 도달 가능한 참조를 들고
+	// 있어야 한다. Agent 코드는 이들을 한 번도 호출하지 않는다 —
+	// 부품끼리 델리게이트로 붙기 때문이다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
-	USkillInputComponent* SkillInput;
+	UPlayerInputComponent* PlayerInput;
 
-	/** F → 근처 대상 탐색 + 상호작용 델리게이트 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	ULocalMovementInput* LocalInput;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UInteractionComponent* Interaction;
+
 
 protected:
 

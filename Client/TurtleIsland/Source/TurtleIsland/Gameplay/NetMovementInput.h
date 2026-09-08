@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Gameplay/AgentInputComponent.h"
-#include "NetInputProvider.generated.h"
+#include "Gameplay/AgentMovementInput.h"
+#include "NetMovementInput.generated.h"
 
 class UGroundDetector;
 
@@ -16,12 +16,12 @@ class UGroundDetector;
  * (기존의 OpponentGroundZ = 92.f 하드코딩을 대체).
  */
 UCLASS(ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
-class TURTLEISLAND_API UNetInputProvider : public UAgentInputComponent
+class TURTLEISLAND_API UNetMovementInput : public UAgentMovementInput
 {
 	GENERATED_BODY()
 
 public:
-	UNetInputProvider();
+	UNetMovementInput();
 
 	/** 서버가 보낸 목표 상태. NetSubsystem 이 패킷마다 부른다 */
 	void UpdateNetState(float WorldX, float WorldY, float Yaw);

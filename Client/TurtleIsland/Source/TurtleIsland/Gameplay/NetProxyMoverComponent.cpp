@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Gameplay/NetProxyMoverComponent.h"
-#include "Gameplay/NetInputProvider.h"
+#include "Gameplay/NetMovementInput.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -14,7 +14,7 @@ void UNetProxyMoverComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	NetInput = Cast<UNetInputProvider>(GetInput());
+	NetInput = Cast<UNetMovementInput>(GetInput());
 
 	// 원격 프록시: 위치는 직접 보간하므로 자체 이동/중력을 끈다
 	if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))

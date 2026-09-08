@@ -265,7 +265,7 @@ void UNetSubsystem::Tick(float DeltaTime)
 				// 서버는 보낸 사람에게 SC_MOVE_NOTIFY를 보내지 않으므로
 				// 수신되는 건 항상 다른 플레이어의 움직임
 				// 서버는 월드 2D (x, y) 좌표 사용 → Unreal (X, Y) 그대로, 높이(Z)는 바닥 고정
-				// Z 는 여기서 정하지 않는다. UNetInputProvider 가 UGroundDetector 로 지형에 맞춰 구한다.
+				// Z 는 여기서 정하지 않는다. UNetMovementInput 가 UGroundDetector 로 지형에 맞춰 구한다.
 				const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 
 				if (players.Contains(Pkt->userIndex))

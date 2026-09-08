@@ -1,15 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Gameplay/NetInputProvider.h"
+#include "Gameplay/NetMovementInput.h"
 #include "Gameplay/GroundDetector.h"
 #include "GameFramework/Actor.h"
 
-UNetInputProvider::UNetInputProvider()
+UNetMovementInput::UNetMovementInput()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UNetInputProvider::BeginPlay()
+void UNetMovementInput::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -19,7 +19,7 @@ void UNetInputProvider::BeginPlay()
 	}
 }
 
-float UNetInputProvider::ResolveZ(float WorldX, float WorldY) const
+float UNetMovementInput::ResolveZ(float WorldX, float WorldY) const
 {
 	const AActor* Owner = GetOwner();
 	const float CurrentZ = Owner ? Owner->GetActorLocation().Z : 0.f;
@@ -31,7 +31,7 @@ float UNetInputProvider::ResolveZ(float WorldX, float WorldY) const
 	return CurrentZ;
 }
 
-void UNetInputProvider::UpdateNetState(float WorldX, float WorldY, float Yaw)
+void UNetMovementInput::UpdateNetState(float WorldX, float WorldY, float Yaw)
 {
 	// BeginPlay 전에 첫 패킷이 올 수 있다
 	if (!Ground)
@@ -49,7 +49,7 @@ void UNetInputProvider::UpdateNetState(float WorldX, float WorldY, float Yaw)
 	bHasTarget = true;
 }
 
-FVector2D UNetInputProvider::GetMovementInput() const
+FVector2D UNetMovementInput::GetMovementInput() const
 {
 	const AActor* Owner = GetOwner();
 	if (!bHasTarget || !Owner)

@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "AgentMoverComponent.generated.h"
 
-class UAgentInputComponent;
+class UAgentMovementInput;
 
 /**
  * 입력 소스가 준 "이동 방향"을 실제 이동으로 옮기는 베이스.
@@ -30,10 +30,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	UAgentInputComponent* GetInput() const { return Input; }
+	UAgentMovementInput* GetInput() const { return Input; }
 
 	UPROPERTY(Transient)
-	UAgentInputComponent* Input = nullptr;
+	UAgentMovementInput* Input = nullptr;
 
 	float CurrentSpeed2D = 0.f;
 };

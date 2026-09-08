@@ -12,8 +12,8 @@ class UAgentSkillComponent;
 /**
  * 움직이고 HP 를 갖는 모든 것의 베이스 — 로컬 플레이어, 상대 플레이어, NPC, 몬스터.
  *
- * 무엇이 이 폰을 조종하는지는 여기가 정하지 않는다. 붙어 있는 UAgentInputComponent 구현체가
- * 정한다(ULocalInputProvider = 키보드/마우스, UNetInputProvider = 서버 패킷).
+ * 무엇이 이 폰을 조종하는지는 여기가 정하지 않는다. 붙어 있는 UAgentMovementInput 구현체가
+ * 정한다(ULocalMovementInput = 키보드/마우스, UNetMovementInput = 서버 패킷).
  * 덕분에 싱글/멀티 분기가 "매 프레임 묻는 것"에서 "스폰 때 한 번 조립하는 것"으로 옮겨간다.
  *
  * 구 이름: ATurtleObject (UE 에서 Object 는 UObject 를 뜻해 오해를 부른다)

@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "NetSyncComponent.generated.h"
 
-class UAgentInputComponent;
+class UAgentMovementInput;
 
 /**
  * 로컬 폰의 이동을 서버로 올린다. 멀티에서만 존재한다.
@@ -40,7 +40,7 @@ protected:
 
 private:
 	UPROPERTY(Transient)
-	UAgentInputComponent* Input = nullptr;
+	UAgentMovementInput* Input = nullptr;
 
 	float Accumulated = 0.f;
 

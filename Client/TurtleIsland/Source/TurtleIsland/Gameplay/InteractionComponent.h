@@ -6,10 +6,6 @@
 #include "Components/ActorComponent.h"
 #include "InteractionComponent.generated.h"
 
-class UInputAction;
-class UInputComponent;
-struct FInputActionValue;
-
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteractTargetChanged, AActor*, NewTarget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInteracted, AActor*, Target);
 
@@ -31,9 +27,6 @@ public:
 	UInteractionComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* InteractAction = nullptr;
 
 	/** 이 거리 안에 있어야 상호작용 대상이 된다 */
 	UPROPERTY(EditAnywhere, Category="Interaction")
@@ -58,11 +51,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Interaction")
 	AActor* GetCurrentTarget() const { return CurrentTarget; }
 
-	/** 폰의 SetupPlayerInputComponent 에서 불러준다 */
-	void BindInput(UInputComponent* PlayerInputComponent);
-
 protected:
-	void HandleInteract(const FInputActionValue& Value);
+	virtual void BeginPlay() override;
+
+	void HandleInteract();
 
 	/** 사거리 안에서 가장 가까운 대상을 찾는다 */
 	AActor* FindNearestTarget() const;

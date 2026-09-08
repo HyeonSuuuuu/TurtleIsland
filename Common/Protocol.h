@@ -228,10 +228,10 @@ inline constexpr uint16_t SC_ROOM_START_PACKET_SIZE = sizeof(SC_RoomStart);
 //  --------------- InGame ----------------
 
 // CS_Move.inputFlag 비트. 클라와 서버가 같은 값을 봐야 하므로 여기서 한 번만 정의한다.
-inline constexpr uint16_t MOVE_FLAG_W      = 1 << 0;
-inline constexpr uint16_t MOVE_FLAG_A      = 1 << 1;
-inline constexpr uint16_t MOVE_FLAG_S      = 1 << 2;
-inline constexpr uint16_t MOVE_FLAG_D      = 1 << 3;
+inline constexpr uint16_t INPUT_FLAG_W      = 1 << 0;
+inline constexpr uint16_t INPUT_FLAG_A      = 1 << 1;
+inline constexpr uint16_t INPUT_FLAG_S      = 1 << 2;
+inline constexpr uint16_t INPUT_FLAG_D      = 1 << 3;
 
 struct CS_Move : public PacketHeader
 {
