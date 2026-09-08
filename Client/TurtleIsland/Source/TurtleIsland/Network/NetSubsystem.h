@@ -151,6 +151,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Npc")
 	void SendNpcChat(int32 NpcIndex, const FString& Message);
 
+	// ---- 전투 ----
+	// 클라는 판정하지 않는다. 의도만 보내고 모션조차 SC_ATTACK_NOTIFY 를 받은 뒤에 재생한다.
+
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void SendAttack(int32 SkillId, int64 TargetId, float Yaw);
+
+	// 서버가 쓰는 id 로 Agent 를 찾는다. 내 id 면 로컬 폰, 아니면 원격 목록에서.
+	// 서버가 플레이어와 NPC 에 같은 번호 공간을 쓰므로 창구를 하나로 둔다.
+	ATurtleAgent* FindAgentById(uint32 Id) const;
+
 	// NPC 답변 수신. 서버가 중계한 텍스트 그대로 넘어온다.
 	UPROPERTY(BlueprintAssignable, Category = "Npc")
 	FOnNpcChatReceived OnNpcChatReceived;
@@ -202,11 +212,6 @@ public:
 	// 상대방 캐릭터 BP 클래스 끌어다 사용
 	UPROPERTY(EditAnywhere, Category = "Network")
 	TSubclassOf<class AServerAgent> OpponentClass;
-
-	// 스폰 직후 UGroundDetector 가 지면을 찾기 전까지만 쓰는 임시 높이.
-	// 실제 Z 는 UNetInputProvider 가 지형에 맞춰 매 갱신마다 구한다.
-	UPROPERTY(EditAnywhere, Category = "Network")
-	float OpponentGroundZ = 92.f;
 
 	UPROPERTY(BlueprintAssignable, Category = "Network")
 	FOnLoginFailed OnLoginFailed;

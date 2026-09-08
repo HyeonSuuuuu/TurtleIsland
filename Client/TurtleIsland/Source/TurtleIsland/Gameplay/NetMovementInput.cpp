@@ -1,15 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Gameplay/NetInputProvider.h"
+#include "Gameplay/NetMovementInput.h"
 #include "Gameplay/GroundDetector.h"
 #include "GameFramework/Actor.h"
 
-UNetInputProvider::UNetInputProvider()
+UNetMovementInput::UNetMovementInput()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UNetInputProvider::BeginPlay()
+void UNetMovementInput::BeginPlay()
 {
 	Super::BeginPlay();
 
@@ -19,7 +19,7 @@ void UNetInputProvider::BeginPlay()
 	}
 }
 
-float UNetInputProvider::ResolveZ(float WorldX, float WorldY) const
+float UNetMovementInput::ResolveZ(float WorldX, float WorldY) const
 {
 	const AActor* Owner = GetOwner();
 	const float CurrentZ = Owner ? Owner->GetActorLocation().Z : 0.f;
@@ -31,7 +31,7 @@ float UNetInputProvider::ResolveZ(float WorldX, float WorldY) const
 	return CurrentZ;
 }
 
-void UNetInputProvider::UpdateNetState(float WorldX, float WorldY, float Yaw)
+void UNetMovementInput::UpdateNetState(float WorldX, float WorldY, float Yaw)
 {
 	// BeginPlay 전에 첫 패킷이 올 수 있다
 	if (!Ground)
@@ -45,18 +45,11 @@ void UNetInputProvider::UpdateNetState(float WorldX, float WorldY, float Yaw)
 	TargetLocation = FVector(WorldX, WorldY, ResolveZ(WorldX, WorldY));
 	TargetYaw      = Yaw;
 
-	// 첫 패킷은 보간 없이 그 자리에 놓는다
-	if (!bHasTarget)
-	{
-		bHasTarget = true;
-		if (AActor* Owner = GetOwner())
-		{
-			Owner->SetActorLocationAndRotation(TargetLocation, FRotator(0.f, TargetYaw, 0.f));
-		}
-	}
+	// 액터를 직접 움직이지 않는다. 첫 목표를 그 자리에 놓는 건 Mover 의 일이다.
+	bHasTarget = true;
 }
 
-FVector2D UNetInputProvider::GetMovementInput() const
+FVector2D UNetMovementInput::GetMovementInput() const
 {
 	const AActor* Owner = GetOwner();
 	if (!bHasTarget || !Owner)

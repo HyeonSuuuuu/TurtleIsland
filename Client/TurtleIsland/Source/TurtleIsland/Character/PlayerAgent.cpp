@@ -1,13 +1,15 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Character/PlayerAgent.h"
-#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
-#include "Gameplay/LocalInputProvider.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Gameplay/PlayerInputComponent.h"
+#include "Gameplay/LocalMovementInput.h"
+#include "Gameplay/InteractionComponent.h"
 #include "Gameplay/LocalMoverComponent.h"
 #include "Gameplay/PlayerStatsComponent.h"
 #include "Network/NetSubsystem.h"
@@ -37,22 +39,27 @@ APlayerAgent::APlayerAgent()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
-	// 카메라는 여기서 만든다. 블루프린트에 튜닝해둔 값을 지키려고 남긴 것이고,
-	// ULocalInputProvider 가 BeginPlay 에서 이걸 채택해 쓴다.
+	// 카메라는 ULocalMovementInput 가 소유한다. 뷰 기준축을 그쪽이 갖고 있어서,
+	// 카메라를 따로 두면 소유자가 둘로 갈린다.
+	Stats = CreateDefaultSubobject<UPlayerStatsComponent>(TEXT("Stats"));
+
+	// 로컬 플레이어용 컴포넌트 세트
+	// 카메라는 폰이 소유한다. 이동 기준축은 컨트롤 회전이라 입력 컴포넌트가 알 필요가 없다.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f;
+	CameraBoom->TargetArmLength = 400.f;
 	CameraBoom->bUsePawnControlRotation = true;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	Stats = CreateDefaultSubobject<UPlayerStatsComponent>(TEXT("Stats"));
+	Mover = CreateDefaultSubobject<ULocalMoverComponent>(TEXT("Mover"));
 
-	// 로컬 플레이어용 컴포넌트 세트
-	LocalInput = CreateDefaultSubobject<ULocalInputProvider>(TEXT("LocalInput"));
-	Mover      = CreateDefaultSubobject<ULocalMoverComponent>(TEXT("Mover"));
+	// 입력 부품들. 서로 델리게이트로 붙으므로 Agent 가 중개하지 않는다.
+	PlayerInput = CreateDefaultSubobject<UPlayerInputComponent>(TEXT("PlayerInput"));
+	LocalInput  = CreateDefaultSubobject<ULocalMovementInput>(TEXT("LocalInput"));
+	Interaction = CreateDefaultSubobject<UInteractionComponent>(TEXT("Interaction"));
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character)
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
@@ -80,39 +87,13 @@ void APlayerAgent::BeginPlay()
 
 void APlayerAgent::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	if (!LocalInput)
+	// Agent 가 입력에 대해 하는 일은 이게 전부다.
+	if (UPlayerInputComponent* Binder = FindComponentByClass<UPlayerInputComponent>())
 	{
-		UE_LOG(LogTurtleIsland, Error, TEXT("%s: ULocalInputProvider 가 없다."), *GetNameSafe(this));
-		return;
+		Binder->BindInput(PlayerInputComponent);
 	}
-
-	// 블루프린트에 남아 있는 InputAction 에셋을 Provider 로 넘긴다. 비어 있는 슬롯만 채운다.
-	LocalInput->AdoptLegacyActions(MoveAction, LookAction, MouseLookAction, JumpAction);
-	LocalInput->BindInput(PlayerInputComponent);
-}
-
-void APlayerAgent::DoMove(float Right, float Forward)
-{
-	if (LocalInput)
+	else
 	{
-		LocalInput->InjectMoveAxis(FVector2D(Right, Forward));
+		UE_LOG(LogTurtleIsland, Error, TEXT("%s: UPlayerInputComponent 가 없다."), *GetNameSafe(this));
 	}
-}
-
-void APlayerAgent::DoLook(float Yaw, float Pitch)
-{
-	if (LocalInput)
-	{
-		LocalInput->InjectLookAxis(FVector2D(Yaw, Pitch));
-	}
-}
-
-void APlayerAgent::DoJumpStart()
-{
-	Jump();
-}
-
-void APlayerAgent::DoJumpEnd()
-{
-	StopJumping();
 }

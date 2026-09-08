@@ -2,7 +2,7 @@
 
 #include "Network/NetSyncComponent.h"
 #include "Network/NetSubsystem.h"
-#include "Gameplay/AgentInputComponent.h"
+#include "Gameplay/AgentMovementInput.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "Engine/World.h"
@@ -21,7 +21,7 @@ void UNetSyncComponent::BeginPlay()
 	AActor* Owner = GetOwner();
 	if (Owner)
 	{
-		Input = Owner->FindComponentByClass<UAgentInputComponent>();
+		Input = Owner->FindComponentByClass<UAgentMovementInput>();
 	}
 
 	// 인게임 진입 통지. 이 컴포넌트는 멀티에서만 존재하므로 모드 검사가 필요 없다.
@@ -34,7 +34,7 @@ void UNetSyncComponent::BeginPlay()
 	}
 }
 
-uint8 UNetSyncComponent::BuildInputFlag() const
+uint16 UNetSyncComponent::BuildInputFlag() const
 {
 	if (!Input)
 	{
@@ -47,18 +47,9 @@ uint8 UNetSyncComponent::BuildInputFlag() const
 		return 0;
 	}
 
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	float ViewYaw = OwnerPawn ? OwnerPawn->GetActorRotation().Yaw : 0.f;
-	if (OwnerPawn)
-	{
-		if (const AController* C = OwnerPawn->GetController())
-		{
-			ViewYaw = C->GetControlRotation().Yaw;
-		}
-	}
-
-	// 월드 방향을 뷰 기준으로 되돌린다 (ULocalInputProvider 변환의 역)
-	const FRotator YawRotation(0.f, ViewYaw, 0.f);
+	// 기준축은 방향을 만든 입력 컴포넌트에게 묻는다. 여기서 다시 유도하면
+	// 입력 쪽 기준이 바뀌었을 때 조용히 어긋난다.
+	const FRotator YawRotation(0.f, Input->GetViewYaw(), 0.f);
 	const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 	const FVector Right   = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
@@ -66,11 +57,11 @@ uint8 UNetSyncComponent::BuildInputFlag() const
 	const float ForwardAmount = FVector::DotProduct(WorldDir, Forward);
 	const float RightAmount   = FVector::DotProduct(WorldDir, Right);
 
-	uint8 Flag = 0;
-	if (ForwardAmount >  0.1f) { Flag |= 1; } // W
-	if (RightAmount   < -0.1f) { Flag |= 2; } // A
-	if (ForwardAmount < -0.1f) { Flag |= 4; } // S
-	if (RightAmount   >  0.1f) { Flag |= 8; } // D
+	uint16 Flag = 0;
+	if (ForwardAmount >  0.1f) { Flag |= INPUT_FLAG_W; }
+	if (RightAmount   < -0.1f) { Flag |= INPUT_FLAG_A; }
+	if (ForwardAmount < -0.1f) { Flag |= INPUT_FLAG_S; }
+	if (RightAmount   >  0.1f) { Flag |= INPUT_FLAG_D; }
 	return Flag;
 }
 
@@ -91,7 +82,7 @@ void UNetSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	}
 	Accumulated -= Interval;
 
-	const uint8 Flag = PendingFlag;
+	const uint16 Flag = PendingFlag;
 	PendingFlag = 0;
 	if (Flag == 0)
 	{

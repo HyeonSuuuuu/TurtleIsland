@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "AgentInputComponent.generated.h"
+#include "AgentMovementInput.generated.h"
 
 /**
  * Agent 를 무엇이 조종하는지를 추상화한 베이스.
@@ -15,12 +15,12 @@
  * 덕분에 Mover 는 컨트롤러를 몰라도 된다.
  */
 UCLASS(Abstract, ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
-class TURTLEISLAND_API UAgentInputComponent : public UActorComponent
+class TURTLEISLAND_API UAgentMovementInput : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UAgentInputComponent();
+	UAgentMovementInput();
 
 	/** 월드 XY 기준 이동 방향. 길이 = 아날로그 강도 0~1 */
 	UFUNCTION(BlueprintPure, Category="Agent|Input")
@@ -32,6 +32,14 @@ public:
 
 	/** true 면 Mover 가 GetFacingYaw() 로 강제 회전. false 면 이동 방향을 따른다 */
 	virtual bool WantsFacingOverride() const { return false; }
+
+	/**
+	 * GetMovementInput() 을 만들 때 기준으로 삼은 월드 yaw.
+	 * 이 값을 아는 건 방향을 만든 쪽뿐이라, 필요한 곳이 다시 유도하지 않게 여기서 내준다.
+	 */
+	UFUNCTION(BlueprintPure, Category="Agent|Input")
+	virtual float GetViewYaw() const;
+
 
 	/** 점프는 상태가 아니라 이벤트라 Intent 에 넣지 않는다 */
 	DECLARE_MULTICAST_DELEGATE(FAgentJumpSignal);

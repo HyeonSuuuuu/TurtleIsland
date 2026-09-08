@@ -20,6 +20,7 @@ class TURTLEISLAND_API ULocalMoverComponent : public UAgentMoverComponent
 public:
 	ULocalMoverComponent();
 
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
@@ -27,4 +28,5 @@ protected:
 
 	void HandleJumpPressed();
 	void HandleJumpReleased();
+
 };

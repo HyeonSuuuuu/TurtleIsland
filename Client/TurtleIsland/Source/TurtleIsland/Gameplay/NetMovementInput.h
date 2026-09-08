@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Gameplay/AgentInputComponent.h"
-#include "NetInputProvider.generated.h"
+#include "Gameplay/AgentMovementInput.h"
+#include "NetMovementInput.generated.h"
 
 class UGroundDetector;
 
@@ -16,12 +16,12 @@ class UGroundDetector;
  * (기존의 OpponentGroundZ = 92.f 하드코딩을 대체).
  */
 UCLASS(ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
-class TURTLEISLAND_API UNetInputProvider : public UAgentInputComponent
+class TURTLEISLAND_API UNetMovementInput : public UAgentMovementInput
 {
 	GENERATED_BODY()
 
 public:
-	UNetInputProvider();
+	UNetMovementInput();
 
 	/** 서버가 보낸 목표 상태. NetSubsystem 이 패킷마다 부른다 */
 	void UpdateNetState(float WorldX, float WorldY, float Yaw);
@@ -34,10 +34,6 @@ public:
 
 	bool HasTarget() const { return bHasTarget; }
 	FVector GetTargetLocation() const { return TargetLocation; }
-
-	/** 오차가 이보다 크면 보간하지 않고 즉시 스냅한다 */
-	UPROPERTY(EditAnywhere, Category="Net")
-	float SnapDistance = 600.f;
 
 	/** 이 거리 안이면 도착으로 보고 이동 입력을 0 으로 */
 	UPROPERTY(EditAnywhere, Category="Net")

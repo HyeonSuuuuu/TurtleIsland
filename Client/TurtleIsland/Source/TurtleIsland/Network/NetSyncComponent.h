@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "NetSyncComponent.generated.h"
 
-class UAgentInputComponent;
+class UAgentMovementInput;
 
 /**
  * 로컬 폰의 이동을 서버로 올린다. 멀티에서만 존재한다.
@@ -36,14 +36,14 @@ protected:
 	 * 월드 XY 방향을 컨트롤 yaw 로 역회전시켜 WASD 4비트로 되돌린다.
 	 * 서버는 4비트만 받으므로 손실이 없다.
 	 */
-	uint8 BuildInputFlag() const;
+	uint16 BuildInputFlag() const;
 
 private:
 	UPROPERTY(Transient)
-	UAgentInputComponent* Input = nullptr;
+	UAgentMovementInput* Input = nullptr;
 
 	float Accumulated = 0.f;
 
 	/** 전송 주기 사이에 누적된 입력 비트 */
-	uint8 PendingFlag = 0;
+	uint16 PendingFlag = 0;
 };

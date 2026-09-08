@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Gameplay/NetProxyMoverComponent.h"
-#include "Gameplay/NetInputProvider.h"
+#include "Gameplay/NetMovementInput.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -14,7 +14,7 @@ void UNetProxyMoverComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	NetInput = Cast<UNetInputProvider>(GetInput());
+	NetInput = Cast<UNetMovementInput>(GetInput());
 
 	// 원격 프록시: 위치는 직접 보간하므로 자체 이동/중력을 끈다
 	if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
@@ -42,9 +42,9 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	const FVector Target  = NetInput->GetTargetLocation();
 
 	FVector NewLocation;
-	if (FVector::Dist2D(Current, Target) > NetInput->SnapDistance)
+	if (!bPlacedOnce || FVector::Dist2D(Current, Target) > SnapDistance)
 	{
-		// 오차가 너무 크면 따라가지 않고 즉시 맞춘다
+		// 첫 배치이거나 오차가 너무 크면 따라가지 않고 즉시 맞춘다
 		NewLocation = Target;
 	}
 	else
@@ -66,5 +66,9 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	Owner->SetActorLocation(NewLocation);
 
 	const FRotator TargetRot(0.f, NetInput->GetFacingYaw(), 0.f);
-	Owner->SetActorRotation(FMath::RInterpTo(Owner->GetActorRotation(), TargetRot, DeltaTime, InterpSpeed));
+	Owner->SetActorRotation(bPlacedOnce
+		? FMath::RInterpTo(Owner->GetActorRotation(), TargetRot, DeltaTime, InterpSpeed)
+		: TargetRot);
+
+	bPlacedOnce = true;
 }

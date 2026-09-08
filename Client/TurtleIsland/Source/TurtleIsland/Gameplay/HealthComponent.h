@@ -65,6 +65,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Health")
 	void ResetTo(int32 InMaxHP, int32 InHP);
 
+	/** 최대치로 되돌린다. 최대치를 밖에서 꺼내 되돌려줄 필요가 없다 */
+	UFUNCTION(BlueprintCallable, Category="Health")
+	void ResetToFull();
+
+	/** 최대치는 그대로 두고 현재 HP 만 맞춘다 (서버가 값을 지정할 때) */
+	UFUNCTION(BlueprintCallable, Category="Health")
+	void ResetHP(int32 InHP);
+
 	UFUNCTION(BlueprintPure, Category="Health")
 	float GetHPRatio() const;
 
