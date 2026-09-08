@@ -23,12 +23,6 @@ class TURTLEISLAND_API AServerAgent : public ATurtleAgent
 {
 	GENERATED_BODY()
 
-public:
-	AServerAgent();
-
-	/** 서버가 보낸 목표 상태를 입력 컴포넌트에 넘긴다. NetSubsystem 이 패킷마다 부른다 */
-	void UpdateNetState(float WorldX, float WorldY, float Yaw);
-
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
 	UNetMovementInput* NetInput;
@@ -39,4 +33,10 @@ private:
 	/** CharacterMovementComponent 가 꺼진 폰이라 Z 를 직접 구해야 한다 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
 	UGroundDetector* Ground;
+
+public:
+	AServerAgent();
+
+	/** 서버가 보낸 목표 상태를 입력 컴포넌트에 넘긴다. NetSubsystem 이 패킷마다 부른다 */
+	void UpdateNetState(float WorldX, float WorldY, float Yaw);
 };

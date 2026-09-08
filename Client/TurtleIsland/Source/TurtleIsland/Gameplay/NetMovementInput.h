@@ -20,6 +20,20 @@ class TURTLEISLAND_API UNetMovementInput : public UAgentMovementInput
 {
 	GENERATED_BODY()
 
+private:
+	FVector TargetLocation = FVector::ZeroVector;
+	float   TargetYaw      = 0.f;
+	bool    bHasTarget     = false;
+
+	UPROPERTY(Transient)
+	UGroundDetector* Ground = nullptr;
+
+protected:
+	virtual void BeginPlay() override;
+
+	/** 소유 액터의 GroundDetector 로 Z 를 채운다. 없으면 현재 Z 유지 */
+	float ResolveZ(float WorldX, float WorldY) const;
+
 public:
 	UNetMovementInput();
 
@@ -38,18 +52,4 @@ public:
 	/** 이 거리 안이면 도착으로 보고 이동 입력을 0 으로 */
 	UPROPERTY(EditAnywhere, Category="Net")
 	float ArriveTolerance = 2.f;
-
-protected:
-	virtual void BeginPlay() override;
-
-	/** 소유 액터의 GroundDetector 로 Z 를 채운다. 없으면 현재 Z 유지 */
-	float ResolveZ(float WorldX, float WorldY) const;
-
-private:
-	FVector TargetLocation = FVector::ZeroVector;
-	float   TargetYaw      = 0.f;
-	bool    bHasTarget     = false;
-
-	UPROPERTY(Transient)
-	UGroundDetector* Ground = nullptr;
 };
