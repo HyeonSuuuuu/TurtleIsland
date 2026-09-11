@@ -19,6 +19,7 @@ public:
 	virtual void Deinitialize() override;
 
 	void SetReady(bool bReady);
+	bool IsReady() const { return bIngameReady; }
 	void HandlePacket(const TArray<uint8>& Data);
 	AServerAgent* FindNpc(uint32 NpcId) const;
 	void ClearNpcs();

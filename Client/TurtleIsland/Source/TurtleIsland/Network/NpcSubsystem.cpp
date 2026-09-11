@@ -78,7 +78,7 @@ AServerAgent* UNpcSubsystem::FindNpc(uint32 NpcId) const
 
 void UNpcSubsystem::SpawnNpc(const SC_NpcSpawn& Packet)
 {
-	if (Packet.hp <= 0 || !IsValidPose(Packet.x, Packet.y, Packet.yaw))
+	if (Packet.hp <= 0 || Packet.maxHp < Packet.hp || !IsValidPose(Packet.x, Packet.y, Packet.yaw))
 	{
 		return;
 	}
@@ -106,7 +106,7 @@ void UNpcSubsystem::SpawnNpc(const SC_NpcSpawn& Packet)
 			return;
 		}
 		Agent->AutoPossessAI = EAutoPossessAI::Disabled;
-		Agent->FindComponentByClass<UHealthComponent>()->MaxHP = Packet.hp;
+		Agent->FindComponentByClass<UHealthComponent>()->MaxHP = Packet.maxHp;
 		if (const UGroundDetector* Ground = Agent->FindComponentByClass<UGroundDetector>())
 		{
 			Transform.SetLocation(FVector(Packet.x, Packet.y, Ground->ResolveActorZ(Packet.x, Packet.y, 92.f)));
@@ -116,9 +116,8 @@ void UNpcSubsystem::SpawnNpc(const SC_NpcSpawn& Packet)
 		Npcs.Add(Packet.npcId, Agent);
 	}
 
-	// Spawn snapshots carry current HP, not max HP. Preserve a previously observed maximum.
 	UHealthComponent* Health = Agent->FindComponentByClass<UHealthComponent>();
-	Health->ResetTo(FMath::Max(Health->MaxHP, Packet.hp), Packet.hp);
+	Health->ResetTo(Packet.maxHp, Packet.hp);
 	Agent->UpdateNetState(Packet.x, Packet.y, Packet.yaw);
 }
 

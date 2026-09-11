@@ -5,6 +5,8 @@
 #include "Gameplay/AgentMovementInput.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Protocol.h"
@@ -12,6 +14,7 @@
 UNetSyncComponent::UNetSyncComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
 void UNetSyncComponent::BeginPlay()
@@ -22,6 +25,7 @@ void UNetSyncComponent::BeginPlay()
 	if (Owner)
 	{
 		Input = Owner->FindComponentByClass<UAgentMovementInput>();
+		if (const ACharacter* Character = Cast<ACharacter>(Owner)) AddTickPrerequisiteComponent(Character->GetCharacterMovement());
 	}
 
 	// 인게임 진입 통지. 이 컴포넌트는 멀티에서만 존재하므로 모드 검사가 필요 없다.
@@ -30,7 +34,7 @@ void UNetSyncComponent::BeginPlay()
 	if (Net && Owner)
 	{
 		const FVector Loc = Owner->GetActorLocation();
-		Net->NotifyIngameReady(Loc.X, Loc.Y, Owner->GetActorRotation().Yaw);
+		Net->NotifyIngameReady(Loc.X, Loc.Y, Loc.Z, Owner->GetActorRotation().Yaw);
 	}
 }
 
@@ -80,19 +84,14 @@ void UNetSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	{
 		return;
 	}
-	Accumulated -= Interval;
+	Accumulated = FMath::Fmod(Accumulated, Interval);
 
 	const uint16 Flag = PendingFlag;
 	PendingFlag = 0;
-	if (Flag == 0)
-	{
-		return;
-	}
-
 	AActor* Owner = GetOwner();
 	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	UNetSubsystem* Net = GI ? GI->GetSubsystem<UNetSubsystem>() : nullptr;
-	if (!Owner || !Net)
+	if (!Owner || !Net || !Net->IsConnected())
 	{
 		return;
 	}
@@ -104,8 +103,17 @@ void UNetSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	MovePacket.yaw       = Owner->GetActorRotation().Yaw;
 
 	const FVector Loc = Owner->GetActorLocation();
+	const ACharacter* Character = Cast<ACharacter>(Owner);
+	const bool bAirborne = Character && Character->GetCharacterMovement()->IsFalling();
+	const float Yaw = Owner->GetActorRotation().Yaw;
+	if (bSentPose && !bAirborne && bLastAirborne == bAirborne && Flag == LastFlag &&
+		Loc.Equals(LastPosition, 0.01f) && FMath::Abs(FMath::FindDeltaAngleDegrees(LastYaw, Yaw)) < 0.1f) return;
 	MovePacket.x = Loc.X;
 	MovePacket.y = Loc.Y;
+	MovePacket.z = Loc.Z;
+	MovePacket.velocityZ = Owner->GetVelocity().Z;
+	MovePacket.airborne = bAirborne;
 
 	Net->SendPacket(MovePacket);
+	LastPosition = Loc; LastYaw = Yaw; bLastAirborne = bAirborne; LastFlag = Flag; bSentPose = true;
 }

@@ -108,6 +108,8 @@ void User::RegisterHandlers()
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_MOVE)]               = &User::OnMove;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_INGAME_READY)]       = &User::OnIngameReady;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_NPC_CHAT)]           = &User::OnNpcChat;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ATTACK)] = &User::OnAttack;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_USE_ITEM)] = &User::OnUseItem;
 }
 
 void User::Dispatch(const Packet& packet)
@@ -441,29 +443,11 @@ void User::OnMove(const Packet& packet)
 	if (m_userState != UserState::Room || !m_roomIndex.has_value())
 		return;
 
-	if (packet.dataSpan.size() < CS_MOVE_PACKET_SIZE)
+	if (packet.dataSpan.size() != CS_MOVE_PACKET_SIZE)
 		return;
 
 	auto* pMove  = reinterpret_cast<const CS_Move*>(packet.dataSpan.data());
-	uint32_t roomIdx = m_roomIndex.value();
-
-	// 클라가 보낸 실제 위치를 그대로 중계
-	x   = pMove->x;
-	y   = pMove->y;
-	yaw = pMove->yaw;
-
-	SC_MoveNotify notify{};
-	notify.size      = SC_MOVE_NOTIFY_PACKET_SIZE;
-	notify.id        = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
-	notify.userIndex = GetId();
-	notify.inputFlag = pMove->inputFlag;
-	notify.x         = x;
-	notify.y         = y;
-	notify.yaw       = pMove->yaw;
-
-	g_rooms[roomIdx].Broadcast(
-		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&notify), SC_MOVE_NOTIFY_PACKET_SIZE),
-		packet.sessionIndex); // exclude sender
+	g_rooms[m_roomIndex.value()].MovePlayer(*this, *pMove);
 }
 
 void User::OnIngameReady(const Packet& packet)
@@ -471,34 +455,20 @@ void User::OnIngameReady(const Packet& packet)
 	if (m_userState != UserState::Room || !m_roomIndex.has_value())
 		return;
 
-	Room& room = g_rooms[m_roomIndex.value()];
+	if (packet.dataSpan.size() != CS_INGAME_READY_PACKET_SIZE) return;
+	g_rooms[m_roomIndex.value()].PlayerReady(*this, *reinterpret_cast<const CS_IngameReady*>(packet.dataSpan.data()));
+}
 
-	// 클라가 보낸 실제 스폰 위치 채택 (원점 근처면 무시)
-	if (packet.dataSpan.size() >= CS_INGAME_READY_PACKET_SIZE)
-	{
-		auto* p = reinterpret_cast<const CS_IngameReady*>(packet.dataSpan.data());
-		if (p->x < -1.f || p->x > 1.f || p->y < -1.f || p->y > 1.f)
-		{
-			x = p->x; y = p->y; yaw = p->yaw;
-		}
-	}
+void User::OnAttack(const Packet& packet)
+{
+	if (m_userState != UserState::Room || !m_roomIndex || packet.dataSpan.size() != CS_ATTACK_PACKET_SIZE) return;
+	g_rooms[*m_roomIndex].Attack(*this, *reinterpret_cast<const CS_Attack*>(packet.dataSpan.data()));
+}
 
-	// 1) 나에게: 같은 방의 다른 플레이어 위치 + NPC 스폰 (입장 즉시 보이도록)
-	room.SendPlayerStatesToUser(GetSlotIndex());
-	room.BroadcastNpcSpawns(GetSlotIndex());
-
-	// 2) 남들에게: 내 위치 (이미 인게임인 사람들이 나를 스폰)
-	SC_MoveNotify me{};
-	me.size      = SC_MOVE_NOTIFY_PACKET_SIZE;
-	me.id        = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
-	me.userIndex = GetId();
-	me.inputFlag = 0;
-	me.x = x; me.y = y; me.yaw = yaw;
-	room.Broadcast(
-		std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&me), SC_MOVE_NOTIFY_PACKET_SIZE),
-		GetSlotIndex());
-
-	Log::Info("[IngameReady] userId={} pos=({},{})", m_userId, x, y);
+void User::OnUseItem(const Packet& packet)
+{
+	if (m_userState != UserState::Room || !m_roomIndex || packet.dataSpan.size() != CS_USE_ITEM_PACKET_SIZE) return;
+	g_rooms[*m_roomIndex].UseItem(*this, *reinterpret_cast<const CS_UseItem*>(packet.dataSpan.data()));
 }
 
 void User::OnNpcChat(const Packet& packet)

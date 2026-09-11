@@ -5,6 +5,10 @@
 #include "EnhancedInputComponent.h"
 #include "InputActionValue.h"
 #include "TurtleIsland.h"
+#include "Network/NetSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/Controller.h"
 
 UPlayerInputComponent::UPlayerInputComponent()
 {
@@ -48,6 +52,14 @@ void UPlayerInputComponent::BindInput(UInputComponent* PlayerInputComponent)
 		EIC->BindAction(InputConfig->InteractAction, ETriggerEvent::Started, this, &UPlayerInputComponent::HandleInteract);
 	}
 
+	const FKey ItemKeys[] = {EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six};
+	for (int32 Slot = 0; Slot < UE_ARRAY_COUNT(ItemKeys); ++Slot)
+	{
+		FInputKeyBinding Binding(FInputChord(ItemKeys[Slot]), IE_Pressed);
+		Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &UPlayerInputComponent::HandleItemSlot, Slot);
+		EIC->KeyBindings.Add(MoveTemp(Binding));
+	}
+
 	// 스킬은 개별 함수를 만들지 않는다. ID 를 페이로드로 실어 하나로 받는다.
 	for (const FSkillInputAction& Entry : InputConfig->SkillActions)
 	{
@@ -68,4 +80,12 @@ void UPlayerInputComponent::HandleInteract(const FInputActionValue& Value)  { On
 void UPlayerInputComponent::HandleSkill(const FInputActionValue& Value, int32 SkillId)
 {
 	OnSkillPressed.Broadcast(SkillId);
+}
+
+void UPlayerInputComponent::HandleItemSlot(int32 Slot)
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	if (!Pawn || !Pawn->IsLocallyControlled() || !Pawn->GetController() || Pawn->GetController()->IsMoveInputIgnored()) return;
+	if (UGameInstance* GI = GetWorld()->GetGameInstance())
+		if (UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>()) Net->UseItem(Slot);
 }

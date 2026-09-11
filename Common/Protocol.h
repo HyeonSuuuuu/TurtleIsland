@@ -47,6 +47,7 @@ enum class PACKET_ID : uint16_t
 	CS_INGAME_READY = 281,   // 인게임 레벨 로딩 완료 → 현재 상태 요청
 
 	CS_ATTACK = 291,         // 공격/스킬 시전 요청 (의도만. 판정은 전적으로 서버)
+	CS_USE_ITEM = 292,
 
 	// Server To Client (300 ~ 399)
 	SC_LOGIN_RESPONSE = 301,
@@ -73,6 +74,9 @@ enum class PACKET_ID : uint16_t
 
 	SC_ATTACK_NOTIFY = 391,  // 시전 성공 → 전원이 모션 재생
 	SC_DAMAGE_NOTIFY = 392,  // 피해 결과 → 전원이 HP/연출 반영
+	SC_PLAYER_STATE = 393,
+	SC_ACTION_RESULT = 394,
+	SC_HEALTH_STATE = 395,
 
 
 	// AI To Server (3000 ~ 3099)
@@ -233,12 +237,20 @@ inline constexpr uint16_t INPUT_FLAG_W      = 1 << 0;
 inline constexpr uint16_t INPUT_FLAG_A      = 1 << 1;
 inline constexpr uint16_t INPUT_FLAG_S      = 1 << 2;
 inline constexpr uint16_t INPUT_FLAG_D      = 1 << 3;
+inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 2;
+inline constexpr uint8_t ENTITY_NONE = 0;
+inline constexpr uint8_t ENTITY_PLAYER = 1;
+inline constexpr uint8_t ENTITY_NPC = 2;
+inline constexpr int32_t INVENTORY_SLOT_COUNT = 6;
+inline constexpr int32_t PLAYER_SKILL_COUNT = 3;
 
 struct CS_Move : public PacketHeader
 {
 	uint16_t inputFlag;
 	float yaw;
 	float x, y;   // 클라 실제 위치 (Unreal 월드 X, Y)
+	float z, velocityZ;
+	uint8_t airborne;
 };
 inline constexpr uint16_t CS_MOVE_PACKET_SIZE = sizeof(CS_Move);
 
@@ -246,6 +258,8 @@ inline constexpr uint16_t CS_MOVE_PACKET_SIZE = sizeof(CS_Move);
 struct CS_IngameReady : public PacketHeader
 {
 	float x, y, yaw;   // 클라 실제 스폰 위치
+	float z;
+	uint16_t protocolVersion;
 };
 inline constexpr uint16_t CS_INGAME_READY_PACKET_SIZE = sizeof(CS_IngameReady);
 
@@ -253,8 +267,11 @@ struct SC_MoveNotify : public PacketHeader
 {
 	uint32_t userIndex;
 	uint16_t inputFlag;
-	float x, y;   // 2D 좌표 (z=높이는 언리얼 클라가 처리)
+	float x, y;   // Unreal world position; player Z is relayed below.
 	float yaw;
+	float z, velocityZ;
+	uint8_t airborne;
+	int32_t hp, maxHP;
 };
 inline constexpr uint16_t SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);
 
@@ -266,6 +283,7 @@ struct SC_NpcSpawn : public PacketHeader
 	float    x, y;   // 2D 좌표
 	float    yaw;
 	int32_t  hp;
+	int32_t  maxHp;
 };
 inline constexpr uint16_t SC_NPC_SPAWN_PACKET_SIZE = sizeof(SC_NpcSpawn);
 
@@ -286,15 +304,15 @@ inline constexpr uint16_t SC_NPC_DESPAWN_PACKET_SIZE = sizeof(SC_NpcDespawn);
 
 // --------------- 전투 ----------------
 // 클라는 판정하지 않는다. 의도만 보내고, 모션조차 서버 통지를 받은 뒤에 재생한다.
-// 그래서 예측 취소용 일련번호도, 거절 패킷도 없다 — 서버가 SC_ATTACK_NOTIFY 를
-// 안 보내면 그것으로 끝이다.
+// Rejections return SC_ActionResult; accepted casts return SC_AttackNotify.
 
 inline constexpr uint16_t SKILL_ID_BASIC_ATTACK = 0;
 
 struct CS_Attack : public PacketHeader
 {
 	uint16_t skillId;    // 0 = 기본공격
-	uint32_t targetId;   // 타겟 지정형일 때. 논타겟이면 0
+	uint32_t targetId;   // Used only when targetKind != ENTITY_NONE (NPC 0 is valid).
+	uint8_t targetKind;  // ENTITY_NONE selects targets by server range/facing.
 	float    yaw;        // 시전 순간 바라본 방향 (서버가 가진 yaw 는 최대 한 주기 낡다)
 };
 inline constexpr uint16_t CS_ATTACK_PACKET_SIZE = sizeof(CS_Attack);
@@ -305,10 +323,13 @@ struct SC_AttackNotify : public PacketHeader
 	uint32_t casterId;
 	uint16_t skillId;
 	float    yaw;
+	uint8_t casterKind;
+	uint32_t targetId;
+	uint8_t targetKind;
 };
 inline constexpr uint16_t SC_ATTACK_NOTIFY_PACKET_SIZE = sizeof(SC_AttackNotify);
 
-// 피해 결과. 모션과 시점이 달라 별도 패킷으로 둔다(선딜 뒤에 맞아야 한다).
+// Damage is a separate result per target; current server rules apply it immediately.
 // 광역기는 대상 수만큼 여러 번 온다.
 struct SC_DamageNotify : public PacketHeader
 {
@@ -317,8 +338,55 @@ struct SC_DamageNotify : public PacketHeader
 	int32_t  damage;
 	int32_t  remainHP;
 	uint8_t  flags;      // 1=크리티컬 2=회피 4=막기
+	uint8_t targetKind, causerKind;
+	int32_t maxHP;
 };
 inline constexpr uint16_t SC_DAMAGE_NOTIFY_PACKET_SIZE = sizeof(SC_DamageNotify);
+
+struct SC_HealthState : PacketHeader
+{
+	uint32_t playerId;
+	int32_t hp, maxHP;
+};
+inline constexpr uint16_t SC_HEALTH_STATE_PACKET_SIZE = sizeof(SC_HealthState);
+
+struct ItemSlot
+{
+	uint16_t itemId;
+	uint16_t count;
+};
+
+struct CS_UseItem : PacketHeader
+{
+	uint8_t slot;
+	uint16_t expectedItemId;
+	uint32_t inventoryRevision;
+};
+inline constexpr uint16_t CS_USE_ITEM_PACKET_SIZE = sizeof(CS_UseItem);
+
+// Sent to the owning player only. Cooldowns are remaining milliseconds, not client clock timestamps.
+struct SC_PlayerState : PacketHeader
+{
+	uint32_t playerId;
+	int32_t hp, maxHP, mp, maxMP;
+	int32_t level, exp, expToNext, gold;
+	int32_t attack, defense;
+	float moveSpeed;
+	uint32_t inventoryRevision;
+	ItemSlot items[INVENTORY_SLOT_COUNT];
+	uint32_t skillCooldownMs[PLAYER_SKILL_COUNT];
+	uint32_t itemCooldownMs;
+};
+inline constexpr uint16_t SC_PLAYER_STATE_PACKET_SIZE = sizeof(SC_PlayerState);
+
+enum class ActionResult : uint8_t { Ok, Invalid, Dead, Cooldown, NotEnoughMP, NoEffect, StaleInventory };
+struct SC_ActionResult : PacketHeader
+{
+	uint16_t requestId;
+	uint16_t actionId;
+	ActionResult result;
+};
+inline constexpr uint16_t SC_ACTION_RESULT_PACKET_SIZE = sizeof(SC_ActionResult);
 
 //  --------------- NPC ----------------
 struct CS_NpcChat : public PacketHeader

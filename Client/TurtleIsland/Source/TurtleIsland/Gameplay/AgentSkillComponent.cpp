@@ -2,8 +2,10 @@
 
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/PlayerInputComponent.h"
+#include "Gameplay/HealthComponent.h"
 #include "Network/NetSubsystem.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -12,7 +14,8 @@
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
 void UAgentSkillComponent::BeginPlay()
@@ -34,7 +37,10 @@ void UAgentSkillComponent::RequestSkill(int32 SkillId)
 	const AActor* Owner = GetOwner();
 	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	UNetSubsystem* Net = GI ? GI->GetSubsystem<UNetSubsystem>() : nullptr;
-	if (!Owner || !Net)
+	const UHealthComponent* Health = Owner ? Owner->FindComponentByClass<UHealthComponent>() : nullptr;
+	const APawn* Pawn = Cast<APawn>(Owner);
+	if (!Owner || !Net || (Health && Health->IsDead()) || !Pawn || !Pawn->IsLocallyControlled() ||
+		(Pawn->GetController() && Pawn->GetController()->IsMoveInputIgnored()))
 	{
 		return;
 	}
@@ -55,6 +61,40 @@ UAnimInstance* UAgentSkillComponent::GetAnimInstance() const
 	return nullptr;
 }
 
+void UAgentSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* TickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, TickFunction);
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	UAnimInstance* Anim = GetAnimInstance();
+	if (!Character || !Anim || !FallAnimation) return;
+	const UHealthComponent* Health = Character->FindComponentByClass<UHealthComponent>();
+	if (Health && Health->IsDead())
+	{
+		if (AirMontage) Anim->Montage_Stop(0.1f, AirMontage);
+		AirMontage = nullptr; bWasAirborne = false; return;
+	}
+	const bool bAirborne = Character->GetCharacterMovement()->IsFalling();
+	if (bAirborne && !bWasAirborne && !Anim->IsAnyMontagePlaying())
+	{
+		UAnimSequenceBase* Sequence = Character->GetVelocity().Z > 0.f && JumpAnimation ? JumpAnimation.Get() : FallAnimation.Get();
+		AirMontage = Anim->PlaySlotAnimationAsDynamicMontage(Sequence, TEXT("DefaultSlot"), 0.1f, 0.1f, 1.f, Sequence == FallAnimation ? 999 : 1);
+	}
+	else if (bAirborne && !Anim->IsAnyMontagePlaying())
+	{
+		AirMontage = Anim->PlaySlotAnimationAsDynamicMontage(FallAnimation, TEXT("DefaultSlot"), 0.1f, 0.1f, 1.f, 999);
+	}
+	else if (!bAirborne && bWasAirborne)
+	{
+		if (AirMontage && Anim->Montage_IsPlaying(AirMontage))
+		{
+			Anim->Montage_Stop(0.1f, AirMontage);
+			if (LandAnimation) Anim->PlaySlotAnimationAsDynamicMontage(LandAnimation, TEXT("DefaultSlot"), 0.1f, 0.1f);
+		}
+		AirMontage = nullptr;
+	}
+	bWasAirborne = bAirborne;
+}
+
 bool UAgentSkillComponent::IsPlaying() const
 {
 	const UAnimInstance* Anim = GetAnimInstance();
@@ -64,7 +104,8 @@ bool UAgentSkillComponent::IsPlaying() const
 void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 {
 	AActor* Owner = GetOwner();
-	if (!Owner)
+	const UHealthComponent* Health = Owner ? Owner->FindComponentByClass<UHealthComponent>() : nullptr;
+	if (!Owner || (Health && Health->IsDead()))
 	{
 		return;
 	}

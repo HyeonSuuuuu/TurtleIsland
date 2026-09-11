@@ -65,6 +65,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomMembersUpdated);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessage, FString, Line);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnNpcChatReceived, FString, Say);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGameplayStateChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnDamageNumber, FVector, Location, int32, Damage, uint8, Flags);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionFeedback, FString, Message);
 
 UCLASS()
 class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -165,10 +168,21 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void SendAttack(int32 SkillId, int64 TargetId, float Yaw);
+	UFUNCTION(BlueprintCallable, Category="Items")
+	void UseItem(int32 Slot);
+	const SC_PlayerState* GetPlayerState() const { return bHasPlayerState ? &PlayerState : nullptr; }
+	double GetPlayerStateTime() const { return PlayerStateTime; }
+	UPROPERTY(BlueprintAssignable, Category="Gameplay")
+	FOnGameplayStateChanged OnGameplayStateChanged;
+	UPROPERTY(BlueprintAssignable, Category="Gameplay")
+	FOnDamageNumber OnDamageNumber;
+	UPROPERTY(BlueprintAssignable, Category="Gameplay")
+	FOnActionFeedback OnActionFeedback;
 
 	// 서버가 쓰는 id 로 Agent 를 찾는다. 내 id 면 로컬 폰, 아니면 원격 목록에서.
 	// NPC ids overlap player ids; NPC lifecycle uses UNpcSubsystem instead.
 	ATurtleAgent* FindAgentById(uint32 Id) const;
+	ATurtleAgent* FindEntity(uint8 Kind, uint32 Id) const;
 
 	// NPC 답변 수신. 서버가 중계한 텍스트 그대로 넘어온다.
 	UPROPERTY(BlueprintAssignable, Category = "Npc")
@@ -204,7 +218,7 @@ public:
 	static const FName LoginLevelName;
 
 	// 인게임 로딩 완료 통지(CS_INGAME_READY) + 실제 스폰 위치 → 서버가 다른 플레이어/NPC 상태 응답
-	void NotifyIngameReady(float X, float Y, float Yaw);
+	void NotifyIngameReady(float X, float Y, float Z, float Yaw);
 
 	// 한 방에 입장 가능한 최대 인원
 	static constexpr int32 MaxRoomMembers = 4;
@@ -285,6 +299,10 @@ protected:
 	void HandleMoveNotify(const TArray<uint8>& RecvData);
 	void HandleAttackNotify(const TArray<uint8>& RecvData);
 	void HandleDamageNotify(const TArray<uint8>& RecvData);
+	void HandlePlayerState(const TArray<uint8>& RecvData);
+	void HandleHealthState(const TArray<uint8>& Data);
+	void ApplyHealthState(ATurtleAgent* Agent, int32 HP, int32 MaxHP);
+	void HandleActionResult(const TArray<uint8>& RecvData);
 	void HandleRoomLeaveNotify(const TArray<uint8>& RecvData);
 	void HandleRoomStartNotify(const TArray<uint8>& RecvData);
 	void HandleNpcChat(const TArray<uint8>& RecvData);
@@ -321,4 +339,7 @@ protected:
 	TMap<uint32, AServerAgent*> players;
 
 	uint32 myId = 0;
+	SC_PlayerState PlayerState{};
+	bool bHasPlayerState = false;
+	double PlayerStateTime = 0;
 };

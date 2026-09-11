@@ -39,4 +39,5 @@ public:
 
 	/** 서버가 보낸 목표 상태를 입력 컴포넌트에 넘긴다. NetSubsystem 이 패킷마다 부른다 */
 	void UpdateNetState(float WorldX, float WorldY, float Yaw);
+	void UpdateNetPlayerState(const FVector& Position, float Yaw, float VelocityZ, bool bAirborne);
 };

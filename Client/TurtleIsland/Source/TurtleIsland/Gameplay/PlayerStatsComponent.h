@@ -50,6 +50,15 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, Category="Stats")
 	int32 Gold = 0;
+	UPROPERTY(BlueprintReadOnly, Category="Stats")
+	int32 MP = 100;
+	UPROPERTY(BlueprintReadOnly, Category="Stats")
+	int32 MaxMP = 100;
+	UPROPERTY(BlueprintReadOnly, Category="Stats")
+	int32 Attack = 20;
+	UPROPERTY(BlueprintReadOnly, Category="Stats")
+	int32 Defense = 3;
+	bool bServerDriven = false;
 
 	/** 1레벨 → 2레벨 필요 경험치 */
 	UPROPERTY(EditAnywhere, Category="Stats|Curve")

@@ -2,6 +2,7 @@
 
 #include "Gameplay/NetProxyMoverComponent.h"
 #include "Gameplay/NetMovementInput.h"
+#include "Gameplay/HealthComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -24,6 +25,7 @@ void UNetProxyMoverComponent::BeginPlay()
 			Move->GravityScale = 0.f;
 			Move->bOrientRotationToMovement = false;
 			Move->SetMovementMode(MOVE_None);
+			Move->SetComponentTickEnabled(false);
 		}
 	}
 }
@@ -39,6 +41,12 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	}
 
 	const FVector Current = Owner->GetActorLocation();
+	if (const UHealthComponent* Health = Owner->FindComponentByClass<UHealthComponent>(); Health && Health->IsDead())
+	{
+		CurrentSpeed2D = 0.f;
+		if (ACharacter* Character = Cast<ACharacter>(Owner)) Character->GetCharacterMovement()->Velocity = FVector::ZeroVector;
+		return;
+	}
 	const FVector Target  = NetInput->GetTargetLocation();
 
 	FVector NewLocation;
@@ -52,7 +60,8 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		NewLocation = FMath::VInterpTo(Current, Target, DeltaTime, InterpSpeed);
 	}
 
-	const FVector Velocity = (NewLocation - Current) / DeltaTime;
+	FVector Velocity = bPlacedOnce ? (NewLocation - Current) / DeltaTime : FVector::ZeroVector;
+	if (NetInput->HasPlayerPose()) Velocity.Z = NetInput->GetVerticalVelocity();
 	CurrentSpeed2D = Velocity.Size2D();
 
 	if (ACharacter* OwnerChar = Cast<ACharacter>(Owner))
@@ -60,6 +69,12 @@ void UNetProxyMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		if (UCharacterMovementComponent* Move = OwnerChar->GetCharacterMovement())
 		{
 			Move->Velocity = Velocity;
+			if (NetInput->HasPlayerPose())
+			{
+				// Expose falling state to the AnimBP without running a second physics simulation.
+				Move->SetMovementMode(NetInput->IsAirborne() ? MOVE_Falling : MOVE_Walking);
+				Move->SetComponentTickEnabled(false);
+			}
 		}
 	}
 

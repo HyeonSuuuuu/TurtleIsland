@@ -34,6 +34,7 @@ protected:
 
 	/** 스킬 ID 를 페이로드로 받는다. 스킬이 몇 개든 이 함수 하나면 된다 */
 	void HandleSkill(const FInputActionValue& Value, int32 SkillId);
+	void HandleItemSlot(int32 Slot);
 
 public:
 	UPlayerInputComponent();

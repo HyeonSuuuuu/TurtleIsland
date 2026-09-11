@@ -44,6 +44,7 @@ bool FNpcLifecycleTest::RunTest(const FString& Parameters)
 	Spawn.npcId = 0;
 	Spawn.npcType = 2;
 	Spawn.hp = 150;
+	Spawn.maxHp = 150;
 	Spawn.x = 100.f;
 	Spawn.y = 200.f;
 	Spawn.yaw = 90.f;
@@ -111,6 +112,7 @@ bool FNpcLifecycleTest::RunTest(const FString& Parameters)
 		Spawn.npcId = Type + 10;
 		Spawn.npcType = Type;
 		Spawn.hp = 50;
+		Spawn.maxHp = 50;
 		Npcs->HandlePacket(EncodeNpcPacket(Spawn, PACKET_ID::SC_NPC_SPAWN));
 		AServerAgent* Visual = Npcs->FindNpc(Spawn.npcId);
 		if (TestNotNull(TEXT("Configured NPC type spawns"), Visual))

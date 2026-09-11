@@ -3,6 +3,9 @@
 #include "Define.h"
 #include "NPC.h"
 #include "../../Common/Protocol.h"
+#include "../../Common/GameplayRules.h"
+
+class User;
 
 enum class RoomEnterResult : uint8_t
 {
@@ -33,6 +36,10 @@ public:
 	// Thread-safe gameplay entry points. npcId is a room-local slot in [0, MAX_ROOM_NPCS).
 	bool SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp, float speed);
 	bool DespawnNpc(uint32_t npcId);
+	void PlayerReady(User& user, const CS_IngameReady& request);
+	void MovePlayer(User& user, const CS_Move& request);
+	void Attack(User& user, const CS_Attack& request);
+	void UseItem(User& user, const CS_UseItem& request);
 
 	// NPC (방 인스턴스 소유)
 	void TickNpcs();    // 틱 스레드가 호출: AI/이동 갱신 + 방 broadcast
@@ -65,6 +72,9 @@ public:
 
 private:
 	void DespawnNpcLocked(NPC& npc);
+	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
+	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
+	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;
 	void SetHost(uint32_t slotIndex, std::string_view userName);
 
 	uint16_t m_roomId   = 0;
