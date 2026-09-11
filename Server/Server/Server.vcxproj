@@ -127,9 +127,7 @@
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">PreserveNewest</CopyToOutputDirectory>
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="sql\01_account.sql" />
-    <None Include="sql\02_account_procs.sql" />
-    <None Include="sql\README.md" />
+    <None Include="Database.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -124,14 +124,8 @@
     <None Include="map.dat">
       <Filter>Data</Filter>
     </None>
-    <None Include="sql\01_account.sql">
-      <Filter>Data</Filter>
-    </None>
-    <None Include="sql\02_account_procs.sql">
-      <Filter>Data</Filter>
-    </None>
-    <None Include="sql\README.md">
-      <Filter>Data</Filter>
+    <None Include="Database.md">
+      <Filter>Database</Filter>
     </None>
   </ItemGroup>
 </Project>
