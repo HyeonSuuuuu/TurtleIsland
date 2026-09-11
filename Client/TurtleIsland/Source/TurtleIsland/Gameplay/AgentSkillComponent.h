@@ -7,6 +7,7 @@
 #include "AgentSkillComponent.generated.h"
 
 class UAnimMontage;
+class UAnimSequenceBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSkillPlayed, int32, SkillId, float, Yaw);
 
@@ -37,6 +38,10 @@ protected:
 
 public:
 	UAgentSkillComponent();
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* TickFunction) override;
+	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> JumpAnimation;
+	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> FallAnimation;
+	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> LandAnimation;
 
 	/** 스킬 ID → 몽타주. 블루프린트에서 캐릭터별로 채운다 (0 = 기본공격) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skill")
@@ -47,7 +52,7 @@ public:
 
 	/** 타겟 지정형 스킬이 쓸 현재 타겟. 논타겟이면 0 */
 	UPROPERTY(BlueprintReadWrite, Category="Skill")
-	int64 CurrentTargetId = 0;
+	int64 CurrentTargetId = -1;
 
 	/** 재생 순간 브로드캐스트. 이펙트/사운드는 블루프린트에서 여기 붙인다 */
 	UPROPERTY(BlueprintAssignable, Category="Skill")
@@ -62,4 +67,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Skill")
 	bool IsPlaying() const;
+private:
+	bool bWasAirborne = false;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> AirMontage;
 };

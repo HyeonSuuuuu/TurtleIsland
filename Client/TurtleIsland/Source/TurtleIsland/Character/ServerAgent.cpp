@@ -23,3 +23,8 @@ void AServerAgent::UpdateNetState(float WorldX, float WorldY, float Yaw)
 		NetInput->UpdateNetState(WorldX, WorldY, Yaw);
 	}
 }
+
+void AServerAgent::UpdateNetPlayerState(const FVector& Position, float Yaw, float VelocityZ, bool bAirborne)
+{
+	if (NetInput) NetInput->UpdatePlayerState(Position, Yaw, VelocityZ, bAirborne);
+}

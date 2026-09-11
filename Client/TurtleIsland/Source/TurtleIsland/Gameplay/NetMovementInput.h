@@ -24,6 +24,9 @@ private:
 	FVector TargetLocation = FVector::ZeroVector;
 	float   TargetYaw      = 0.f;
 	bool    bHasTarget     = false;
+	bool bPlayerPose = false;
+	bool bAirborne = false;
+	float VerticalVelocity = 0.f;
 
 	UPROPERTY(Transient)
 	UGroundDetector* Ground = nullptr;
@@ -39,6 +42,10 @@ public:
 
 	/** 서버가 보낸 목표 상태. NetSubsystem 이 패킷마다 부른다 */
 	void UpdateNetState(float WorldX, float WorldY, float Yaw);
+	void UpdatePlayerState(const FVector& Position, float Yaw, float VelocityZ, bool bInAir);
+	bool HasPlayerPose() const { return bPlayerPose; }
+	bool IsAirborne() const { return bAirborne; }
+	float GetVerticalVelocity() const { return VerticalVelocity; }
 
 	virtual FVector2D GetMovementInput() const override;
 	virtual float GetFacingYaw() const override { return TargetYaw; }

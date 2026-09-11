@@ -45,6 +45,8 @@ private:
 	void OnMove(const Packet& packet);
 	void OnIngameReady(const Packet& packet);
 	void OnNpcChat(const Packet& packet);
+	void OnAttack(const Packet& packet);
+	void OnUseItem(const Packet& packet);
 
 	// ---------- Helpers ----------
 	template<typename T>

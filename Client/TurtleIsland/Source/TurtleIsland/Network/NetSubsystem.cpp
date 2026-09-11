@@ -7,6 +7,9 @@
 
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/HealthComponent.h"
+#include "Gameplay/PlayerStatsComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameplayRules.h"
 #include "Kismet/GameplayStatics.h"
 
 const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
@@ -171,7 +174,14 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 		return;
 	}
 
-	switch (static_cast<PACKET_ID>(Header->id))
+	const auto Id = static_cast<PACKET_ID>(Header->id);
+	if (Id == PACKET_ID::SC_MOVE_NOTIFY || Id == PACKET_ID::SC_ATTACK_NOTIFY ||
+		Id == PACKET_ID::SC_DAMAGE_NOTIFY || Id == PACKET_ID::SC_PLAYER_STATE || Id == PACKET_ID::SC_ACTION_RESULT || Id == PACKET_ID::SC_HEALTH_STATE)
+	{
+		const UNpcSubsystem* Npcs = GetWorld() ? GetWorld()->GetSubsystem<UNpcSubsystem>() : nullptr;
+		if (!Npcs || !Npcs->IsReady()) return;
+	}
+	switch (Id)
 	{
 	case PACKET_ID::SC_LOGIN_RESPONSE: HandleLoginResponse(RecvData); break;
 	case PACKET_ID::SC_LOBBY_RESPONSE: HandleLobbyResponse(RecvData); break;
@@ -182,6 +192,9 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	case PACKET_ID::SC_MOVE_NOTIFY: HandleMoveNotify(RecvData); break;
 	case PACKET_ID::SC_ATTACK_NOTIFY: HandleAttackNotify(RecvData); break;
 	case PACKET_ID::SC_DAMAGE_NOTIFY: HandleDamageNotify(RecvData); break;
+	case PACKET_ID::SC_PLAYER_STATE: HandlePlayerState(RecvData); break;
+	case PACKET_ID::SC_ACTION_RESULT: HandleActionResult(RecvData); break;
+	case PACKET_ID::SC_HEALTH_STATE: HandleHealthState(RecvData); break;
 	case PACKET_ID::SC_ROOM_LEAVE_NOTIFY: HandleRoomLeaveNotify(RecvData); break;
 	case PACKET_ID::SC_ROOM_START_NOTIFY: HandleRoomStartNotify(RecvData); break;
 	case PACKET_ID::SC_NPC_CHAT: HandleNpcChat(RecvData); break;
@@ -412,13 +425,16 @@ void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
 	}
 
 	const SC_MoveNotify* Pkt = reinterpret_cast<const SC_MoveNotify*>(RecvData.GetData());
+	if (Pkt->userIndex == myId || !GameplayRules::ValidPose(Pkt->x, Pkt->y, Pkt->z, Pkt->yaw, Pkt->velocityZ) || Pkt->airborne > 1 ||
+		Pkt->maxHP <= 0 || Pkt->hp < 0 || Pkt->hp > Pkt->maxHP) return;
 	const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 
 	if (AServerAgent** Found = players.Find(Pkt->userIndex))
 	{
-		if (*Found)
+		if (IsValid(*Found))
 		{
-			(*Found)->UpdateNetState(Pkt->x, Pkt->y, Pkt->yaw);
+			(*Found)->UpdateNetPlayerState(FVector(Pkt->x, Pkt->y, Pkt->z), Pkt->yaw, Pkt->velocityZ, Pkt->airborne != 0);
+			ApplyHealthState(*Found, Pkt->hp, Pkt->maxHP);
 		}
 		return;
 	}
@@ -428,11 +444,12 @@ void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
 		AServerAgent* NewAgent = GetWorld()->SpawnActor<AServerAgent>(
-			OpponentClass, FVector(Pkt->x, Pkt->y, 0.f), NewRotation, Params);
+			OpponentClass, FVector(Pkt->x, Pkt->y, Pkt->z), NewRotation, Params);
 		if (NewAgent)
 		{
-			NewAgent->UpdateNetState(Pkt->x, Pkt->y, Pkt->yaw);
+			NewAgent->UpdateNetPlayerState(FVector(Pkt->x, Pkt->y, Pkt->z), Pkt->yaw, Pkt->velocityZ, Pkt->airborne != 0);
 			players.Emplace(Pkt->userIndex, NewAgent);
+			ApplyHealthState(NewAgent, Pkt->hp, Pkt->maxHP);
 		}
 	}
 }
@@ -445,7 +462,8 @@ void UNetSubsystem::HandleAttackNotify(const TArray<uint8>& RecvData)
 	}
 
 	const SC_AttackNotify* Pkt = reinterpret_cast<const SC_AttackNotify*>(RecvData.GetData());
-	if (ATurtleAgent* Caster = FindAgentById(Pkt->casterId))
+	if (!FMath::IsFinite(Pkt->yaw)) return;
+	if (ATurtleAgent* Caster = FindEntity(Pkt->casterKind, Pkt->casterId))
 	{
 		if (UAgentSkillComponent* Skill = Caster->FindComponentByClass<UAgentSkillComponent>())
 		{
@@ -462,7 +480,8 @@ void UNetSubsystem::HandleDamageNotify(const TArray<uint8>& RecvData)
 	}
 
 	const SC_DamageNotify* Pkt = reinterpret_cast<const SC_DamageNotify*>(RecvData.GetData());
-	ATurtleAgent* Target = FindAgentById(Pkt->targetId);
+	if (Pkt->damage < 0 || Pkt->maxHP <= 0 || Pkt->remainHP < 0 || Pkt->remainHP > Pkt->maxHP) return;
+	ATurtleAgent* Target = FindEntity(Pkt->targetKind, Pkt->targetId);
 	if (!Target)
 	{
 		return;
@@ -470,9 +489,92 @@ void UNetSubsystem::HandleDamageNotify(const TArray<uint8>& RecvData)
 
 	if (UHealthComponent* Health = Target->FindComponentByClass<UHealthComponent>())
 	{
-		AActor* Causer = FindAgentById(Pkt->causerId);
+		AActor* Causer = FindEntity(Pkt->causerKind, Pkt->causerId);
+		Health->MaxHP = Pkt->maxHP;
+		OnDamageNumber.Broadcast(Target->GetActorLocation(), Pkt->damage, Pkt->flags);
 		Health->ApplyServerDamage(Pkt->remainHP, Pkt->damage, Causer);
 	}
+}
+
+ATurtleAgent* UNetSubsystem::FindEntity(uint8 Kind, uint32 Id) const
+{
+	if (Kind == ENTITY_PLAYER) return FindAgentById(Id);
+	if (Kind == ENTITY_NPC && GetWorld())
+		if (const UNpcSubsystem* Npcs = GetWorld()->GetSubsystem<UNpcSubsystem>()) return Npcs->FindNpc(Id);
+	return nullptr;
+}
+
+void UNetSubsystem::ApplyHealthState(ATurtleAgent* Agent, int32 HP, int32 MaxHP)
+{
+	if (!Agent) return;
+	if (UHealthComponent* Health = Agent->FindComponentByClass<UHealthComponent>())
+	{
+		Health->MaxHP = MaxHP;
+		if (HP == 0 && !Health->IsDead()) Health->ApplyServerDeath(nullptr);
+		else if (HP > 0 && Health->IsDead()) Agent->ResetForRespawn(Agent->GetActorLocation(), HP);
+		else Health->ResetTo(MaxHP, HP);
+	}
+}
+
+void UNetSubsystem::HandleHealthState(const TArray<uint8>& Data)
+{
+	if (Data.Num() != SC_HEALTH_STATE_PACKET_SIZE) return;
+	const auto& State = *reinterpret_cast<const SC_HealthState*>(Data.GetData());
+	if (State.playerId == myId || State.maxHP <= 0 || State.hp < 0 || State.hp > State.maxHP) return;
+	ApplyHealthState(FindAgentById(State.playerId), State.hp, State.maxHP);
+}
+
+void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
+{
+	if (Data.Num() != SC_PLAYER_STATE_PACKET_SIZE) return;
+	const auto& State = *reinterpret_cast<const SC_PlayerState*>(Data.GetData());
+	if (State.playerId != myId || State.maxHP <= 0 || State.hp < 0 || State.hp > State.maxHP ||
+		State.maxMP <= 0 || State.mp < 0 || State.mp > State.maxMP || State.level < 1 || State.exp < 0 ||
+		State.expToNext <= 0 || State.gold < 0 || !FMath::IsFinite(State.moveSpeed) || State.moveSpeed <= 0.f) return;
+	for (const ItemSlot& Item : State.items)
+		if ((Item.itemId == 0) != (Item.count == 0)) return;
+	PlayerState = State;
+	bHasPlayerState = true;
+	PlayerStateTime = FPlatformTime::Seconds();
+	if (ATurtleAgent* Agent = FindAgentById(myId))
+	{
+		ApplyHealthState(Agent, State.hp, State.maxHP);
+		if (UPlayerStatsComponent* Stats = Agent->FindComponentByClass<UPlayerStatsComponent>())
+		{
+			Stats->MP = State.mp; Stats->MaxMP = State.maxMP; Stats->Attack = State.attack; Stats->Defense = State.defense;
+			Stats->ApplyServerStats(State.level, State.exp, State.expToNext, State.gold);
+		}
+		Agent->GetCharacterMovement()->MaxWalkSpeed = State.moveSpeed;
+	}
+	OnGameplayStateChanged.Broadcast();
+}
+
+void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
+{
+	if (Data.Num() != SC_ACTION_RESULT_PACKET_SIZE) return;
+	const auto& Result = *reinterpret_cast<const SC_ActionResult*>(Data.GetData());
+	FString Message;
+	switch (Result.result)
+	{
+	case ActionResult::Ok: return;
+	case ActionResult::Dead: Message = TEXT("사망 상태에서는 사용할 수 없습니다."); break;
+	case ActionResult::Cooldown: Message = TEXT("아직 재사용 대기 중입니다."); break;
+	case ActionResult::NotEnoughMP: Message = TEXT("MP가 부족합니다."); break;
+	case ActionResult::NoEffect: Message = TEXT("이미 최대치입니다."); break;
+	case ActionResult::StaleInventory: Message = TEXT("아이템 상태를 갱신했습니다. 다시 시도해주세요."); break;
+	default: Message = TEXT("사용할 수 없는 행동입니다."); break;
+	}
+	OnActionFeedback.Broadcast(Message);
+}
+
+void UNetSubsystem::UseItem(int32 Slot)
+{
+	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || Slot < 0 || Slot >= INVENTORY_SLOT_COUNT) return;
+	CS_UseItem Packet{};
+	Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(PACKET_ID::CS_USE_ITEM);
+	Packet.slot = static_cast<uint8>(Slot); Packet.expectedItemId = PlayerState.items[Slot].itemId;
+	Packet.inventoryRevision = PlayerState.inventoryRevision;
+	SendPacket(Packet);
 }
 
 void UNetSubsystem::HandleRoomLeaveNotify(const TArray<uint8>& RecvData)
@@ -530,7 +632,7 @@ void UNetSubsystem::HandleNpcChat(const TArray<uint8>& RecvData)
 	OnNpcChatReceived.Broadcast(Say);
 }
 
-void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
+void UNetSubsystem::NotifyIngameReady(float X, float Y, float Z, float Yaw)
 {
 	if (IsSinglePlay() || !IsConnected())
 	{
@@ -550,7 +652,8 @@ void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
 	Pkt.x = X;
 	Pkt.y = Y;
 	Pkt.yaw = Yaw;
-
+	Pkt.z = Z;
+	Pkt.protocolVersion = GAMEPLAY_PROTOCOL_VERSION;
 	SendPacket(Pkt);
 	UE_LOG(LogTemp, Log, TEXT("[Net] 인게임 준비 완료 통지"));
 }
@@ -648,6 +751,12 @@ void UNetSubsystem::Reconnect(const FString& IP)
 
 void UNetSubsystem::ResetNpcWorld()
 {
+	const bool bHadState = bHasPlayerState || !players.IsEmpty();
+	bHasPlayerState = false;
+	PlayerState = {};
+	for (auto& Entry : players) if (IsValid(Entry.Value)) Entry.Value->Destroy();
+	players.Reset();
+	if (bHadState) OnGameplayStateChanged.Broadcast();
 	if (UWorld* World = GetWorld())
 	{
 		if (UNpcSubsystem* Npcs = World->GetSubsystem<UNpcSubsystem>())
@@ -692,6 +801,7 @@ void UNetSubsystem::SendAttack(int32 SkillId, int64 TargetId, float Yaw)
 	Pkt.id = static_cast<uint16>(PACKET_ID::CS_ATTACK);
 	Pkt.skillId = static_cast<uint16>(SkillId);
 	Pkt.targetId = static_cast<uint32>(TargetId);
+	Pkt.targetKind = TargetId >= 0 ? ENTITY_NPC : ENTITY_NONE;
 	Pkt.yaw = Yaw;
 
 	SendPacket(Pkt);

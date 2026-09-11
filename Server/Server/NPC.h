@@ -19,6 +19,7 @@ public:
 		m_state      = NpcState::Idle;
 		m_targetSlot = INVALID_SESSION_INDEX;
 		m_speed      = 0.f;
+		m_attackReadyAt = 0;
 	}
 
 	void Spawn(uint32_t npcId, uint16_t type, float spawnX, float spawnY, int32_t hp, float speed)
@@ -33,6 +34,7 @@ public:
 		m_state   = NpcState::Idle;
 		m_targetSlot = INVALID_SESSION_INDEX;
 		m_active  = true;
+		m_attackReadyAt = 0;
 	}
 
 	bool IsActive() const { return m_active; }
@@ -46,4 +48,5 @@ public:
 	uint32_t m_targetSlot = INVALID_SESSION_INDEX;
 	float    m_anchorX = 0.f, m_anchorY = 0.f;
 	float    m_speed   = 0.f;   // units/tick (MonsterDef)
+	uint64_t m_attackReadyAt = 0;
 };

@@ -33,6 +33,7 @@ float UNetMovementInput::ResolveZ(float WorldX, float WorldY) const
 
 void UNetMovementInput::UpdateNetState(float WorldX, float WorldY, float Yaw)
 {
+	bPlayerPose = false;
 	// BeginPlay 전에 첫 패킷이 올 수 있다
 	if (!Ground)
 	{
@@ -47,6 +48,12 @@ void UNetMovementInput::UpdateNetState(float WorldX, float WorldY, float Yaw)
 
 	// 액터를 직접 움직이지 않는다. 첫 목표를 그 자리에 놓는 건 Mover 의 일이다.
 	bHasTarget = true;
+}
+
+void UNetMovementInput::UpdatePlayerState(const FVector& Position, float Yaw, float VelocityZ, bool bInAir)
+{
+	TargetLocation = Position; TargetYaw = Yaw; bHasTarget = true;
+	bPlayerPose = true; bAirborne = bInAir; VerticalVelocity = VelocityZ;
 }
 
 FVector2D UNetMovementInput::GetMovementInput() const

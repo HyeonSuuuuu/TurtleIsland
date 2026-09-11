@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Gameplay/PlayerStatsComponent.h"
+#include "Network/NetSubsystem.h"
+#include "Engine/GameInstance.h"
 
 UPlayerStatsComponent::UPlayerStatsComponent()
 {
@@ -10,6 +12,9 @@ UPlayerStatsComponent::UPlayerStatsComponent()
 void UPlayerStatsComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UNetSubsystem* Net = GI ? GI->GetSubsystem<UNetSubsystem>() : nullptr;
+	bServerDriven = Net && !Net->IsSinglePlay();
 
 	Gold = StartingGold;
 	RecalcExpToNext();
@@ -23,6 +28,7 @@ void UPlayerStatsComponent::RecalcExpToNext()
 
 void UPlayerStatsComponent::AddExp(int32 Amount)
 {
+	if (bServerDriven) return;
 	if (Amount <= 0 || IsMaxLevel())
 	{
 		return;
@@ -49,6 +55,7 @@ void UPlayerStatsComponent::AddExp(int32 Amount)
 
 void UPlayerStatsComponent::AddGold(int32 Amount)
 {
+	if (bServerDriven) return;
 	if (Amount == 0)
 	{
 		return;
@@ -60,6 +67,7 @@ void UPlayerStatsComponent::AddGold(int32 Amount)
 
 bool UPlayerStatsComponent::SpendGold(int32 Amount)
 {
+	if (bServerDriven) return false;
 	if (Amount <= 0 || Gold < Amount)
 	{
 		return false;

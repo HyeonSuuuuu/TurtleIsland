@@ -25,6 +25,11 @@ private:
 	UAgentMovementInput* Input = nullptr;
 
 	float Accumulated = 0.f;
+	FVector LastPosition = FVector::ZeroVector;
+	float LastYaw = 0.f;
+	bool bLastAirborne = false;
+	bool bSentPose = false;
+	uint16 LastFlag = 0;
 
 	/** 전송 주기 사이에 누적된 입력 비트 */
 	uint16 PendingFlag = 0;

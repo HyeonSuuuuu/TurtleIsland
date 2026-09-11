@@ -56,6 +56,7 @@ bool Room::Leave(uint32_t slotIndex)
 	}
 
 	if (!found) return false;
+	m_playerStates.erase(slotIndex);
 
 	if (m_userCount == 0)
 	{
@@ -102,6 +103,7 @@ void Room::StartGame()
 	{
 		User* u = g_userPool.Get(m_userSlots[i]);
 		if (!u) continue;
+		m_playerStates[m_userSlots[i]] = GameplayRules::PlayerState{};
 		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
 		float py = MapSpawn::PLAYER_Y + static_cast<float>(i / 2) * 120.0f;
 		g_obstacleMap.SnapToFree(px, py);   // 벽에 끼지 않도록 보정
@@ -161,16 +163,41 @@ void Room::TickNpcs()
 			float bestD2  = CHASE_RANGE * CHASE_RANGE;
 			float tx = npc.m_anchorX, ty = npc.m_anchorY;
 			bool  chasing = false;
+			User* target = nullptr;
 			for (uint32_t i = 0; i < userCnt; ++i)
 			{
 				User* u = g_userPool.Get(slots[i]);
 				if (!u) continue;
+				auto state = m_playerStates.find(slots[i]);
+				if (state == m_playerStates.end() || !state->second.ready || state->second.hp <= 0) continue;
 				float dx = u->x - npc.x, dy = u->y - npc.y;
 				float d2 = dx * dx + dy * dy;
-				if (d2 < bestD2) { bestD2 = d2; tx = u->x; ty = u->y; chasing = true; }
+				if (d2 < bestD2) { bestD2 = d2; tx = u->x; ty = u->y; chasing = true; target = u; }
 			}
 
 			npc.m_state = chasing ? NpcState::Chase : NpcState::Return;
+			const uint64_t now = GetTickCount64();
+			if (target && bestD2 <= 90.f * 90.f && now >= npc.m_attackReadyAt)
+			{
+				auto& state = m_playerStates.at(target->GetSlotIndex());
+				if (!state.airborne)
+				{
+					npc.m_attackReadyAt = now + 1000;
+					SC_AttackNotify attack{};
+					attack.size = sizeof(attack); attack.id = static_cast<uint16_t>(PACKET_ID::SC_ATTACK_NOTIFY);
+					attack.casterId = npc.GetId(); attack.casterKind = ENTITY_NPC;
+					attack.targetId = target->GetId(); attack.targetKind = ENTITY_PLAYER; attack.yaw = npc.yaw;
+					BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&attack), sizeof(attack)});
+					SC_DamageNotify damage{};
+					damage.size = sizeof(damage); damage.id = static_cast<uint16_t>(PACKET_ID::SC_DAMAGE_NOTIFY);
+					damage.targetId = target->GetId(); damage.targetKind = ENTITY_PLAYER;
+					damage.causerId = npc.GetId(); damage.causerKind = ENTITY_NPC;
+					damage.damage = std::min(state.hp, std::max(1, 10 - state.defense));
+					state.hp -= damage.damage; damage.remainHP = state.hp; damage.maxHP = state.maxHP;
+					BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
+					SendStateLocked(*target, state, now);
+				}
+			}
 
 			// 목표(추격=PC / 비추격=앵커) 방향으로 연속 이동
 			float dx = tx - npc.x, dy = ty - npc.y;
@@ -226,6 +253,7 @@ void Room::BroadcastNpcSpawns(uint32_t toSlot)
 			s.npcType = npc.m_type;
 			s.x = npc.x; s.y = npc.y; s.yaw = npc.yaw;
 			s.hp = npc.m_hp;
+			s.maxHp = npc.m_maxHp;
 			pkts.push_back(s);
 		}
 
@@ -262,6 +290,7 @@ bool Room::SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp,
 	packet.x = x;
 	packet.y = y;
 	packet.hp = hp;
+	packet.maxHp = hp;
 	for (uint32_t i = 0; i < m_userCount; ++i)
 		if (User* user = g_userPool.Get(m_userSlots[i]))
 			user->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)));
@@ -307,8 +336,147 @@ void Room::SendPlayerStatesToUser(uint32_t toSlot)
 		m.userIndex = src->GetId();
 		m.inputFlag = 0;
 		m.x = src->x; m.y = src->y; m.yaw = src->yaw;
+		if (const auto state = m_playerStates.find(src->GetSlotIndex()); state != m_playerStates.end())
+		{
+			if (!state->second.ready) continue;
+			m.z = state->second.z; m.velocityZ = state->second.velocityZ; m.airborne = state->second.airborne;
+			m.hp = state->second.hp; m.maxHP = state->second.maxHP;
+		}
 		dst->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&m), SC_MOVE_NOTIFY_PACKET_SIZE));
 	}
+}
+
+void Room::BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude)
+{
+	for (uint32_t i = 0; i < m_userCount; ++i)
+	{
+		const uint32_t slot = m_userSlots[i];
+		auto state = m_playerStates.find(slot);
+		if (slot == exclude || state == m_playerStates.end() || !state->second.ready) continue;
+		if (User* user = g_userPool.Get(slot)) user->Send(data);
+	}
+}
+
+void Room::SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now)
+{
+	SC_PlayerState packet{};
+	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_PLAYER_STATE);
+	packet.playerId = user.GetId();
+	packet.hp = state.hp; packet.maxHP = state.maxHP; packet.mp = state.mp; packet.maxMP = state.maxMP;
+	packet.level = state.level; packet.exp = state.exp; packet.expToNext = state.expToNext; packet.gold = state.gold;
+	packet.attack = state.attack; packet.defense = state.defense; packet.moveSpeed = state.moveSpeed;
+	packet.inventoryRevision = state.inventoryRevision;
+	std::copy(state.items.begin(), state.items.end(), packet.items);
+	for (size_t i = 0; i < state.skillReadyAt.size(); ++i)
+		packet.skillCooldownMs[i] = static_cast<uint32_t>(state.skillReadyAt[i] > now ? state.skillReadyAt[i] - now : 0);
+	packet.itemCooldownMs = static_cast<uint32_t>(state.itemReadyAt > now ? state.itemReadyAt - now : 0);
+	user.Send({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)});
+	SC_HealthState health{};
+	health.size = sizeof(health); health.id = static_cast<uint16_t>(PACKET_ID::SC_HEALTH_STATE);
+	health.playerId = user.GetId(); health.hp = state.hp; health.maxHP = state.maxHP;
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&health), sizeof(health)}, user.GetSlotIndex());
+}
+
+void Room::PlayerReady(User& user, const CS_IngameReady& request)
+{
+	if (request.protocolVersion != GAMEPLAY_PROTOCOL_VERSION ||
+		!GameplayRules::ValidPose(request.x, request.y, request.z, request.yaw, 0.f)) return;
+	{
+		std::lock_guard lock(m_mutex);
+		auto found = m_playerStates.find(user.GetSlotIndex());
+		if (!m_inGame || found == m_playerStates.end()) return;
+		auto& state = found->second;
+		// Ready is a snapshot request, not a reset or a teleport after initial entry.
+		if (!state.ready)
+		{
+			user.x = request.x; user.y = request.y; user.yaw = request.yaw;
+			state.z = request.z; state.ready = true;
+		}
+		SendStateLocked(user, state, GetTickCount64());
+		SC_MoveNotify me{};
+		me.size = sizeof(me); me.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
+		me.userIndex = user.GetId(); me.x = user.x; me.y = user.y; me.yaw = user.yaw;
+		me.z = state.z; me.velocityZ = state.velocityZ; me.airborne = state.airborne;
+		me.hp = state.hp; me.maxHP = state.maxHP;
+		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&me), sizeof(me)}, user.GetSlotIndex());
+	}
+	SendPlayerStatesToUser(user.GetSlotIndex());
+	BroadcastNpcSpawns(user.GetSlotIndex());
+}
+
+void Room::MovePlayer(User& user, const CS_Move& request)
+{
+	if (!GameplayRules::ValidPose(request.x, request.y, request.z, request.yaw, request.velocityZ) || request.airborne > 1) return;
+	std::lock_guard lock(m_mutex);
+	auto found = m_playerStates.find(user.GetSlotIndex());
+	if (!m_inGame || found == m_playerStates.end() || !found->second.ready || found->second.hp <= 0) return;
+	auto& state = found->second;
+	user.x = request.x; user.y = request.y; user.yaw = request.yaw;
+	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;
+	SC_MoveNotify packet{};
+	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
+	packet.userIndex = user.GetId(); packet.inputFlag = request.inputFlag;
+	packet.x = user.x; packet.y = user.y; packet.yaw = user.yaw;
+	packet.z = state.z; packet.velocityZ = state.velocityZ; packet.airborne = state.airborne;
+	packet.hp = state.hp; packet.maxHP = state.maxHP;
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)}, user.GetSlotIndex());
+}
+
+void Room::Attack(User& user, const CS_Attack& request)
+{
+	std::lock_guard lock(m_mutex);
+	auto found = m_playerStates.find(user.GetSlotIndex());
+	if (!m_inGame || found == m_playerStates.end() || !found->second.ready) return;
+	auto& state = found->second;
+	const uint64_t now = GetTickCount64();
+	ActionResult result = ActionResult::Invalid;
+	if (std::isfinite(request.yaw) && (request.targetKind == ENTITY_NONE ||
+		(request.targetKind == ENTITY_NPC && request.targetId < m_npcs.size() && m_npcs[request.targetId].IsAlive())))
+		result = GameplayRules::UseSkill(state, request.skillId, now);
+	SC_ActionResult response{};
+	response.size = sizeof(response); response.id = static_cast<uint16_t>(PACKET_ID::SC_ACTION_RESULT);
+	response.requestId = static_cast<uint16_t>(PACKET_ID::CS_ATTACK); response.actionId = request.skillId; response.result = result;
+	user.Send({reinterpret_cast<const uint8_t*>(&response), sizeof(response)});
+	if (result != ActionResult::Ok) { SendStateLocked(user, state, now); return; }
+
+	SC_AttackNotify attack{};
+	attack.size = sizeof(attack); attack.id = static_cast<uint16_t>(PACKET_ID::SC_ATTACK_NOTIFY);
+	attack.casterId = user.GetId(); attack.casterKind = ENTITY_PLAYER; attack.skillId = request.skillId;
+	attack.yaw = request.yaw; attack.targetKind = request.targetKind; attack.targetId = request.targetId;
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&attack), sizeof(attack)});
+	const auto& skill = GameplayRules::Skills[request.skillId];
+	const float radians = std::remainder(request.yaw, 360.f) * 0.0174532925f;
+	for (auto& npc : m_npcs)
+	{
+		if (!npc.IsActive() || !npc.IsAlive() || (request.targetKind == ENTITY_NPC && request.targetId != npc.GetId())) continue;
+		const float dx = npc.x - user.x, dy = npc.y - user.y;
+		const float distance = std::sqrt(dx * dx + dy * dy);
+		if (distance > skill.range || (distance > 1.f && (dx * std::cos(radians) + dy * std::sin(radians)) / distance < skill.facingDot)) continue;
+		SC_DamageNotify damage{};
+		damage.size = sizeof(damage); damage.id = static_cast<uint16_t>(PACKET_ID::SC_DAMAGE_NOTIFY);
+		damage.targetId = npc.GetId(); damage.targetKind = ENTITY_NPC;
+		damage.causerId = user.GetId(); damage.causerKind = ENTITY_PLAYER;
+		damage.damage = std::min(npc.m_hp, skill.damage + state.attack - 20);
+		npc.m_hp -= damage.damage; damage.remainHP = npc.m_hp; damage.maxHP = npc.m_maxHp;
+		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
+		if (!npc.IsAlive()) { GameplayRules::RewardKill(state); DespawnNpcLocked(npc); }
+		if (request.skillId == SKILL_ID_BASIC_ATTACK) break;
+	}
+	SendStateLocked(user, state, now);
+}
+
+void Room::UseItem(User& user, const CS_UseItem& request)
+{
+	std::lock_guard lock(m_mutex);
+	auto found = m_playerStates.find(user.GetSlotIndex());
+	if (!m_inGame || found == m_playerStates.end() || !found->second.ready) return;
+	const uint64_t now = GetTickCount64();
+	SC_ActionResult response{};
+	response.size = sizeof(response); response.id = static_cast<uint16_t>(PACKET_ID::SC_ACTION_RESULT);
+	response.requestId = static_cast<uint16_t>(PACKET_ID::CS_USE_ITEM); response.actionId = request.slot;
+	response.result = GameplayRules::UseItem(found->second, request, now);
+	user.Send({reinterpret_cast<const uint8_t*>(&response), sizeof(response)});
+	SendStateLocked(user, found->second, now);
 }
 
 RoomInfo Room::GetRoomInfo() const
