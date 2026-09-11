@@ -18,6 +18,9 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Classes")
     TSubclassOf<class AServerAgent> OpponentClass;
 
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Classes")
+    TMap<int32, TSoftClassPtr<class AServerAgent>> NpcClasses;
+
     // 싱글톤처럼 어디서든 설정값을 가져오기 위한 헬퍼 함수
     static const UNetSettings* Get() { return GetDefault<UNetSettings>(); }
 };

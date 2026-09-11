@@ -167,7 +167,7 @@ public:
 	void SendAttack(int32 SkillId, int64 TargetId, float Yaw);
 
 	// 서버가 쓰는 id 로 Agent 를 찾는다. 내 id 면 로컬 폰, 아니면 원격 목록에서.
-	// 서버가 플레이어와 NPC 에 같은 번호 공간을 쓰므로 창구를 하나로 둔다.
+	// NPC ids overlap player ids; NPC lifecycle uses UNpcSubsystem instead.
 	ATurtleAgent* FindAgentById(uint32 Id) const;
 
 	// NPC 답변 수신. 서버가 중계한 텍스트 그대로 넘어온다.
@@ -262,6 +262,7 @@ protected:
 
 	// 방/유저 등 접속 세션에 묶인 상태를 전부 비운다.
 	void ResetSessionState();
+	void ResetNpcWorld();
 
 	// 채팅 줄 추가(캡 적용) + 브로드캐스트
 	void EmitChat(const FString& Line);

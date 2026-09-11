@@ -94,6 +94,7 @@ void Room::Broadcast(const std::span<const uint8_t> data, uint32_t excludeSlot)
 void Room::StartGame()
 {
 	std::lock_guard lock(m_mutex);
+	if (!m_isActive || m_inGame) return;
 	m_inGame = true;
 
 	// 플레이어를 인게임 스폰(월드좌표)으로 배치 — 장애물 그리드/클라 좌표와 일치
@@ -132,6 +133,8 @@ void Room::StartGame()
 
 void Room::TickNpcs()
 {
+	// Keep outgoing lifecycle and movement packets ordered, including slot reuse.
+	std::lock_guard lock(m_mutex);
 	constexpr float CHASE_RANGE = 600.0f;   // 추격 시작 거리
 	constexpr float STOP_DIST   = 60.0f;    // 추격 정지 거리(근접)
 
@@ -140,7 +143,6 @@ void Room::TickNpcs()
 	uint32_t userCnt = 0;
 
 	{
-		std::lock_guard lock(m_mutex);
 		if (!m_inGame) return;
 
 		for (uint32_t i = 0; i < m_userCount; ++i)
@@ -149,6 +151,11 @@ void Room::TickNpcs()
 		for (auto& npc : m_npcs)
 		{
 			if (!npc.IsActive()) continue;
+			if (!npc.IsAlive())
+			{
+				DespawnNpcLocked(npc);
+				continue;
+			}
 
 			// 최근접 PC 탐색(CHASE_RANGE 내)
 			float bestD2  = CHASE_RANGE * CHASE_RANGE;
@@ -201,15 +208,17 @@ void Room::TickNpcs()
 
 void Room::BroadcastNpcSpawns(uint32_t toSlot)
 {
+	// Snapshot and enqueue share the despawn lock so a stale spawn cannot resurrect an NPC.
+	std::lock_guard lock(m_mutex);
+	if (!m_inGame) return;
 	std::vector<SC_NpcSpawn>             pkts;
 	std::array<uint32_t, MAX_ROOM_USERS> slots{};
 	uint32_t userCnt = 0;
 
 	{
-		std::lock_guard lock(m_mutex);
 		for (auto& npc : m_npcs)
 		{
-			if (!npc.IsActive()) continue;
+			if (!npc.IsActive() || !npc.IsAlive()) continue;
 			SC_NpcSpawn s{};
 			s.size    = SC_NPC_SPAWN_PACKET_SIZE;
 			s.id      = static_cast<uint16_t>(PACKET_ID::SC_NPC_SPAWN);
@@ -220,10 +229,8 @@ void Room::BroadcastNpcSpawns(uint32_t toSlot)
 			pkts.push_back(s);
 		}
 
-		if (toSlot != INVALID_SESSION_INDEX)
-			slots[userCnt++] = toSlot;
-		else
-			for (uint32_t i = 0; i < m_userCount; ++i)
+		for (uint32_t i = 0; i < m_userCount; ++i)
+			if (toSlot == INVALID_SESSION_INDEX || m_userSlots[i] == toSlot)
 				slots[userCnt++] = m_userSlots[i];
 	}
 
@@ -236,6 +243,50 @@ void Room::BroadcastNpcSpawns(uint32_t toSlot)
 		for (const auto& s : pkts)
 			u->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&s), SC_NPC_SPAWN_PACKET_SIZE));
 	}
+}
+
+bool Room::SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp, float speed)
+{
+	std::lock_guard lock(m_mutex);
+	if (!m_inGame || npcId >= m_npcs.size() || m_npcs[npcId].IsActive() || hp <= 0 ||
+		!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(speed) || speed < 0.f)
+		return false;
+
+	g_obstacleMap.SnapToFree(x, y);
+	m_npcs[npcId].Spawn(npcId, type, x, y, hp, speed);
+	SC_NpcSpawn packet{};
+	packet.size = SC_NPC_SPAWN_PACKET_SIZE;
+	packet.id = static_cast<uint16_t>(PACKET_ID::SC_NPC_SPAWN);
+	packet.npcId = npcId;
+	packet.npcType = type;
+	packet.x = x;
+	packet.y = y;
+	packet.hp = hp;
+	for (uint32_t i = 0; i < m_userCount; ++i)
+		if (User* user = g_userPool.Get(m_userSlots[i]))
+			user->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)));
+	return true;
+}
+
+bool Room::DespawnNpc(uint32_t npcId)
+{
+	std::lock_guard lock(m_mutex);
+	if (!m_inGame || npcId >= m_npcs.size() || !m_npcs[npcId].IsActive())
+		return false;
+	DespawnNpcLocked(m_npcs[npcId]);
+	return true;
+}
+
+void Room::DespawnNpcLocked(NPC& npc)
+{
+	SC_NpcDespawn packet{};
+	packet.size = SC_NPC_DESPAWN_PACKET_SIZE;
+	packet.id = static_cast<uint16_t>(PACKET_ID::SC_NPC_DESPAWN);
+	packet.npcId = npc.GetId();
+	npc.Clear();
+	for (uint32_t i = 0; i < m_userCount; ++i)
+		if (User* user = g_userPool.Get(m_userSlots[i]))
+			user->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)));
 }
 
 void Room::SendPlayerStatesToUser(uint32_t toSlot)

@@ -3,6 +3,7 @@
 #include "Network/ChatSubsystem.h"
 #include "Network/ClientTransport.h"
 #include "Network/NetSettings.h"
+#include "Network/NpcSubsystem.h"
 
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/HealthComponent.h"
@@ -40,6 +41,7 @@ void UNetSubsystem::StartNetwork()
 
 void UNetSubsystem::ShutdownNetwork()
 {
+	ResetNpcWorld();
 	if (Networker)
 	{
 		Networker->Stop();
@@ -63,6 +65,7 @@ void UNetSubsystem::ShutdownNetwork()
 
 void UNetSubsystem::ResetSessionState()
 {
+	ResetNpcWorld();
 	RoomList.Reset();
 	RoomMembers.Reset();
 	CurrentRoomTitle.Empty();
@@ -136,6 +139,11 @@ void UNetSubsystem::ProcessIncomingPackets()
 	}
 
 	IsConnect = Networker->IsConnected();
+	if (!IsConnect)
+	{
+		ResetNpcWorld();
+		return;
+	}
 	while (true)
 	{
 		TArray<uint8> RecvData = Networker->DequeueRecvPacket();
@@ -177,6 +185,17 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	case PACKET_ID::SC_ROOM_LEAVE_NOTIFY: HandleRoomLeaveNotify(RecvData); break;
 	case PACKET_ID::SC_ROOM_START_NOTIFY: HandleRoomStartNotify(RecvData); break;
 	case PACKET_ID::SC_NPC_CHAT: HandleNpcChat(RecvData); break;
+	case PACKET_ID::SC_NPC_SPAWN:
+	case PACKET_ID::SC_NPC_MOVE:
+	case PACKET_ID::SC_NPC_DESPAWN:
+		if (UWorld* World = GetWorld())
+		{
+			if (UNpcSubsystem* Npcs = World->GetSubsystem<UNpcSubsystem>())
+			{
+				Npcs->HandlePacket(RecvData);
+			}
+		}
+		break;
 	default:
 		UE_LOG(LogTemp, Verbose, TEXT("[Net] 알 수 없는 패킷 id=%u"), Header->id);
 		break;
@@ -494,6 +513,7 @@ void UNetSubsystem::HandleRoomStartNotify(const TArray<uint8>& RecvData)
 	const SC_RoomStart* Pkt = reinterpret_cast<const SC_RoomStart*>(RecvData.GetData());
 	if (Pkt->result == static_cast<uint8>(ERROR_CODE::NONE))
 	{
+		ResetNpcWorld();
 		UGameplayStatics::OpenLevel(GetWorld(), IngameLevelName);
 	}
 }
@@ -512,6 +532,18 @@ void UNetSubsystem::HandleNpcChat(const TArray<uint8>& RecvData)
 
 void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
 {
+	if (IsSinglePlay() || !IsConnected())
+	{
+		return;
+	}
+	if (UWorld* World = GetWorld())
+	{
+		if (UNpcSubsystem* Npcs = World->GetSubsystem<UNpcSubsystem>())
+		{
+			// Each new world starts unready. The server resends its snapshot after this request.
+			Npcs->SetReady(true);
+		}
+	}
 	CS_IngameReady Pkt{};
 	Pkt.size = CS_INGAME_READY_PACKET_SIZE;
 	Pkt.id = static_cast<uint16>(PACKET_ID::CS_INGAME_READY);
@@ -525,6 +557,7 @@ void UNetSubsystem::NotifyIngameReady(float X, float Y, float Yaw)
 
 void UNetSubsystem::EnterLobby()
 {
+	ResetNpcWorld();
 	RefreshRooms();
 	UGameplayStatics::OpenLevel(GetWorld(), FName("Lv1_Lobby"));
 }
@@ -577,6 +610,7 @@ void UNetSubsystem::CreateRoom(const FString& Title)
 
 void UNetSubsystem::LeaveRoom()
 {
+	ResetNpcWorld();
 	CS_RoomLeave Pkt{};
 	Pkt.size = CS_ROOM_LEAVE_PACKET_SIZE;
 	Pkt.id = static_cast<uint16>(PACKET_ID::CS_ROOM_LEAVE_REQUEST);
@@ -610,6 +644,17 @@ void UNetSubsystem::Reconnect(const FString& IP)
 	ShutdownNetwork();
 	StartNetwork();
 	UE_LOG(LogTemp, Log, TEXT("[Net] 서버 재연결: %s"), *StoredServerIP);
+}
+
+void UNetSubsystem::ResetNpcWorld()
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UNpcSubsystem* Npcs = World->GetSubsystem<UNpcSubsystem>())
+		{
+			Npcs->SetReady(false);
+		}
+	}
 }
 
 bool UNetSubsystem::IsConnected() const

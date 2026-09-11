@@ -69,6 +69,7 @@ enum class PACKET_ID : uint16_t
 
 	SC_NPC_SPAWN = 381,
 	SC_NPC_MOVE  = 382,
+	SC_NPC_DESPAWN = 383,
 
 	SC_ATTACK_NOTIFY = 391,  // 시전 성공 → 전원이 모션 재생
 	SC_DAMAGE_NOTIFY = 392,  // 피해 결과 → 전원이 HP/연출 반영
@@ -275,6 +276,12 @@ struct SC_NpcMove : public PacketHeader
 	float    yaw;
 };
 inline constexpr uint16_t SC_NPC_MOVE_PACKET_SIZE = sizeof(SC_NpcMove);
+
+struct SC_NpcDespawn : public PacketHeader
+{
+	uint32_t npcId;
+};
+inline constexpr uint16_t SC_NPC_DESPAWN_PACKET_SIZE = sizeof(SC_NpcDespawn);
 
 
 // --------------- 전투 ----------------
