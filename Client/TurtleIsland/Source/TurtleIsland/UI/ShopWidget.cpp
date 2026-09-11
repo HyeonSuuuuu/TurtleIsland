@@ -200,11 +200,13 @@ void UShopWidget::SendToNpc(const FString& Message)
 		return;
 	}
 
-	// 서버는 보낸 사람에게 에코를 돌려주지 않는다. 내 말풍선은 여기서 찍는다.
+	if (!Net->TrySendNpcChat(NpcIndex, Trimmed))
+	{
+		return;
+	}
+
+	// 서버는 보낸 사람에게 에코를 돌려주지 않는다. 큐 접수에 성공했을 때만 내 말풍선을 찍는다.
 	AppendMessage(Trimmed, false);
-
-	Net->SendNpcChat(NpcIndex, Trimmed);
-
 	// CPU 추론이 3~4초라 아무 반응이 없으면 먹통처럼 보인다.
 	ShowTyping();
 }
