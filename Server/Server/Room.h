@@ -30,6 +30,10 @@ public:
 
 	void StartGame();   // m_inGame = true + NPC 스폰
 
+	// Thread-safe gameplay entry points. npcId is a room-local slot in [0, MAX_ROOM_NPCS).
+	bool SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp, float speed);
+	bool DespawnNpc(uint32_t npcId);
+
 	// NPC (방 인스턴스 소유)
 	void TickNpcs();    // 틱 스레드가 호출: AI/이동 갱신 + 방 broadcast
 	void BroadcastNpcSpawns(uint32_t toSlot = INVALID_SESSION_INDEX); // 현재 NPC 스폰 통지
@@ -60,6 +64,7 @@ public:
 	}
 
 private:
+	void DespawnNpcLocked(NPC& npc);
 	void SetHost(uint32_t slotIndex, std::string_view userName);
 
 	uint16_t m_roomId   = 0;
