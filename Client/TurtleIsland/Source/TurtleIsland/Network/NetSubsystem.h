@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
-#include <Protocol.h>
+#include "Network/ClientPacketCodec.h"
 #include <type_traits>
 #include "Character/ServerAgent.h"
 #include "NetSubsystem.generated.h"
@@ -55,7 +55,8 @@ struct FRoomMember
 	bool bIsLocal = false;
 };
 
-class FNetworker;
+class FClientTransport;
+class UChatSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginFailed, FString, ErrorMessage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLoginSucceeded, bool, bIsNewAccount);
@@ -110,6 +111,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Network")
 	void StartRoom();
 
+	UFUNCTION(BlueprintCallable, Category = "Network")
+	void RequestLogin(const FString& UserID, const FString& Password);
+
+	UFUNCTION(BlueprintCallable, Category = "Network")
+	void RefreshRooms();
+
 	// 로비 입장(CS_LOBBY_ENTER 전송 + Lv1_Lobby 로드). 로그인 성공 후 호출.
 	void EnterLobby();
 
@@ -150,6 +157,8 @@ public:
 	// NPC 에게 말 걸기. 서버 유저 상태가 Room 일 때만 서버가 받아준다(= 인게임 포함).
 	UFUNCTION(BlueprintCallable, Category = "Npc")
 	void SendNpcChat(int32 NpcIndex, const FString& Message);
+
+	bool TrySendNpcChat(int32 NpcIndex, const FString& Message);
 
 	// ---- 전투 ----
 	// 클라는 판정하지 않는다. 의도만 보내고 모션조차 SC_ATTACK_NOTIFY 를 받은 뒤에 재생한다.
@@ -260,6 +269,26 @@ protected:
 	// 수명이 다한 줄 제거. 지운 게 있으면 브로드캐스트.
 	void PruneChatLines();
 
+	void ProcessIncomingPackets();
+	void DispatchPacket(const TArray<uint8>& RecvData);
+	void PollPendingLogin(float DeltaTime);
+	void SendPendingLogin();
+	void FailPendingLogin(const FString& Message);
+
+	void HandleLoginResponse(const TArray<uint8>& RecvData);
+	void HandleLobbyResponse(const TArray<uint8>& RecvData);
+	void HandleRoomEnterResponse(const TArray<uint8>& RecvData);
+	void HandleRoomEnterNotify(const TArray<uint8>& RecvData);
+	void HandleRoomChatResponse(const TArray<uint8>& RecvData);
+	void HandleRoomChatNotify(const TArray<uint8>& RecvData);
+	void HandleMoveNotify(const TArray<uint8>& RecvData);
+	void HandleAttackNotify(const TArray<uint8>& RecvData);
+	void HandleDamageNotify(const TArray<uint8>& RecvData);
+	void HandleRoomLeaveNotify(const TArray<uint8>& RecvData);
+	void HandleRoomStartNotify(const TArray<uint8>& RecvData);
+	void HandleNpcChat(const TArray<uint8>& RecvData);
+	void SyncLegacyChatLines();
+
 	// userIndex(=서버 playerId) → 표시 이름. 못 찾으면 "유저 N".
 	FString FindUserNameByIndex(int32 UserIndex) const;
 
@@ -275,8 +304,17 @@ protected:
 	FString StoredServerIP = TEXT("127.0.0.1");
 	FString StoredUserID;
 
-	FNetworker* Networker = nullptr;
+	FClientTransport* Networker = nullptr;
 	FRunnableThread* Thread = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UChatSubsystem> ChatSubsystem = nullptr;
+
+	FString PendingLoginID;
+	FString PendingLoginPW;
+	float PendingLoginElapsed = 0.f;
+	float LoginConnectTimeoutSec = 10.f;
+	bool bLoginPending = false;
 
 	UPROPERTY()
 	TMap<uint32, AServerAgent*> players;

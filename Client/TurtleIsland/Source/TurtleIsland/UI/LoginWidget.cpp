@@ -2,7 +2,6 @@
 
 #include "UI/LoginWidget.h"
 #include "Network/NetSubsystem.h"
-#include "Protocol.h"
 #include "UI/ServerSettingsWidget.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -39,8 +38,6 @@ void ULoginWidget::NativeConstruct()
 
 void ULoginWidget::NativeDestruct()
 {
-	GetWorld()->GetTimerManager().ClearTimer(LoginRetryHandle);
-
 	CloseLoginPopup();
 
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
@@ -229,16 +226,7 @@ void ULoginWidget::OnLoginSubmitted(FString ID, FString PW)
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (!Net) return;
 
-	if (!Net->IsConnected())
-	{
-		Net->Reconnect(Net->GetServerIP());
-		// 연결 완료까지 0.5초 대기 후 재시도
-		GetWorld()->GetTimerManager().SetTimer(
-			LoginRetryHandle, this, &ULoginWidget::TrySendLogin, 0.5f, false);
-		return;
-	}
-
-	TrySendLogin();
+	Net->RequestLogin(PendingID, PendingPW);
 }
 
 void ULoginWidget::TrySendLogin()
@@ -252,13 +240,5 @@ void ULoginWidget::TrySendLogin()
 		return;
 	}
 
-	CS_Login LoginPacket{};
-	LoginPacket.size = CS_LOGIN_PACKET_SIZE;
-	LoginPacket.id = (uint16)PACKET_ID::CS_LOGIN_REQUEST;
-	Net->SetUserID(PendingID);
-	Net->CopyStringToBuffer(LoginPacket.userID, MAX_USER_ID_LEN + 1, PendingID);
-	Net->CopyStringToBuffer(LoginPacket.userPW, MAX_USER_PW_LEN + 1, PendingPW);
-
-	Net->SendPacket(LoginPacket);
-	UE_LOG(LogTemp, Log, TEXT("[Login] 패킷 전송"));
+	Net->RequestLogin(PendingID, PendingPW);
 }

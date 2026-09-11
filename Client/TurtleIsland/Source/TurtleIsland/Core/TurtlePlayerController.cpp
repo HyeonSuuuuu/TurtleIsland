@@ -10,9 +10,15 @@
 #include "Engine/GameInstance.h"
 #include "Network/NetSubsystem.h"
 #include "UI/PauseMenuWidget.h"
+#include "UI/PlayerUIComponent.h"
 #include "TurtleIsland.h"
 #include "Kismet/GameplayStatics.h"
 #include "Widgets/Input/SVirtualJoystick.h"
+
+ATurtlePlayerController::ATurtlePlayerController()
+{
+	PlayerUIComponent = CreateDefaultSubobject<UPlayerUIComponent>(TEXT("PlayerUI"));
+}
 
 void ATurtlePlayerController::BeginPlay()
 {
@@ -100,8 +106,10 @@ void ATurtlePlayerController::TogglePauseMenu()
 
 	PauseMenuWidget->AddToViewport(100);
 
-	SetShowMouseCursor(true);
-	SetInputMode(FInputModeUIOnly());
+	if (PlayerUIComponent)
+	{
+		PlayerUIComponent->BeginUIInteraction(PauseMenuWidget, TEXT("Pause"));
+	}
 
 	// 멀티에서 멈추면 서버 패킷만 쌓이므로 싱글에서만 일시정지
 	if (UGameInstance* GI = GetGameInstance())
@@ -117,12 +125,20 @@ void ATurtlePlayerController::ClosePauseMenu()
 	if (!PauseMenuWidget) return;
 
 	PauseMenuWidget->RemoveFromParent();
+	UPauseMenuWidget* ClosedWidget = PauseMenuWidget;
 	PauseMenuWidget = nullptr;
 
 	UGameplayStatics::SetGamePaused(this, false);
 
-	SetShowMouseCursor(false);
-	SetInputMode(FInputModeGameOnly());
+	if (PlayerUIComponent)
+	{
+		PlayerUIComponent->EndUIInteraction(ClosedWidget);
+	}
+	else
+	{
+		SetShowMouseCursor(false);
+		SetInputMode(FInputModeGameOnly());
+	}
 }
 
 bool ATurtlePlayerController::ShouldUseTouchControls() const

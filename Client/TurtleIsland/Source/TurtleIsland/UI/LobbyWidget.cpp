@@ -2,7 +2,6 @@
 
 #include "UI/LobbyWidget.h"
 #include "Network/NetSubsystem.h"
-#include "Protocol.h"
 #include "Components/TextBlock.h"
 #include "Components/ScrollBox.h"
 #include "GameFramework/PlayerController.h"
@@ -69,10 +68,7 @@ void ULobbyWidget::OnRefreshClicked()
 	UNetSubsystem* Net = GetGameInstance()->GetSubsystem<UNetSubsystem>();
 	if (!Net) return;
 
-	CS_LobbyEnter Pkt{};
-	Pkt.size = CS_LOBBY_ENTER_PACKET_SIZE;
-	Pkt.id   = static_cast<uint16>(PACKET_ID::CS_LOBBY_ENTER_REQUEST);
-	Net->SendPacket(Pkt);
+	Net->RefreshRooms();
 }
 
 void ULobbyWidget::OnSearchTextChanged(const FText& Text)

@@ -8,6 +8,7 @@
 
 class UInputMappingContext;
 class UUserWidget;
+class UPlayerUIComponent;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -19,6 +20,7 @@ class ATurtlePlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	ATurtlePlayerController();
 
 	/** ESC 메뉴 토글 (인게임에서만 동작) */
 	UFUNCTION(BlueprintCallable, Category = "UI")
@@ -53,6 +55,9 @@ protected:
 	/** 현재 떠 있는 일시정지 메뉴 */
 	UPROPERTY()
 	TObjectPtr<class UPauseMenuWidget> PauseMenuWidget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+	TObjectPtr<UPlayerUIComponent> PlayerUIComponent;
 
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")

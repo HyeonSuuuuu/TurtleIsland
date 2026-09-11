@@ -98,5 +98,4 @@ protected:
 
 	FString PendingID;
 	FString PendingPW;
-	FTimerHandle LoginRetryHandle;
 };
