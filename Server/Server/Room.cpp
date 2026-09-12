@@ -67,6 +67,7 @@ bool Room::Leave(uint32_t slotIndex)
 
 	if (!found) return false;
 	m_playerStates.erase(slotIndex);
+	m_npcConversations.erase(slotIndex);
 	m_pendingAttacks.erase(slotIndex);
 	m_movementBudgets.erase(slotIndex);
 	for (auto& npc : m_npcs)

@@ -89,6 +89,7 @@
     <ClCompile Include="IOCPNetwork.cpp" />
     <ClCompile Include="User.cpp" />
     <ClCompile Include="Room.cpp" />
+    <ClCompile Include="RoomNpcChat.cpp" />
     <ClCompile Include="NpcTick.cpp" />
     <ClCompile Include="MonsterScript.cpp" />
     <ClCompile Include="ObstacleMap.cpp" />
@@ -110,6 +111,8 @@
     <ClInclude Include="IOCPNetwork.h" />
     <ClInclude Include="User.h" />
     <ClInclude Include="Room.h" />
+    <ClInclude Include="NpcConversation.h" />
+    <ClInclude Include="NpcShopConfig.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="GameServer.h" />
     <ClInclude Include="MonsterScript.h" />
@@ -128,6 +131,9 @@
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Database.md" />
+    <None Include="NpcShop.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

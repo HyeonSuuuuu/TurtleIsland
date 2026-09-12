@@ -479,34 +479,10 @@ void User::OnNpcChat(const Packet& packet)
 	if (packet.dataSpan.size() < CS_NPC_CHAT_PACKET_SIZE)
 		return;
 
-	if (!g_aiSession)
-	{
-		Log::Warning("[NpcChat] AI server not connected");
-		return;
-	}
-
 	auto* pNpcChat = reinterpret_cast<const CS_NpcChat*>(packet.dataSpan.data());
 	const uint8_t* textPtr = packet.dataSpan.data() + sizeof(CS_NpcChat);
 	size_t textLen  = packet.dataSpan.size() - sizeof(CS_NpcChat);
-
-	// Forward to AI server as SA_AI + variable text
-	const size_t totalSize = sizeof(SA_AI) + textLen;
-	if (totalSize > MAX_SOCKBUF)
-	{
-		Log::Warning("[NpcChat] Packet too large ({})", totalSize);
-		return;
-	}
-
-	std::vector<uint8_t> buf(totalSize, 0);
-	auto* pFwd       = reinterpret_cast<SA_AI*>(buf.data());
-	pFwd->size       = static_cast<uint16_t>(totalSize);
-	pFwd->id         = static_cast<uint16_t>(PACKET_ID::SA_AI);
-	pFwd->userIndex  = GetId();      // playerId so AI can echo it back
-	pFwd->npcIndex   = pNpcChat->npcIndex;
-
-	if (textLen > 0)
-		CopyMemory(buf.data() + sizeof(SA_AI), textPtr, textLen);
-
-	g_aiSession->Send(std::span<const uint8_t>(buf.data(), buf.size()));
-	Log::Info("[NpcChat] userId={} npcIndex={} textLen={}", m_userId, pNpcChat->npcIndex, textLen);
+	if (!m_roomIndex || *m_roomIndex>=g_rooms.size()) return;
+	g_rooms[*m_roomIndex].BeginNpcChat(*this,pNpcChat->npcIndex,
+		std::string(reinterpret_cast<const char*>(textPtr),textLen));
 }
