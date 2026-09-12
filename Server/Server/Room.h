@@ -76,9 +76,25 @@ private:
 	void DespawnNpcLocked(NPC& npc, bool died = false);
 	void BroadcastNpcSpawnLocked(const NPC& npc);
 	void SpawnAreaNpcsLocked(uint64_t now, bool broadcast);
+	void ResolvePendingAttackLocked(User& user, uint64_t now);
+	void ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t now);
+	void ResolveNpcAttackLocked(NPC& npc, uint64_t now);
+	bool ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t now);
 	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
 	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
 	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;
+	struct PendingAttack
+	{
+		CS_Attack request{};
+		uint64_t impactAt = 0;
+	};
+	std::unordered_map<uint32_t, PendingAttack> m_pendingAttacks;
+	struct MovementBudget
+	{
+		uint64_t updatedAt = 0;
+		double distance = 0.;
+	};
+	std::unordered_map<uint32_t, MovementBudget> m_movementBudgets;
 	void SetHost(uint32_t slotIndex, std::string_view userName);
 
 	uint16_t m_roomId   = 0;

@@ -6,6 +6,15 @@
 #include <cmath>
 #include <random>
 
+namespace
+{
+	// Seconds from montage start at play rate 1: basic 0.30, Q 0.50, E 0.40.
+	// Authoritative hit timing; clients never decide damage or report a trusted hit.
+	constexpr std::array<uint32_t, PLAYER_SKILL_COUNT> AttackImpactDelayMs = {300, 500, 400};
+	constexpr float PlayerRadius = 42.f; // APlayerAgent capsule XY radius.
+	constexpr double MovementBurstSeconds = 0.25; // Bounded allowance for batched TCP arrivals.
+}
+
 RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title)
 {
 	std::lock_guard lock(m_mutex);
@@ -58,6 +67,10 @@ bool Room::Leave(uint32_t slotIndex)
 
 	if (!found) return false;
 	m_playerStates.erase(slotIndex);
+	m_pendingAttacks.erase(slotIndex);
+	m_movementBudgets.erase(slotIndex);
+	for (auto& npc : m_npcs)
+		if (npc.m_attackTarget == slotIndex) { npc.m_attackImpactAt = 0; npc.m_attackTarget = INVALID_SESSION_INDEX; }
 
 	if (m_userCount == 0)
 	{
@@ -65,6 +78,8 @@ bool Room::Leave(uint32_t slotIndex)
 		m_inGame   = false;
 		for (auto& npc : m_npcs) npc.Clear();   // 방 비면 NPC 정리
 		m_npcSpawnSlots.fill({});
+		m_pendingAttacks.clear();
+		m_movementBudgets.clear();
 		return true;
 	}
 
@@ -108,7 +123,7 @@ void Room::StartGame()
 		m_playerStates[m_userSlots[i]] = GameplayRules::PlayerState{};
 		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
 		float py = MapSpawn::PLAYER_Y + static_cast<float>(i / 2) * 120.0f;
-		g_obstacleMap.SnapToFree(px, py);   // 벽에 끼지 않도록 보정
+		g_obstacleMap.SnapToFree(px, py, PlayerRadius);
 		u->x = px; u->y = py; u->yaw = 0.f;
 	}
 
@@ -172,6 +187,9 @@ void Room::TickNpcs()
 
 	{
 		if (!m_inGame) return;
+		for (uint32_t i = 0; i < m_userCount; ++i)
+			if (User* user = g_userPool.Get(m_userSlots[i]))
+				ResolvePendingAttackLocked(*user, GetTickCount64());
 		SpawnAreaNpcsLocked(GetTickCount64(), true);
 
 		for (uint32_t i = 0; i < m_userCount; ++i)
@@ -204,25 +222,23 @@ void Room::TickNpcs()
 
 			npc.m_state = chasing ? NpcState::Chase : NpcState::Return;
 			const uint64_t now = GetTickCount64();
-			if (target && bestD2 <= 90.f * 90.f && now >= npc.m_attackReadyAt)
+			ResolveNpcAttackLocked(npc, now);
+			const MonsterDef fallback;
+			const auto& def = npc.m_type < g_monsterDefs.size() ? g_monsterDefs[npc.m_type] : fallback;
+			if (target && bestD2 <= def.attackRange * def.attackRange && now >= npc.m_attackReadyAt)
 			{
 				auto& state = m_playerStates.at(target->GetSlotIndex());
-				if (!state.airborne)
+				if (state.hp > 0 && !state.airborne)
 				{
-					npc.m_attackReadyAt = now + 1000;
+					npc.m_attackReadyAt = now + def.attackCooldownMs;
+					npc.m_attackImpactAt = now + def.attackWindupMs;
+					npc.m_attackTarget = target->GetSlotIndex();
+					npc.yaw = std::atan2(target->y - npc.y, target->x - npc.x) * 180.f / 3.14159265f;
 					SC_AttackNotify attack{};
 					attack.size = sizeof(attack); attack.id = static_cast<uint16_t>(PACKET_ID::SC_ATTACK_NOTIFY);
 					attack.casterId = npc.GetId(); attack.casterKind = ENTITY_NPC;
 					attack.targetId = target->GetId(); attack.targetKind = ENTITY_PLAYER; attack.yaw = npc.yaw;
 					BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&attack), sizeof(attack)});
-					SC_DamageNotify damage{};
-					damage.size = sizeof(damage); damage.id = static_cast<uint16_t>(PACKET_ID::SC_DAMAGE_NOTIFY);
-					damage.targetId = target->GetId(); damage.targetKind = ENTITY_PLAYER;
-					damage.causerId = npc.GetId(); damage.causerKind = ENTITY_NPC;
-					damage.damage = std::min(state.hp, std::max(1, 10 - state.defense));
-					state.hp -= damage.damage; damage.remainHP = state.hp; damage.maxHP = state.maxHP;
-					BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
-					SendStateLocked(*target, state, now);
 				}
 			}
 
@@ -230,13 +246,13 @@ void Room::TickNpcs()
 			float dx = tx - npc.x, dy = ty - npc.y;
 			float dist = std::sqrt(dx * dx + dy * dy);
 			float arrive = chasing ? STOP_DIST : 4.0f;
-			if (dist > arrive)
+			if (dist > arrive && now >= npc.m_attackReadyAt)
 			{
 				float inv = 1.0f / dist;
 				float ncx = npc.x + dx * inv * npc.m_speed;
 				float ncy = npc.y + dy * inv * npc.m_speed;
 				// 장애물 충돌: 막힌 칸이면 이동 정지 (길찾기 없음 — 벽에 막힘)
-				if (g_obstacleMap.CanMoveTo(ncx, ncy)) { npc.x = ncx; npc.y = ncy; }
+				if (g_obstacleMap.CanTraverse(npc.x, npc.y, ncx, ncy)) { npc.x = ncx; npc.y = ncy; }
 				npc.yaw = std::atan2(dy, dx) * 180.0f / 3.14159265f;
 			}
 
@@ -258,6 +274,35 @@ void Room::TickNpcs()
 		for (const auto& m : moves)
 			u->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&m), SC_NPC_MOVE_PACKET_SIZE));
 	}
+}
+
+void Room::ResolveNpcAttackLocked(NPC& npc, uint64_t now)
+{
+	if (!npc.m_attackImpactAt || now < npc.m_attackImpactAt) return;
+	const uint32_t slot = npc.m_attackTarget;
+	npc.m_attackImpactAt = 0;
+	npc.m_attackTarget = INVALID_SESSION_INDEX;
+	const auto found = m_playerStates.find(slot);
+	if (!npc.IsActive() || !npc.IsAlive() || slot >= MAX_CLIENTS || found == m_playerStates.end() ||
+		std::find(m_userSlots.begin(), m_userSlots.begin() + m_userCount, slot) == m_userSlots.begin() + m_userCount) return;
+	auto& state = found->second;
+	if (!state.ready || state.hp <= 0 || state.airborne) return;
+	User* target = g_userPool.Get(slot);
+	const MonsterDef fallback;
+	const auto& def = npc.m_type < g_monsterDefs.size() ? g_monsterDefs[npc.m_type] : fallback;
+	const float dx = target->x - npc.x, dy = target->y - npc.y;
+	const float distance = std::hypot(dx, dy);
+	const float yaw = npc.yaw * 0.0174532925f;
+	if (distance > def.attackRange || (distance > 1.f && (dx * std::cos(yaw) + dy * std::sin(yaw)) / distance < 0.2f) ||
+		!g_obstacleMap.CanTraverse(npc.x, npc.y, target->x, target->y)) return;
+	SC_DamageNotify damage{};
+	damage.size = sizeof(damage); damage.id = static_cast<uint16_t>(PACKET_ID::SC_DAMAGE_NOTIFY);
+	damage.targetId = target->GetId(); damage.targetKind = ENTITY_PLAYER;
+	damage.causerId = npc.GetId(); damage.causerKind = ENTITY_NPC;
+	damage.damage = std::max(1, def.attackDamage - state.defense);
+	state.hp -= std::min(state.hp, damage.damage); damage.remainHP = state.hp; damage.maxHP = state.maxHP;
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
+	SendStateLocked(*target, state, now);
 }
 
 void Room::BroadcastNpcSpawns(uint32_t toSlot)
@@ -348,6 +393,11 @@ bool Room::DespawnNpc(uint32_t npcId)
 
 void Room::DespawnNpcLocked(NPC& npc, bool died)
 {
+	// A targeted wind-up must not hit a different NPC that later reuses this slot.
+	std::erase_if(m_pendingAttacks, [&npc](const auto& entry)
+	{
+		return entry.second.request.targetKind == ENTITY_NPC && entry.second.request.targetId == npc.GetId();
+	});
 	auto& slot = m_npcSpawnSlots[npc.GetId()];
 	if (died && slot.areaIndex >= 0)
 		slot.readyAt = GetTickCount64() + g_monsterSpawnAreas[slot.areaIndex].respawnMs;
@@ -366,6 +416,7 @@ void Room::DespawnNpcLocked(NPC& npc, bool died)
 void Room::SendPlayerStatesToUser(uint32_t toSlot)
 {
 	std::lock_guard lock(m_mutex);
+	if (toSlot >= MAX_CLIENTS) return;
 	User* dst = g_userPool.Get(toSlot);
 	if (!dst) return;
 
@@ -434,8 +485,11 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 		// Ready is a snapshot request, not a reset or a teleport after initial entry.
 		if (!state.ready)
 		{
-			user.x = request.x; user.y = request.y; user.yaw = request.yaw;
+			// XY belongs to the room spawn, not an untrusted first client pose.
+			if (!g_obstacleMap.CanTraverse(user.x, user.y, user.x, user.y, PlayerRadius)) return;
+			user.yaw = request.yaw;
 			state.z = request.z; state.ready = true;
+			m_movementBudgets[user.GetSlotIndex()] = {GetTickCount64(), state.moveSpeed * MovementBurstSeconds};
 		}
 		SendStateLocked(user, state, GetTickCount64());
 		SC_MoveNotify me{};
@@ -443,6 +497,7 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 		me.userIndex = user.GetId(); me.x = user.x; me.y = user.y; me.yaw = user.yaw;
 		me.z = state.z; me.velocityZ = state.velocityZ; me.airborne = state.airborne;
 		me.hp = state.hp; me.maxHP = state.maxHP;
+		user.Send({reinterpret_cast<const uint8_t*>(&me), sizeof(me)});
 		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&me), sizeof(me)}, user.GetSlotIndex());
 	}
 	SendPlayerStatesToUser(user.GetSlotIndex());
@@ -451,20 +506,41 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 
 void Room::MovePlayer(User& user, const CS_Move& request)
 {
-	if (!GameplayRules::ValidPose(request.x, request.y, request.z, request.yaw, request.velocityZ) || request.airborne > 1) return;
 	std::lock_guard lock(m_mutex);
 	auto found = m_playerStates.find(user.GetSlotIndex());
-	if (!m_inGame || found == m_playerStates.end() || !found->second.ready || found->second.hp <= 0) return;
+	if (!m_inGame || found == m_playerStates.end() || !found->second.ready) return;
 	auto& state = found->second;
-	user.x = request.x; user.y = request.y; user.yaw = request.yaw;
-	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;
+	const bool accepted = ApplyPlayerMoveLocked(user, request, GetTickCount64());
 	SC_MoveNotify packet{};
 	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
-	packet.userIndex = user.GetId(); packet.inputFlag = request.inputFlag;
+	packet.userIndex = user.GetId(); packet.inputFlag = accepted ? request.inputFlag : 0;
 	packet.x = user.x; packet.y = user.y; packet.yaw = user.yaw;
 	packet.z = state.z; packet.velocityZ = state.velocityZ; packet.airborne = state.airborne;
 	packet.hp = state.hp; packet.maxHP = state.maxHP;
-	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)}, user.GetSlotIndex());
+	if (accepted)
+		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)}, user.GetSlotIndex());
+	else
+		user.Send({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)});
+}
+
+bool Room::ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t now)
+{
+	auto found = m_playerStates.find(user.GetSlotIndex());
+	auto budget = m_movementBudgets.find(user.GetSlotIndex());
+	if (!m_inGame || found == m_playerStates.end() || !found->second.ready || found->second.hp <= 0 ||
+		budget == m_movementBudgets.end() || !GameplayRules::ValidPose(request.x, request.y, request.z, request.yaw, request.velocityZ) ||
+		request.airborne > 1) return false;
+	auto& state = found->second;
+	auto& credit = budget->second;
+	const double elapsed = now > credit.updatedAt ? (now - credit.updatedAt) / 1000. : 0.;
+	credit.updatedAt = std::max(now, credit.updatedAt);
+	credit.distance = std::min(state.moveSpeed * MovementBurstSeconds, credit.distance + state.moveSpeed * elapsed);
+	const double distance = std::hypot(static_cast<double>(request.x) - user.x, static_cast<double>(request.y) - user.y);
+	if (distance > credit.distance || !g_obstacleMap.CanTraverse(user.x, user.y, request.x, request.y, PlayerRadius)) return false;
+	credit.distance -= distance;
+	user.x = request.x; user.y = request.y; user.yaw = request.yaw;
+	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;
+	return true;
 }
 
 void Room::Attack(User& user, const CS_Attack& request)
@@ -477,7 +553,8 @@ void Room::Attack(User& user, const CS_Attack& request)
 	ActionResult result = ActionResult::Invalid;
 	if (std::isfinite(request.yaw) && (request.targetKind == ENTITY_NONE ||
 		(request.targetKind == ENTITY_NPC && request.targetId < m_npcs.size() && m_npcs[request.targetId].IsAlive())))
-		result = GameplayRules::UseSkill(state, request.skillId, now);
+		result = m_pendingAttacks.contains(user.GetSlotIndex()) ? ActionResult::Cooldown :
+			GameplayRules::UseSkill(state, request.skillId, now);
 	SC_ActionResult response{};
 	response.size = sizeof(response); response.id = static_cast<uint16_t>(PACKET_ID::SC_ACTION_RESULT);
 	response.requestId = static_cast<uint16_t>(PACKET_ID::CS_ATTACK); response.actionId = request.skillId; response.result = result;
@@ -489,6 +566,24 @@ void Room::Attack(User& user, const CS_Attack& request)
 	attack.casterId = user.GetId(); attack.casterKind = ENTITY_PLAYER; attack.skillId = request.skillId;
 	attack.yaw = request.yaw; attack.targetKind = request.targetKind; attack.targetId = request.targetId;
 	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&attack), sizeof(attack)});
+	m_pendingAttacks[user.GetSlotIndex()] = {request, now + AttackImpactDelayMs[request.skillId]};
+	SendStateLocked(user, state, now);
+}
+
+void Room::ResolvePendingAttackLocked(User& user, uint64_t now)
+{
+	const auto pending = m_pendingAttacks.find(user.GetSlotIndex());
+	if (pending == m_pendingAttacks.end() || now < pending->second.impactAt) return;
+	const CS_Attack request = pending->second.request;
+	m_pendingAttacks.erase(pending); // Resolve each accepted swing once, including a miss.
+	const auto state = m_playerStates.find(user.GetSlotIndex());
+	if (!m_inGame || state == m_playerStates.end() || !state->second.ready || state->second.hp <= 0) return;
+	ApplyAttackHitLocked(user, request, now);
+}
+
+void Room::ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t now)
+{
+	auto& state = m_playerStates.at(user.GetSlotIndex());
 	const auto& skill = GameplayRules::Skills[request.skillId];
 	const float radians = std::remainder(request.yaw, 360.f) * 0.0174532925f;
 	for (auto& npc : m_npcs)
@@ -501,8 +596,9 @@ void Room::Attack(User& user, const CS_Attack& request)
 		damage.size = sizeof(damage); damage.id = static_cast<uint16_t>(PACKET_ID::SC_DAMAGE_NOTIFY);
 		damage.targetId = npc.GetId(); damage.targetKind = ENTITY_NPC;
 		damage.causerId = user.GetId(); damage.causerKind = ENTITY_PLAYER;
-		damage.damage = std::min(npc.m_hp, skill.damage + state.attack - 20);
-		npc.m_hp -= damage.damage; damage.remainHP = npc.m_hp; damage.maxHP = npc.m_maxHp;
+		damage.damage = std::max(1, skill.damage + state.attack - 20);
+		npc.m_hp -= std::min(npc.m_hp, damage.damage);
+		damage.remainHP = npc.m_hp; damage.maxHP = npc.m_maxHp;
 		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
 		if (!npc.IsAlive()) { GameplayRules::RewardKill(state); DespawnNpcLocked(npc, true); }
 		if (request.skillId == SKILL_ID_BASIC_ATTACK) break;

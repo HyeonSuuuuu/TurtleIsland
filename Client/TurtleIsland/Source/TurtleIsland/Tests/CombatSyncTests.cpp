@@ -8,6 +8,7 @@
 #include "Gameplay/PlayerStatsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/WorldSettings.h"
 #include "Network/NpcSubsystem.h"
 #include "GameplayRules.h"
@@ -133,6 +134,24 @@ bool FCombatNetworkTest::RunTest(const FString& Parameters)
 	Net->Receive(PacketBytes(State, PACKET_ID::SC_PLAYER_STATE));
 	TestEqual(TEXT("HUD delegate updates HP"), HP->GetPercent(), 0.5f);
 	TestEqual(TEXT("HUD delegate updates gold"), Gold->GetText().ToString(), FString(TEXT("  130 G")));
+	APlayerController* PC = World->SpawnActor<APlayerController>();
+	FActorSpawnParameters LocalParams;
+	LocalParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ATurtleAgent* Local = World->SpawnActor<AServerAgent>(AServerAgent::StaticClass(), FVector(900, 900, 96), FRotator::ZeroRotator, LocalParams);
+	if (!TestNotNull(TEXT("Local controller created"), PC) || !TestNotNull(TEXT("Local agent created"), Local)) return false;
+	PC->Possess(Local);
+	Local->SetActorLocation(FVector(900, 900, 96));
+	Local->GetCharacterMovement()->Velocity = FVector(500, 0, 0);
+	SC_MoveNotify Correction{};
+	Correction.userIndex = 42; Correction.x = 100; Correction.y = 200; Correction.z = 96;
+	Correction.hp = 50; Correction.maxHP = 100;
+	Net->Receive(PacketBytes(Correction, PACKET_ID::SC_MOVE_NOTIFY));
+	TestTrue(TEXT("Own correction restores authoritative position"), Local->GetActorLocation().Equals(FVector(100, 200, 96)));
+	TestTrue(TEXT("Own correction stops rejected movement"), Local->GetVelocity().IsNearlyZero());
+	Correction.airborne = 1; Correction.z = 196; Correction.velocityZ = 300;
+	Net->Receive(PacketBytes(Correction, PACKET_ID::SC_MOVE_NOTIFY));
+	TestTrue(TEXT("Own correction retains airborne state"), Local->GetCharacterMovement()->IsFalling());
+	TestEqual(TEXT("Own correction restores jump velocity"), Local->GetVelocity().Z, 300.0);
 	State.playerId = 99; State.gold = 999;
 	Net->Receive(PacketBytes(State, PACKET_ID::SC_PLAYER_STATE));
 	TestEqual(TEXT("Other player's private state rejected"), Net->GetPlayerState()->gold, 130);

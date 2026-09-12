@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 #include <vector>
 #include <cstdint>
@@ -13,12 +13,15 @@ public:
 	bool Load(const char* path);
 	bool IsLoaded() const { return m_loaded; }
 
-	// 월드(x,y) 가 막힌 칸인지. 미로드 시 false(통과), 그리드 밖은 true(아레나 이탈 방지).
+	// Missing/invalid maps, non-finite positions and out-of-grid coordinates are blocked.
 	bool IsBlockedWorld(float wx, float wy) const;
 	bool CanMoveTo(float wx, float wy) const { return !IsBlockedWorld(wx, wy); }
+	// Sweeps the whole segment against blocked cells expanded by the actor radius.
+	// Fails closed for an unloaded map, non-finite coordinates or map bounds.
+	bool CanTraverse(float fromX, float fromY, float toX, float toY, float radius = 0.f) const;
 
 	// (x,y) 가 막힌 칸이면 가장 가까운 이동가능 칸 중심으로 보정. 스폰 안전망.
-	void SnapToFree(float& wx, float& wy) const;
+	void SnapToFree(float& wx, float& wy, float radius = 0.f) const;
 
 private:
 	bool BlockedCell(int c, int r) const { return m_blocked[(size_t)r * m_cols + c] != 0; }
