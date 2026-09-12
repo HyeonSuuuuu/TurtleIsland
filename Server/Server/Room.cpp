@@ -125,7 +125,7 @@ void Room::StartGame()
 		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
 		float py = MapSpawn::PLAYER_Y + static_cast<float>(i / 2) * 120.0f;
 		g_obstacleMap.SnapToFree(px, py, PlayerRadius);
-		u->x = px; u->y = py; u->yaw = 0.f;
+		u->x = px; u->y = py; u->yaw = MapSpawn::PLAYER_YAW;
 	}
 
 	m_npcSpawnSlots.fill({});

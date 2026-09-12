@@ -5,6 +5,25 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include "../../Common/ThirdParty/nlohmann/json.hpp"
+
+bool MapSpawn::LoadPlayerStart(const char* path)
+{
+	try
+	{
+		std::ifstream file(path);
+		const auto data = nlohmann::json::parse(file);
+		for (const char* key : {"x", "y", "yaw"})
+			if (!data.contains(key) || !data[key].is_number() || !std::isfinite(data[key].get<double>()) ||
+				std::abs(data[key].get<double>()) > 10000000.) return false;
+		PLAYER_X = data["x"].get<float>(); PLAYER_Y = data["y"].get<float>();
+		PLAYER_YAW = std::remainder(data["yaw"].get<float>(), 360.f);
+		NPC_ANCHOR_X = PLAYER_X - 20.f; NPC_ANCHOR_Y = PLAYER_Y + 1600.f;
+		Log::Success("[Map] PlayerStart loaded ({},{}) yaw={}", PLAYER_X, PLAYER_Y, PLAYER_YAW);
+		return true;
+	}
+	catch (const std::exception&) { return false; }
+}
 
 bool ObstacleMap::Load(const char* path)
 {

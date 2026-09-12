@@ -277,8 +277,8 @@ struct RoomSpawnTests
 		Check(state.gold == gold + 40 && state.exp == 0, "despawn and unattributed death grant no reward");
 
 		// An entirely blocked/out-of-map area must retry, never snap outside its boundary.
-		g_monsterSpawnAreas[0].x = 0.f;
-		g_monsterSpawnAreas[0].y = 0.f;
+		g_monsterSpawnAreas[0].x = 1000000000.f;
+		g_monsterSpawnAreas[0].y = 1000000000.f;
 		room.m_npcSpawnSlots[0] = {0, 0};
 		room.SpawnAreaNpcsLocked(100, true);
 		Check(!room.m_npcs[0].IsActive() && room.m_npcSpawnSlots[0].readyAt == 1100, "blocked area retries");
@@ -314,6 +314,23 @@ int main()
 {
 	try
 	{
+		Check(MapSpawn::LoadPlayerStart("PlayerSpawn.json"), "exported PlayerStart loaded");
+		Check(g_obstacleMap.Load("map.dat"), "exported map loaded");
+		float safeX = MapSpawn::PLAYER_X, safeY = MapSpawn::PLAYER_Y;
+		g_obstacleMap.SnapToFree(safeX, safeY, 42.f);
+		Check(g_obstacleMap.CanTraverse(safeX, safeY, safeX, safeY, 42.f), "PlayerStart has nearby capsule clearance");
+		Check(std::hypot(safeX - MapSpawn::PLAYER_X, safeY - MapSpawn::PLAYER_Y) <= 150.f,
+			"PlayerStart correction stays within local spawn area");
+		std::println("PASS: configured PlayerStart ({},{}) -> capsule-safe ({},{})",
+			MapSpawn::PLAYER_X, MapSpawn::PLAYER_Y, safeX, safeY);
+		const float spawnX = MapSpawn::PLAYER_X, spawnY = MapSpawn::PLAYER_Y;
+		const auto invalidSpawn = std::filesystem::temp_directory_path() /
+			("TurtleIslandPlayerStartTest-" + std::to_string(GetCurrentProcessId()) + ".json");
+		{ std::ofstream file(invalidSpawn); file << R"({"x":10,"y":"invalid","yaw":0})"; }
+		Check(!MapSpawn::LoadPlayerStart(invalidSpawn.string().c_str()), "malformed PlayerStart rejected");
+		Check(MapSpawn::PLAYER_X == spawnX && MapSpawn::PLAYER_Y == spawnY, "invalid config cannot partially change spawn");
+		std::filesystem::remove(invalidSpawn);
+		Check(!MapSpawn::LoadPlayerStart(invalidSpawn.string().c_str()), "missing PlayerStart rejected");
 		RoomSpawnTests::Run();
 		RoomSpawnTests::TestAttackImpacts();
 		RoomSpawnTests::TestMovement();
