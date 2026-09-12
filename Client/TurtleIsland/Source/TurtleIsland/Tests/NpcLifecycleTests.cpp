@@ -3,6 +3,9 @@
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Character/ServerAgent.h"
+#include "Character/ServerMonster.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/WorldSettings.h"
@@ -119,6 +122,33 @@ bool FNpcLifecycleTest::RunTest(const FString& Parameters)
 		{
 			TestNotNull(TEXT("Configured visual has skeletal mesh"), Visual->GetMesh()->GetSkeletalMeshAsset());
 			TestNotNull(TEXT("Configured visual has animation instance"), Visual->GetMesh()->GetAnimInstance());
+			AServerMonster* Monster = Cast<AServerMonster>(Visual);
+			if (!TestNotNull(TEXT("Server monster uses dedicated presentation"), Monster)) return false;
+			if (!TestNotNull(TEXT("Idle clip"), Monster->IdleAnimation.Get()) ||
+				!TestNotNull(TEXT("Movement clip"), Monster->MoveAnimation.Get()) ||
+				!TestNotNull(TEXT("Attack clip"), Monster->AttackAnimation.Get()) ||
+				!TestNotNull(TEXT("Hit clip"), Monster->HitAnimation.Get()) ||
+				!TestNotNull(TEXT("Death clip"), Monster->DeathAnimation.Get())) return false;
+			Monster->PlayAttack(45.f);
+			TestTrue(TEXT("Server attack plays configured clip"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() == Monster->AttackAnimation);
+			const float ActionTime = Monster->AttackAnimation->GetPlayLength() + 0.1f;
+			for (float Elapsed = 0.f; Elapsed < ActionTime; Elapsed += 0.02f)
+				TestWorld.TickTestWorld(0.02f);
+			Monster->FindComponentByClass<UHealthComponent>()->ApplyServerDamage(40, 10, nullptr);
+			TestTrue(TEXT("Nonlethal damage plays hit clip"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() == Monster->HitAnimation);
+			Monster->FindComponentByClass<UHealthComponent>()->ApplyServerDamage(0, 40, nullptr);
+			TestNull(TEXT("Dead monster immediately leaves target lookup"), Npcs->FindNpc(Spawn.npcId));
+			TestFalse(TEXT("Corpse has no collision"), Monster->GetActorEnableCollision());
+			TestTrue(TEXT("Death overrides other animations"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() == Monster->DeathAnimation);
+			Despawn.npcId = Spawn.npcId;
+			Npcs->HandlePacket(EncodeNpcPacket(Despawn, PACKET_ID::SC_NPC_DESPAWN));
+			TestFalse(TEXT("Despawn preserves death visual"), Monster->IsActorBeingDestroyed());
+			Npcs->HandlePacket(EncodeNpcPacket(Spawn, PACKET_ID::SC_NPC_SPAWN));
+			TestTrue(TEXT("Reused ID creates live actor beside old corpse"), Npcs->FindNpc(Spawn.npcId) != Monster);
+			const float DeathTime = Monster->DeathAnimation->GetPlayLength() + 0.5f;
+			for (float Elapsed = 0.f; Elapsed < DeathTime; Elapsed += 0.02f)
+				TestWorld.TickTestWorld(0.02f);
+			TestTrue(TEXT("Death visual expires"), !IsValid(Monster) || Monster->IsActorBeingDestroyed());
 		}
 	}
 	Npcs->SetReady(false);

@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "GameServer.h"
 #include "Globals.h"
 #include "NpcTick.h"
@@ -77,7 +77,7 @@ void GameServer::Run()
 {
 	User::RegisterHandlers();
 	LoadMonsterScript("Monster.lua"); // 몬스터 정의 로드 (없으면 폴백 스폰)
-	g_obstacleMap.Load("map.dat");    // 인게임 장애물 그리드 (없으면 충돌 비활성)
+	g_obstacleMap.Load("map.dat");    // Missing/invalid grid disables gameplay movement.
 
 	// DB 연결: 환경변수 TI_DB_CONN 우선, 없으면 기본값. 실패해도 서버는 계속(로그인 폴백).
 	char connBuf[512] = {}; size_t connLen = 0;

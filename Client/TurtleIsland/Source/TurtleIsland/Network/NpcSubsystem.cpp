@@ -1,6 +1,7 @@
 #include "Network/NpcSubsystem.h"
 
 #include "Character/ServerAgent.h"
+#include "Character/ServerMonster.h"
 #include "Gameplay/GroundDetector.h"
 #include "Gameplay/HealthComponent.h"
 #include "Network/ClientPacketCodec.h"
@@ -73,7 +74,7 @@ void UNpcSubsystem::HandlePacket(const TArray<uint8>& Data)
 AServerAgent* UNpcSubsystem::FindNpc(uint32 NpcId) const
 {
 	const TObjectPtr<AServerAgent>* Found = Npcs.Find(NpcId);
-	return Found && IsValid(Found->Get()) ? Found->Get() : nullptr;
+	return Found && IsValid(Found->Get()) && !Found->Get()->FindComponentByClass<UHealthComponent>()->IsDead() ? Found->Get() : nullptr;
 }
 
 void UNpcSubsystem::SpawnNpc(const SC_NpcSpawn& Packet)
@@ -90,7 +91,8 @@ void UNpcSubsystem::SpawnNpc(const SC_NpcSpawn& Packet)
 		return;
 	}
 
-	AServerAgent* Agent = FindNpc(Packet.npcId);
+	AServerAgent* Agent = Npcs.FindRef(Packet.npcId);
+	if (!IsValid(Agent)) Agent = nullptr;
 	if (Agent && (Agent->GetClass() != NpcClass || Agent->FindComponentByClass<UHealthComponent>()->IsDead()))
 	{
 		DespawnNpc(Packet.npcId);
@@ -134,15 +136,23 @@ void UNpcSubsystem::MoveNpc(const SC_NpcMove& Packet)
 
 void UNpcSubsystem::DespawnNpc(uint32 NpcId)
 {
-	if (AServerAgent* Agent = FindNpc(NpcId))
+	if (AServerAgent* Agent = Npcs.FindRef(NpcId); IsValid(Agent))
 	{
-		Agent->Destroy();
+		if (const AServerMonster* Monster = Cast<AServerMonster>(Agent); Monster && Monster->IsPlayingDeath())
+		{
+			DeathVisuals.RemoveAll([](const auto& Visual) { return !Visual.IsValid(); });
+			DeathVisuals.Add(Agent);
+		}
+		else Agent->Destroy();
 	}
 	Npcs.Remove(NpcId);
 }
 
 void UNpcSubsystem::ClearNpcs()
 {
+	for (const auto& Visual : DeathVisuals)
+		if (Visual.IsValid()) Visual->Destroy();
+	DeathVisuals.Reset();
 	for (const auto& Entry : Npcs)
 	{
 		if (IsValid(Entry.Value))

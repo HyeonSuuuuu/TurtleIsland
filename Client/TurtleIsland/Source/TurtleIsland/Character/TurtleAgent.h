@@ -30,10 +30,10 @@ protected:
 	virtual void EnterDeadState();
 
 	UFUNCTION()
-	void HandleDamaged(int32 Damage, float HPRatio, AActor* Causer);
+	virtual void HandleDamaged(int32 Damage, float HPRatio, AActor* Causer);
 
 	UFUNCTION()
-	void HandleDied(AActor* Killer);
+	virtual void HandleDied(AActor* Killer);
 
 	/** HP 의 소유자. 블루프린트에서는 이 변수로 직접 접근한다 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")

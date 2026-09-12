@@ -3,6 +3,7 @@
 #include "User.h"
 #include "MonsterScript.h"
 #include "ObstacleMap.h"
+#include "Globals.h"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +19,177 @@ namespace
 
 struct RoomSpawnTests
 {
+	static void TestNpcImpacts()
+	{
+		Room room;
+		room.m_inGame = true;
+		room.m_userSlots[0] = 0; room.m_userCount = 1;
+		auto& state = room.m_playerStates[0];
+		state.ready = true;
+		User* user = g_userPool.Get(0);
+		user->x = MapSpawn::NPC_ANCHOR_X; user->y = MapSpawn::NPC_ANCHOR_Y;
+		auto& npc = room.m_npcs[0];
+		npc.Spawn(0, 0, user->x, user->y, 50, 0);
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 100;
+		room.ResolveNpcAttackLocked(npc, 99);
+		Check(state.hp == 100, "NPC wind-up does not cause early damage");
+		room.ResolveNpcAttackLocked(npc, 100);
+		Check(state.hp == 93, "NPC impact uses configured attack minus defense");
+		room.ResolveNpcAttackLocked(npc, 101);
+		Check(state.hp == 93, "NPC impact cannot repeat");
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 200; state.airborne = true;
+		room.ResolveNpcAttackLocked(npc, 200);
+		Check(state.hp == 93, "jump dodges NPC impact");
+		state.airborne = false; user->x += 1000;
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 300;
+		room.ResolveNpcAttackLocked(npc, 300);
+		Check(state.hp == 93, "out-of-range target dodges NPC impact");
+		user->x = npc.x;
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 400; npc.m_hp = 0;
+		room.ResolveNpcAttackLocked(npc, 400);
+		Check(state.hp == 93, "dead NPC cannot finish attack");
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 500;
+		room.Leave(0);
+		Check(npc.m_attackImpactAt == 0, "leave clears NPC pending impact");
+		std::println("PASS: NPC wind-up, impact, damage, dodge, death and leave cancellation");
+	}
+	static void TestMovement()
+	{
+		const auto fixture = std::filesystem::temp_directory_path() /
+			("TurtleIslandMovementTest-" + std::to_string(GetCurrentProcessId()) + ".dat");
+		{ std::ofstream file(fixture); file << "5 5 100 0 0\n00000\n00100\n00100\n00100\n00000\n"; }
+		Check(g_obstacleMap.Load(fixture.string().c_str()), "load movement fixture");
+		Check(g_obstacleMap.CanTraverse(50, 50, 450, 50, 42), "clear corridor permits capsule");
+		Check(!g_obstacleMap.CanTraverse(150, 250, 350, 250), "free endpoints cannot tunnel through wall");
+		Check(!g_obstacleMap.CanTraverse(150, 150, 150, 450, 51), "radius blocks wall grazing");
+		Check(!g_obstacleMap.CanTraverse(50, 50, 499, 50, 42), "capsule cannot cross map boundary");
+		Check(!g_obstacleMap.CanTraverse(150, 50, 350, 150), "diagonal segment cannot cut wall corner");
+		Room room;
+		User user;
+		room.m_inGame = true;
+		user.x = 50; user.y = 50;
+		auto& state = room.m_playerStates[user.GetSlotIndex()];
+		CS_IngameReady ready{};
+		ready.protocolVersion = GAMEPLAY_PROTOCOL_VERSION;
+		ready.x = 450; ready.y = 450; ready.z = 96;
+		room.PlayerReady(user, ready);
+		Check(state.ready && user.x == 50 && user.y == 50, "ready cannot override server spawn XY");
+		room.m_movementBudgets[user.GetSlotIndex()] = {1000, 125};
+		CS_Move move{};
+		move.x = 150; move.y = 50; move.z = 96;
+		Check(room.ApplyPlayerMoveLocked(user, move, 1000), "normal move accepted");
+		move.x = 200;
+		Check(!room.ApplyPlayerMoveLocked(user, move, 1000) && user.x == 150, "packet spam cannot refill distance budget");
+		Check(room.ApplyPlayerMoveLocked(user, move, 1100), "elapsed server time refills distance budget");
+		move.x = 450;
+		Check(!room.ApplyPlayerMoveLocked(user, move, 100000) && user.x == 200, "idle cannot accumulate teleport budget");
+		move.x = 225; move.y = 150;
+		Check(!room.ApplyPlayerMoveLocked(user, move, 100100) && user.y == 50, "wall crossing rejected");
+		move.airborne = 1; move.z = 1000;
+		Check(!room.ApplyPlayerMoveLocked(user, move, 100200), "airborne flag cannot bypass XY walls");
+		move.x = std::numeric_limits<float>::quiet_NaN();
+		Check(!room.ApplyPlayerMoveLocked(user, move, 100300), "non-finite move rejected");
+		move.x = 200; move.y = 50; move.z = 196; move.velocityZ = 300;
+		Check(room.ApplyPlayerMoveLocked(user, move, 100400) && state.airborne, "stationary jump remains supported");
+		{ std::ofstream file(fixture); file << "5 5 100 0 0\n00000\n"; }
+		Check(!g_obstacleMap.Load(fixture.string().c_str()), "truncated grid rejected");
+		Check(!g_obstacleMap.CanMoveTo(50, 50) && !g_obstacleMap.CanTraverse(50, 50, 60, 50), "invalid map fails closed");
+		Check(!room.ApplyPlayerMoveLocked(user, move, 100500), "missing map prevents player movement");
+		std::filesystem::remove(fixture);
+		Check(g_obstacleMap.Load("map.dat"), "restore real map");
+		for (int i = 0; i < 4; ++i)
+		{
+			float x = MapSpawn::PLAYER_X + (i % 2) * 120.f;
+			float y = MapSpawn::PLAYER_Y + (i / 2) * 120.f;
+			g_obstacleMap.SnapToFree(x, y, 42);
+			Check(g_obstacleMap.CanTraverse(x, y, x, y, 42), "all player spawns have capsule clearance");
+		}
+		std::println("PASS: path collision, radius, boundary, server spawn, speed budget, jump, fail-closed map");
+	}
+
+	static void Resolve(Room& room, User& user)
+	{
+		const auto pending = room.m_pendingAttacks.find(user.GetSlotIndex());
+		Check(pending != room.m_pendingAttacks.end(), "accepted attack has pending impact");
+		room.ResolvePendingAttackLocked(user, pending->second.impactAt);
+		Check(!room.m_pendingAttacks.contains(user.GetSlotIndex()), "impact consumed once");
+	}
+
+	static void TestAttackImpacts()
+	{
+		Room room;
+		room.m_isActive = true;
+		room.m_inGame = true;
+		User user;
+		auto& state = room.m_playerStates[user.GetSlotIndex()];
+		state.ready = true;
+		state.attack = 37;
+		room.SpawnNpc(0, 0, MapSpawn::NPC_ANCHOR_X, MapSpawn::NPC_ANCHOR_Y, 500, 0.f);
+		auto& npc = room.m_npcs[0];
+		user.x = npc.x - 100.f; user.y = npc.y;
+		CS_Attack attack{};
+		attack.targetKind = ENTITY_NPC; attack.targetId = 0;
+		room.Attack(user, attack);
+		Check(npc.m_hp == 500, "swing start does not damage");
+		const auto due = room.m_pendingAttacks.at(user.GetSlotIndex()).impactAt;
+		room.ResolvePendingAttackLocked(user, due - 1);
+		Check(npc.m_hp == 500, "no damage before impact");
+		Resolve(room, user);
+		Check(npc.m_hp == 463, "basic hit damage equals attack stat");
+		room.ResolvePendingAttackLocked(user, due + 1);
+		Check(npc.m_hp == 463, "repeated impact tick cannot damage twice");
+
+		state.skillReadyAt.fill(0);
+		room.Attack(user, attack);
+		npc.x += 1000.f;
+		Resolve(room, user);
+		Check(npc.m_hp == 463, "target moving out before impact is a miss");
+		state.skillReadyAt.fill(0);
+		room.Attack(user, attack);
+		npc.x = user.x + 100.f;
+		Resolve(room, user);
+		Check(npc.m_hp == 426, "target entering range at impact can be hit");
+		state.skillReadyAt.fill(0);
+		attack.yaw = 180.f;
+		room.Attack(user, attack);
+		Resolve(room, user);
+		Check(npc.m_hp == 426, "wrong-facing swing misses");
+
+		state.skillReadyAt.fill(0);
+		attack.yaw = 0.f; attack.skillId = 1;
+		room.Attack(user, attack);
+		const auto mana = state.mp;
+		const auto firstImpact = room.m_pendingAttacks.at(user.GetSlotIndex()).impactAt;
+		attack.skillId = 2;
+		room.Attack(user, attack);
+		Check(state.mp == mana && room.m_pendingAttacks.at(user.GetSlotIndex()).impactAt == firstImpact,
+			"overlapping skill cannot spend mana or replace pending swing");
+		Resolve(room, user);
+		Check(npc.m_hp == 369, "Q retains skill bonus at impact");
+
+		state.skillReadyAt.fill(0);
+		attack.skillId = 0;
+		room.Attack(user, attack);
+		state.hp = 0;
+		Resolve(room, user);
+		Check(npc.m_hp == 369, "dead caster cannot finish wind-up");
+		state.hp = 100;
+		state.skillReadyAt.fill(0);
+		room.Attack(user, attack);
+		room.DespawnNpc(0);
+		Check(room.m_pendingAttacks.empty(), "target despawn cancels targeted wind-up");
+		room.SpawnNpc(0, 0, user.x + 100.f, user.y, 500, 0.f);
+		room.ResolvePendingAttackLocked(user, firstImpact + 10000);
+		Check(npc.m_hp == 500, "reused target ID cannot receive old hit");
+
+		state.skillReadyAt.fill(0);
+		room.Attack(user, attack);
+		room.m_userSlots[0] = user.GetSlotIndex(); room.m_userCount = 1;
+		room.Leave(user.GetSlotIndex());
+		Check(room.m_pendingAttacks.empty(), "leave cancels pending attack");
+		std::println("PASS: swing/impact timing, attack-stat damage, impact range/facing, single hit, cancellation");
+	}
+
 	static void Run()
 	{
 		LoadMonsterScript("Monster.lua");
@@ -66,11 +238,13 @@ struct RoomSpawnTests
 		CS_Attack attack{};
 		attack.targetKind = ENTITY_NPC; attack.targetId = 0;
 		room.Attack(user, attack);
+		Resolve(room, user);
 		Check(room.m_npcs[0].IsAlive() && room.m_npcs[0].m_hp < room.m_npcs[0].m_maxHp, "nonlethal hit");
 		Check(state.gold == gold && state.exp == exp, "damage alone grants no reward");
 		state.skillReadyAt.fill(0);
 		room.m_npcs[0].m_hp = 1;
 		room.Attack(user, attack);
+		Resolve(room, user);
 		Check(!room.m_npcs[0].IsActive() && state.gold == gold + 10 && state.exp == exp + 25, "kill grants 10 gold and 25 XP");
 		Check(room.m_npcSpawnSlots[0].readyAt >= GetTickCount64() + 9900, "death schedules 10-second respawn");
 		state.skillReadyAt.fill(0);
@@ -85,6 +259,7 @@ struct RoomSpawnTests
 			room.m_npcs[0].m_hp = 1;
 			state.skillReadyAt.fill(0);
 			room.Attack(user, attack);
+			Resolve(room, user);
 			Check(state.gold == gold + kills * 10, "respawned monster grants gold on each kill");
 			if (kills < 4) Check(state.exp == exp + kills * 25, "respawned monster grants XP on each kill");
 		}
@@ -140,6 +315,9 @@ int main()
 	try
 	{
 		RoomSpawnTests::Run();
+		RoomSpawnTests::TestAttackImpacts();
+		RoomSpawnTests::TestMovement();
+		RoomSpawnTests::TestNpcImpacts();
 		const auto fixture = std::filesystem::temp_directory_path() /
 			("TurtleIslandSpawnTest-" + std::to_string(GetCurrentProcessId()) + ".lua");
 		const std::string monsters = "Monsters = {{name='Test',hp=50,speed=4}}\n";

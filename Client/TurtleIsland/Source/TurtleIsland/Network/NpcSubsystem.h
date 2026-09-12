@@ -33,4 +33,6 @@ private:
 
 	UPROPERTY(Transient)
 	TMap<uint32, TObjectPtr<AServerAgent>> Npcs;
+	UPROPERTY(Transient)
+	TArray<TWeakObjectPtr<AServerAgent>> DeathVisuals;
 };
