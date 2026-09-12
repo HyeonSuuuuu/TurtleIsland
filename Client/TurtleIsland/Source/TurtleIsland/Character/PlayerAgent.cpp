@@ -39,20 +39,17 @@ APlayerAgent::APlayerAgent()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
-	// 카메라는 ULocalMovementInput 가 소유한다. 뷰 기준축을 그쪽이 갖고 있어서,
-	// 카메라를 따로 두면 소유자가 둘로 갈린다.
 	Stats = CreateDefaultSubobject<UPlayerStatsComponent>(TEXT("Stats"));
 
 	// 로컬 플레이어용 컴포넌트 세트
-	// 카메라는 폰이 소유한다. 이동 기준축은 컨트롤 회전이라 입력 컴포넌트가 알 필요가 없다.
+	// Camera orientation is independent of character facing and mouse movement.
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.f;
-	CameraBoom->bUsePawnControlRotation = true;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+	ConfigureTopDownCamera();
 
 	Mover = CreateDefaultSubobject<ULocalMoverComponent>(TEXT("Mover"));
 
@@ -65,6 +62,28 @@ APlayerAgent::APlayerAgent()
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 }
 
+void APlayerAgent::ConfigureTopDownCamera()
+{
+	CameraBoom->bUsePawnControlRotation = false;
+	CameraBoom->SetUsingAbsoluteRotation(true);
+	CameraBoom->bInheritPitch = false;
+	CameraBoom->bInheritYaw = false;
+	CameraBoom->bInheritRoll = false;
+	CameraBoom->SetRelativeRotation(FRotator(TopDownPitch, TopDownYaw, 0.f));
+	CameraBoom->TargetArmLength = TopDownDistance;
+	CameraBoom->TargetOffset = FVector(0.f, 0.f, 60.f);
+	CameraBoom->SocketOffset = FVector::ZeroVector;
+	CameraBoom->bDoCollisionTest = false;
+	FollowCamera->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+	FollowCamera->bUsePawnControlRotation = false;
+	FollowCamera->SetFieldOfView(55.f);
+}
+
+float APlayerAgent::GetCameraViewYaw() const
+{
+	return CameraBoom->GetTargetRotation().Yaw;
+}
+
 void APlayerAgent::BeginPlay()
 {
 	// 몬스터 공격 트레이스가 태그로 대상을 거르므로 코드에서도 보장
@@ -74,6 +93,8 @@ void APlayerAgent::BeginPlay()
 	}
 
 	Super::BeginPlay();
+	// Apply after Blueprint defaults so older third-person component overrides cannot win.
+	ConfigureTopDownCamera();
 
 	// 싱글/멀티 분기는 여기 한 번뿐이다. 멀티일 때만 서버 송신 컴포넌트를 붙인다.
 	const UGameInstance* GI = GetGameInstance();

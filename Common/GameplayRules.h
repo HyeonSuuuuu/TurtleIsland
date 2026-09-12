@@ -13,6 +13,7 @@ namespace GameplayRules
 	}};
 	inline constexpr uint16_t HealthPotion = 1, ManaPotion = 2;
 	inline constexpr uint32_t ItemCooldownMs = 1000;
+	inline constexpr uint32_t LandingRecoveryMs = 500;
 
 	struct PlayerState
 	{
@@ -26,6 +27,7 @@ namespace GameplayRules
 		bool ready = false;
 		float z = 96.f, velocityZ = 0.f;
 		bool airborne = false;
+		uint64_t landingReadyAt = 0;
 	};
 
 	inline bool ValidPose(float x, float y, float z, float yaw, float velocityZ)

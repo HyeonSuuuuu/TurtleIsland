@@ -537,7 +537,9 @@ bool Room::ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t no
 	credit.updatedAt = std::max(now, credit.updatedAt);
 	credit.distance = std::min(state.moveSpeed * MovementBurstSeconds, credit.distance + state.moveSpeed * elapsed);
 	const double distance = std::hypot(static_cast<double>(request.x) - user.x, static_cast<double>(request.y) - user.y);
+	if (now < state.landingReadyAt && (distance > 0. || request.airborne || request.velocityZ > 0.f)) return false;
 	if (distance > credit.distance || !g_obstacleMap.CanTraverse(user.x, user.y, request.x, request.y, PlayerRadius)) return false;
+	if (state.airborne && !request.airborne) state.landingReadyAt = now + GameplayRules::LandingRecoveryMs;
 	credit.distance -= distance;
 	user.x = request.x; user.y = request.y; user.yaw = request.yaw;
 	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;

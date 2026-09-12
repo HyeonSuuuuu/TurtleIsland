@@ -16,7 +16,7 @@ bool FLoginReconnectTest::RunTest(const FString& Parameters)
 	UNetSubsystem* Net = NewObject<UNetSubsystem>(Instance);
 	// Fail before opening a connection: this test never contacts a real account server.
 	Net->SetServerIP(TEXT("invalid-test-address"));
-	AddExpectedError(TEXT("[Transport] Invalid server address"), EAutomationExpectedErrorFlags::Contains, 2);
+	AddExpectedErrorPlain(TEXT("[Transport] Invalid server address"), EAutomationExpectedErrorFlags::Contains, 2);
 	Net->RequestLogin(TEXT(" test-user "), TEXT(" test-password "));
 	TestTrue(TEXT("First click remains pending after reconnect cleanup"), Net->bLoginPending);
 	TestEqual(TEXT("Pending ID retained"), Net->PendingLoginID, FString(TEXT("test-user")));

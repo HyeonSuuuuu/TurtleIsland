@@ -13,8 +13,7 @@
  * 뷰 기준 축을 월드 XY 로 돌리는 변환을 여기서 삼킨다.
  * 그래서 Mover 는 컨트롤러도 카메라도 몰라도 된다.
  *
- * 기준축은 컨트롤 회전이지 카메라가 아니다. 그래서 카메라 컴포넌트는 여기 두지 않는다
- * (한때 여기서 소유했는데, 기준축과 무관하다는 게 드러나 폰으로 되돌렸다).
+ * The local player uses the fixed camera yaw; other pawns use control rotation.
  */
 UCLASS(ClassGroup=(Turtle), meta=(BlueprintSpawnableComponent))
 class TURTLEISLAND_API ULocalMovementInput : public UAgentMovementInput
@@ -34,7 +33,7 @@ protected:
 	void HandleJumpPressed();
 	void HandleJumpReleased();
 
-	/** 컨트롤 회전 기준 축(Right, Forward) 을 월드 XY 방향으로 */
+	/** Convert the view-aligned Right/Forward axes to world XY. */
 	FVector2D ToWorldDirection(const FVector2D& LocalAxis) const;
 
 public:

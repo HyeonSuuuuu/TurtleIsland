@@ -2,6 +2,10 @@
 
 #include "Gameplay/LocalMoverComponent.h"
 #include "Gameplay/AgentMovementInput.h"
+#include "Gameplay/AgentSkillComponent.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Engine/World.h"
+#include "GameplayRules.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -13,6 +17,11 @@ ULocalMoverComponent::ULocalMoverComponent()
 void ULocalMoverComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		Character->LandedDelegate.AddDynamic(this, &ULocalMoverComponent::HandleLanded);
+		Character->GetCharacterMovement()->AddTickPrerequisiteComponent(this);
+	}
 
 	if (UAgentMovementInput* In = GetInput())
 	{
@@ -23,10 +32,32 @@ void ULocalMoverComponent::BeginPlay()
 
 void ULocalMoverComponent::HandleJumpPressed()
 {
+	if (IsLandingLocked()) return;
 	if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
 	{
 		OwnerChar->Jump();
 	}
+}
+
+bool ULocalMoverComponent::IsLandingLocked() const
+{
+	return GetWorld() && GetWorld()->GetTimeSeconds() < LandingReadyAt;
+}
+
+void ULocalMoverComponent::HandleLanded(const FHitResult& Hit)
+{
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (!Character || !GetWorld()) return;
+	float Duration = GameplayRules::LandingRecoveryMs / 1000.f;
+	if (const UAgentSkillComponent* Skills = Character->FindComponentByClass<UAgentSkillComponent>())
+	{
+		if (Skills->LandAnimation) Duration = FMath::Max(Duration, Skills->LandAnimation->GetPlayLength());
+	}
+	LandingReadyAt = GetWorld()->GetTimeSeconds() + Duration;
+	Character->StopJumping();
+	Character->ConsumeMovementInputVector();
+	Character->GetCharacterMovement()->StopMovementImmediately();
+	CurrentSpeed2D = 0.f;
 }
 
 void ULocalMoverComponent::HandleJumpReleased()
@@ -44,6 +75,20 @@ void ULocalMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
 	if (!OwnerChar)
 	{
+		return;
+	}
+	if (IsLandingLocked())
+	{
+		OwnerChar->StopJumping();
+		OwnerChar->ConsumeMovementInputVector();
+		if (UCharacterMovementComponent* Move = OwnerChar->GetCharacterMovement())
+		{
+			// Cancel horizontal drift without suspending gravity on moving ground.
+			const float VerticalVelocity = Move->Velocity.Z;
+			Move->StopMovementImmediately();
+			Move->Velocity.Z = VerticalVelocity;
+		}
+		CurrentSpeed2D = 0.f;
 		return;
 	}
 

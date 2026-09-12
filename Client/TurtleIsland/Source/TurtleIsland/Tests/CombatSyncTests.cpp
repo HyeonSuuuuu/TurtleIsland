@@ -4,6 +4,14 @@
 #include "Tests/CombatTestFixtures.h"
 #include "Character/PlayerAgent.h"
 #include "Gameplay/HealthComponent.h"
+#include "Gameplay/LocalMoverComponent.h"
+#include "Gameplay/AgentSkillComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Gameplay/NetMovementInput.h"
 #include "Gameplay/PlayerStatsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -16,6 +24,138 @@
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
 #include "Components/UniformGridPanel.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTopDownCameraDefaultsTest, "TurtleIsland.Gameplay.TopDownCamera",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FTopDownCameraDefaultsTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = AGameModeBase::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	UClass* PlayerClass = LoadClass<APlayerAgent>(nullptr, TEXT("/Game/Lv3_Ingame/Paladin/BP_Paladin.BP_Paladin_C"));
+	if (!TestNotNull(TEXT("Player blueprint"), PlayerClass)) return false;
+	APlayerAgent* Player = World->SpawnActor<APlayerAgent>(PlayerClass);
+	if (!TestNotNull(TEXT("Player created"), Player)) return false;
+	const USpringArmComponent* Boom = Player->FindComponentByClass<USpringArmComponent>();
+	const UCameraComponent* Camera = Player->FindComponentByClass<UCameraComponent>();
+	if (!TestNotNull(TEXT("Camera boom"), Boom) || !TestNotNull(TEXT("Camera"), Camera)) return false;
+	TestEqual(TEXT("Top-down distance"), Boom->TargetArmLength, 1400.f);
+	TestEqual(TEXT("Downward pitch"), Boom->GetTargetRotation().Pitch, -55.0);
+	TestEqual(TEXT("Movement uses camera yaw"), Player->GetCameraViewYaw(), 45.f);
+	TestTrue(TEXT("Character turns do not rotate camera"), Boom->IsUsingAbsoluteRotation());
+	TestFalse(TEXT("Mouse look cannot tilt camera"), Boom->bUsePawnControlRotation);
+	TestEqual(TEXT("Field of view"), Camera->FieldOfView, 55.f);
+	Player->SetActorRotation(FRotator(10.f, 180.f, 15.f));
+	TestEqual(TEXT("Character rotation keeps camera pitch"), Boom->GetTargetRotation().Pitch, -55.0);
+	TestEqual(TEXT("Character rotation keeps movement basis"), Player->GetCameraViewYaw(), 45.f);
+	Wrapper.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FViewportUIScalingTest, "TurtleIsland.Gameplay.ViewportUIScaling",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FViewportUIScalingTest::RunTest(const FString& Parameters)
+{
+	const UUserInterfaceSettings* Settings = GetDefault<UUserInterfaceSettings>();
+	TestEqual(TEXT("FHD design scale"), Settings->GetDPIScaleBasedOnSize(FIntPoint(1920, 1080)), 1.f);
+	TestEqual(TEXT("QHD scale"), Settings->GetDPIScaleBasedOnSize(FIntPoint(2560, 1440)), 4.f / 3.f);
+	TestEqual(TEXT("4K scale"), Settings->GetDPIScaleBasedOnSize(FIntPoint(3840, 2160)), 2.f);
+	TestEqual(TEXT("Ultrawide keeps vertical scale"), Settings->GetDPIScaleBasedOnSize(FIntPoint(3440, 1440)), 4.f / 3.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAnimationAuthorityTest, "TurtleIsland.Gameplay.AnimationAuthority",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAnimationAuthorityTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = AGameModeBase::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	UClass* PlayerClass = LoadClass<APlayerAgent>(nullptr, TEXT("/Game/Lv3_Ingame/Paladin/BP_Paladin.BP_Paladin_C"));
+	if (!TestNotNull(TEXT("Player blueprint"), PlayerClass)) return false;
+	APlayerAgent* Agent = World->SpawnActor<APlayerAgent>(PlayerClass);
+	if (!TestNotNull(TEXT("Agent"), Agent)) return false;
+	UAgentSkillComponent* Skills = Agent->FindComponentByClass<UAgentSkillComponent>();
+	UAnimInstance* Anim = Agent->GetMesh()->GetAnimInstance();
+	if (!TestNotNull(TEXT("Skill component"), Skills) || !TestNotNull(TEXT("Animation instance"), Anim)) return false;
+	UCharacterMovementComponent* Move = Agent->GetCharacterMovement();
+	Move->bRunPhysicsWithNoController = true;
+	Move->bOrientRotationToMovement = false;
+	Move->SetMovementMode(MOVE_Flying);
+	Agent->GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	for (int32 SkillId : {0, 2})
+	{
+		UAnimMontage* Montage = Skills->SkillMontages.FindRef(SkillId);
+		if (!TestNotNull(TEXT("Root-motion attack montage"), Montage)) return false;
+		Anim->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
+		Agent->SetActorRotation(FRotator(12.f, 31.f, -8.f));
+		Skills->PlaySkill(SkillId, 90.f);
+		TestTrue(TEXT("Attack montage is playing"), Anim->Montage_IsPlaying(Montage));
+		TestTrue(TEXT("Animation cannot drive actor transform"), Anim->RootMotionMode == ERootMotionMode::IgnoreRootMotion);
+		TestEqual(TEXT("Attack clears pitch tilt"), Agent->GetActorRotation().Pitch, 0.0);
+		TestEqual(TEXT("Attack clears roll tilt"), Agent->GetActorRotation().Roll, 0.0);
+		TestEqual(TEXT("Attack keeps server yaw"), Agent->GetActorRotation().Yaw, 90.0);
+		const FVector StartLocation = Agent->GetActorLocation();
+		for (int32 Frame = 0; Frame < 60; ++Frame)
+		{
+			Wrapper.TickTestWorld();
+			TestTrue(TEXT("Animation playback keeps actor upright"), Agent->GetActorRotation().Equals(FRotator(0.f, 90.f, 0.f)));
+			TestTrue(TEXT("Animation playback cannot displace actor"), Agent->GetActorLocation().Equals(StartLocation));
+		}
+	}
+	Wrapper.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLandingRecoveryTest, "TurtleIsland.Gameplay.LandingRecovery",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FLandingRecoveryTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = AGameModeBase::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	ACharacter* Character = World->SpawnActor<ACharacter>();
+	if (!TestNotNull(TEXT("Character created"), Character)) return false;
+	ULocalMoverComponent* Mover = NewObject<ULocalMoverComponent>(Character);
+	Character->AddInstanceComponent(Mover);
+	Mover->RegisterComponent();
+	UCharacterMovementComponent* Move = Character->GetCharacterMovement();
+	Move->SetComponentTickEnabled(false);
+	TestFalse(TEXT("No initial landing lock"), Mover->IsLandingLocked());
+	Move->Velocity = FVector(500, 0, -100);
+	Character->AddMovementInput(FVector::ForwardVector, 1.f, true);
+	Character->Jump();
+	Character->LandedDelegate.Broadcast(FHitResult());
+	TestTrue(TEXT("Landing locks even without animation assets"), Mover->IsLandingLocked());
+	TestTrue(TEXT("Landing stops drift immediately"), Move->Velocity.IsNearlyZero());
+	TestTrue(TEXT("Landing clears buffered movement"), Character->GetPendingMovementInputVector().IsNearlyZero());
+	TestFalse(TEXT("Landing cancels held jump"), Character->bPressedJump);
+	Move->Velocity = FVector(500, 0, -25);
+	Character->AddMovementInput(FVector::ForwardVector, 1.f, true);
+	Mover->TickComponent(0.016f, LEVELTICK_All, nullptr);
+	TestEqual(TEXT("Recovery stops horizontal velocity"), Move->Velocity.X, 0.0);
+	TestEqual(TEXT("Recovery preserves gravity"), Move->Velocity.Z, -25.0);
+	TestTrue(TEXT("Recovery consumes buffered input"), Character->GetPendingMovementInputVector().IsNearlyZero());
+	// Advance normal frames; a single long frame can be clamped by world settings.
+	const int32 RecoveryFrames = GameplayRules::LandingRecoveryMs / 10;
+	for (int32 Frame = 0; Frame < RecoveryFrames - 1; ++Frame) Wrapper.TickTestWorld(0.01f);
+	TestTrue(TEXT("Recovery remains active before deadline"), Mover->IsLandingLocked());
+	Wrapper.TickTestWorld(0.01f);
+	Wrapper.TickTestWorld(0.01f);
+	TestFalse(TEXT("Recovery expires"), Mover->IsLandingLocked());
+	Wrapper.ForwardErrorMessages(this);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FServerGameplayRulesTest, "TurtleIsland.Gameplay.ServerRules",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

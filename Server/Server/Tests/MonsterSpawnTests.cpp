@@ -91,6 +91,20 @@ struct RoomSpawnTests
 		Check(!room.ApplyPlayerMoveLocked(user, move, 100300), "non-finite move rejected");
 		move.x = 200; move.y = 50; move.z = 196; move.velocityZ = 300;
 		Check(room.ApplyPlayerMoveLocked(user, move, 100400) && state.airborne, "stationary jump remains supported");
+		move.airborne = 0; move.z = 96; move.velocityZ = 0;
+		Check(room.ApplyPlayerMoveLocked(user, move, 100600), "landing accepted");
+		const uint64_t landingReadyAt = state.landingReadyAt;
+		Check(landingReadyAt == 100600 + GameplayRules::LandingRecoveryMs, "server starts landing recovery");
+		Check(room.ApplyPlayerMoveLocked(user, move, 100610) && state.landingReadyAt == landingReadyAt,
+			"stationary ground packets do not extend recovery");
+		move.x = 201;
+		Check(!room.ApplyPlayerMoveLocked(user, move, landingReadyAt - 1) && user.x == 200, "landing blocks movement");
+		move.x = 200; move.airborne = 1; move.velocityZ = 300;
+		Check(!room.ApplyPlayerMoveLocked(user, move, landingReadyAt - 1), "landing blocks immediate re-jump");
+		move.airborne = 0;
+		Check(!room.ApplyPlayerMoveLocked(user, move, landingReadyAt - 1), "ground flag cannot bypass vertical launch lock");
+		move.velocityZ = 0; move.x = 201;
+		Check(room.ApplyPlayerMoveLocked(user, move, landingReadyAt), "movement resumes at recovery deadline");
 		{ std::ofstream file(fixture); file << "5 5 100 0 0\n00000\n"; }
 		Check(!g_obstacleMap.Load(fixture.string().c_str()), "truncated grid rejected");
 		Check(!g_obstacleMap.CanMoveTo(50, 50) && !g_obstacleMap.CanTraverse(50, 50, 60, 50), "invalid map fails closed");

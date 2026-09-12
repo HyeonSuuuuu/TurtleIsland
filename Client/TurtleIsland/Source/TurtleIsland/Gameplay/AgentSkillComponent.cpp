@@ -21,6 +21,11 @@ UAgentSkillComponent::UAgentSkillComponent()
 void UAgentSkillComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (UAnimInstance* Anim = GetAnimInstance())
+	{
+		// Animation is visual only; movement and facing are owned by gameplay/network state.
+		Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+	}
 
 	// 로컬 플레이어에만 입력 컴포넌트가 있다. 원격 Agent 에서는 이 구독이 그냥 일어나지 않는다.
 	if (AActor* Owner = GetOwner())
@@ -66,7 +71,7 @@ void UAgentSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	Super::TickComponent(DeltaTime, TickType, TickFunction);
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	UAnimInstance* Anim = GetAnimInstance();
-	if (!Character || !Anim || !FallAnimation) return;
+	if (!Character || !Anim) return;
 	const UHealthComponent* Health = Character->FindComponentByClass<UHealthComponent>();
 	if (Health && Health->IsDead())
 	{
@@ -74,22 +79,24 @@ void UAgentSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		AirMontage = nullptr; bWasAirborne = false; return;
 	}
 	const bool bAirborne = Character->GetCharacterMovement()->IsFalling();
-	if (bAirborne && !bWasAirborne && !Anim->IsAnyMontagePlaying())
+	if (bAirborne && FallAnimation && !bWasAirborne && !Anim->IsAnyMontagePlaying())
 	{
 		UAnimSequenceBase* Sequence = Character->GetVelocity().Z > 0.f && JumpAnimation ? JumpAnimation.Get() : FallAnimation.Get();
 		AirMontage = Anim->PlaySlotAnimationAsDynamicMontage(Sequence, TEXT("DefaultSlot"), 0.1f, 0.1f, 1.f, Sequence == FallAnimation ? 999 : 1);
 	}
-	else if (bAirborne && !Anim->IsAnyMontagePlaying())
+	else if (bAirborne && FallAnimation && !Anim->IsAnyMontagePlaying())
 	{
 		AirMontage = Anim->PlaySlotAnimationAsDynamicMontage(FallAnimation, TEXT("DefaultSlot"), 0.1f, 0.1f, 1.f, 999);
 	}
 	else if (!bAirborne && bWasAirborne)
 	{
+		const bool bPlayLanding = !Anim->IsAnyMontagePlaying() || (AirMontage && Anim->Montage_IsPlaying(AirMontage));
 		if (AirMontage && Anim->Montage_IsPlaying(AirMontage))
 		{
 			Anim->Montage_Stop(0.1f, AirMontage);
-			if (LandAnimation) Anim->PlaySlotAnimationAsDynamicMontage(LandAnimation, TEXT("DefaultSlot"), 0.1f, 0.1f);
 		}
+		if (LandAnimation && bPlayLanding)
+			Anim->PlaySlotAnimationAsDynamicMontage(LandAnimation, TEXT("DefaultSlot"), 0.1f, 0.1f);
 		AirMontage = nullptr;
 	}
 	bWasAirborne = bAirborne;
@@ -112,9 +119,7 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 
 	// 서버가 기록한 시전 방향으로 몸을 돌린다. 로컬 플레이어도 예외가 아니다 —
 	// 눌렀을 때가 아니라 서버가 승인한 그 방향이 정답이다.
-	FRotator Rot = Owner->GetActorRotation();
-	Rot.Yaw = Yaw;
-	Owner->SetActorRotation(Rot);
+	Owner->SetActorRotation(FRotator(0.f, Yaw, 0.f));
 
 	if (UAnimMontage** Found = SkillMontages.Find(SkillId))
 	{
@@ -122,6 +127,7 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 		{
 			if (UAnimInstance* Anim = GetAnimInstance())
 			{
+				Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
 				Anim->Montage_Play(Montage, PlayRate);
 			}
 		}
