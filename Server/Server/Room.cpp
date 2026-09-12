@@ -4,6 +4,7 @@
 #include "MonsterScript.h"
 #include "ObstacleMap.h"
 #include <cmath>
+#include <random>
 
 RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title)
 {
@@ -63,6 +64,7 @@ bool Room::Leave(uint32_t slotIndex)
 		m_isActive = false;
 		m_inGame   = false;
 		for (auto& npc : m_npcs) npc.Clear();   // 방 비면 NPC 정리
+		m_npcSpawnSlots.fill({});
 		return true;
 	}
 
@@ -110,25 +112,49 @@ void Room::StartGame()
 		u->x = px; u->y = py; u->yaw = 0.f;
 	}
 
-	// NPC 스폰: 아레나 개방 통로(NPC_ANCHOR) 주변 원형 배치 (좌표 2D x,y, 월드)
-	constexpr int   SPAWN_COUNT  = 5;
-	constexpr float SPAWN_RADIUS = 150.0f;
-	const size_t    defCount     = g_monsterDefs.size();
-	for (int i = 0; i < SPAWN_COUNT && i < static_cast<int>(MAX_ROOM_NPCS); ++i)
+	m_npcSpawnSlots.fill({});
+	uint32_t slot = 0;
+	for (size_t area = 0; area < g_monsterSpawnAreas.size(); ++area)
+		for (uint32_t i = 0; i < g_monsterSpawnAreas[area].count && slot < m_npcs.size(); ++i)
+			m_npcSpawnSlots[slot++].areaIndex = static_cast<int>(area);
+	SpawnAreaNpcsLocked(GetTickCount64(), false);
+}
+
+void Room::SpawnAreaNpcsLocked(uint64_t now, bool broadcast)
+{
+	// Thread-local RNG is shared by rooms, but only each room's lock protects its slots.
+	thread_local std::mt19937 random(std::random_device{}());
+	std::uniform_real_distribution<float> unit(0.f, 1.f);
+	for (uint32_t id = 0; id < m_npcs.size(); ++id)
 	{
-		float ang = static_cast<float>(i) / SPAWN_COUNT * 6.2831853f;
-		float sx  = MapSpawn::NPC_ANCHOR_X + std::cos(ang) * SPAWN_RADIUS;
-		float sy  = MapSpawn::NPC_ANCHOR_Y + std::sin(ang) * SPAWN_RADIUS;
-		g_obstacleMap.SnapToFree(sx, sy);   // 벽에 끼지 않도록 보정
-		if (defCount > 0)
+		auto& slot = m_npcSpawnSlots[id];
+		if (m_npcs[id].IsActive() || slot.areaIndex < 0 || now < slot.readyAt) continue;
+		const auto& area = g_monsterSpawnAreas[slot.areaIndex];
+		bool spawned = false;
+		if (g_obstacleMap.IsLoaded())
 		{
-			uint16_t type = static_cast<uint16_t>(i % defCount);
-			const MonsterDef& def = g_monsterDefs[type];
-			m_npcs[i].Spawn(static_cast<uint32_t>(i), type, sx, sy, def.hp, def.speed);
+			for (int attempt = 0; attempt < 64; ++attempt)
+			{
+				// sqrt gives uniform density across the disk, not just near the center.
+				const float angle = unit(random) * 6.2831853f;
+				const float radius = std::sqrt(unit(random)) * area.radius;
+				const float x = area.x + std::cos(angle) * radius;
+				const float y = area.y + std::sin(angle) * radius;
+				const double dx = static_cast<double>(x) - area.x, dy = static_cast<double>(y) - area.y;
+				if (dx * dx + dy * dy > static_cast<double>(area.radius) * area.radius) continue;
+				if (!g_obstacleMap.CanMoveTo(x, y)) continue;
+				const auto& def = g_monsterDefs[area.type];
+				m_npcs[id].Spawn(id, area.type, x, y, def.hp, def.speed);
+				if (broadcast) BroadcastNpcSpawnLocked(m_npcs[id]);
+				spawned = true;
+				break;
+			}
 		}
-		else
+		if (!spawned)
 		{
-			m_npcs[i].Spawn(static_cast<uint32_t>(i), 0, sx, sy, 100, 6.0f);   // Lua 미로드 폴백
+			if (slot.readyAt == 0)
+				Log::Warning("[NPC] room={} area={} has no valid spawn position or map; retrying", m_roomId, slot.areaIndex);
+			slot.readyAt = now + 1000;
 		}
 	}
 }
@@ -146,6 +172,7 @@ void Room::TickNpcs()
 
 	{
 		if (!m_inGame) return;
+		SpawnAreaNpcsLocked(GetTickCount64(), true);
 
 		for (uint32_t i = 0; i < m_userCount; ++i)
 			slots[userCnt++] = m_userSlots[i];
@@ -155,7 +182,7 @@ void Room::TickNpcs()
 			if (!npc.IsActive()) continue;
 			if (!npc.IsAlive())
 			{
-				DespawnNpcLocked(npc);
+				DespawnNpcLocked(npc, true);
 				continue;
 			}
 
@@ -276,38 +303,56 @@ void Room::BroadcastNpcSpawns(uint32_t toSlot)
 bool Room::SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp, float speed)
 {
 	std::lock_guard lock(m_mutex);
-	if (!m_inGame || npcId >= m_npcs.size() || m_npcs[npcId].IsActive() || hp <= 0 ||
+	if (!m_inGame || npcId >= m_npcs.size() || m_npcs[npcId].IsActive() ||
+		m_npcSpawnSlots[npcId].areaIndex >= 0 || hp <= 0 ||
 		!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(speed) || speed < 0.f)
 		return false;
 
 	g_obstacleMap.SnapToFree(x, y);
 	m_npcs[npcId].Spawn(npcId, type, x, y, hp, speed);
+	BroadcastNpcSpawnLocked(m_npcs[npcId]);
+	return true;
+}
+
+void Room::BroadcastNpcSpawnLocked(const NPC& npc)
+{
 	SC_NpcSpawn packet{};
 	packet.size = SC_NPC_SPAWN_PACKET_SIZE;
 	packet.id = static_cast<uint16_t>(PACKET_ID::SC_NPC_SPAWN);
-	packet.npcId = npcId;
-	packet.npcType = type;
-	packet.x = x;
-	packet.y = y;
-	packet.hp = hp;
-	packet.maxHp = hp;
+	packet.npcId = npc.GetId();
+	packet.npcType = npc.m_type;
+	packet.x = npc.x;
+	packet.y = npc.y;
+	packet.yaw = npc.yaw;
+	packet.hp = npc.m_hp;
+	packet.maxHp = npc.m_maxHp;
 	for (uint32_t i = 0; i < m_userCount; ++i)
 		if (User* user = g_userPool.Get(m_userSlots[i]))
 			user->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)));
-	return true;
 }
 
 bool Room::DespawnNpc(uint32_t npcId)
 {
 	std::lock_guard lock(m_mutex);
-	if (!m_inGame || npcId >= m_npcs.size() || !m_npcs[npcId].IsActive())
+	if (!m_inGame || npcId >= m_npcs.size())
 		return false;
+	if (!m_npcs[npcId].IsActive())
+	{
+		const bool pending = m_npcSpawnSlots[npcId].areaIndex >= 0;
+		m_npcSpawnSlots[npcId] = {};
+		return pending;
+	}
 	DespawnNpcLocked(m_npcs[npcId]);
 	return true;
 }
 
-void Room::DespawnNpcLocked(NPC& npc)
+void Room::DespawnNpcLocked(NPC& npc, bool died)
 {
+	auto& slot = m_npcSpawnSlots[npc.GetId()];
+	if (died && slot.areaIndex >= 0)
+		slot.readyAt = GetTickCount64() + g_monsterSpawnAreas[slot.areaIndex].respawnMs;
+	else
+		slot = {};
 	SC_NpcDespawn packet{};
 	packet.size = SC_NPC_DESPAWN_PACKET_SIZE;
 	packet.id = static_cast<uint16_t>(PACKET_ID::SC_NPC_DESPAWN);
@@ -459,7 +504,7 @@ void Room::Attack(User& user, const CS_Attack& request)
 		damage.damage = std::min(npc.m_hp, skill.damage + state.attack - 20);
 		npc.m_hp -= damage.damage; damage.remainHP = npc.m_hp; damage.maxHP = npc.m_maxHp;
 		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
-		if (!npc.IsAlive()) { GameplayRules::RewardKill(state); DespawnNpcLocked(npc); }
+		if (!npc.IsAlive()) { GameplayRules::RewardKill(state); DespawnNpcLocked(npc, true); }
 		if (request.skillId == SKILL_ID_BASIC_ATTACK) break;
 	}
 	SendStateLocked(user, state, now);

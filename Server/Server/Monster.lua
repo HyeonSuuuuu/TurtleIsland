@@ -5,3 +5,12 @@ Monsters = {
   { name = "Wolf",  hp = 80,  speed = 7.0 },
   { name = "Bear",  hp = 150, speed = 5.0 },
 }
+
+-- Unreal world XY, circular areas. type is ZERO-based (0 = Monsters[1]).
+-- Total count across all areas must not exceed MAX_ROOM_NPCS (currently 8).
+-- Death removes the monster immediately; respawn uses a new random position.
+SpawnAreas = {
+  { type = 0, count = 2, x = -24750, y = -23150, radius = 150, respawnSeconds = 10 },
+  { type = 1, count = 2, x = -24750, y = -23150, radius = 150, respawnSeconds = 10 },
+  { type = 2, count = 1, x = -24750, y = -23150, radius = 150, respawnSeconds = 10 },
+}

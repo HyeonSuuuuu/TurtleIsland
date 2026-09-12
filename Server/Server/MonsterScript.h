@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "pch.h"
 
 // Monster.lua 로 적재되는 몬스터 정의. index = monster type.
@@ -10,5 +10,15 @@ struct MonsterDef
 };
 
 inline std::vector<MonsterDef> g_monsterDefs;
+
+struct MonsterSpawnArea
+{
+	uint16_t type = 0; // Zero-based index into Monsters.
+	uint32_t count = 1;
+	float x = 0.f, y = 0.f, radius = 150.f;
+	uint64_t respawnMs = 10000;
+};
+
+inline std::vector<MonsterSpawnArea> g_monsterSpawnAreas;
 
 void LoadMonsterScript(const char* path);   // 서버 시작 시 1회 (Monster.lua -> g_monsterDefs)

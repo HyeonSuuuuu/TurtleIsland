@@ -34,6 +34,7 @@ public:
 	void StartGame();   // m_inGame = true + NPC 스폰
 
 	// Thread-safe gameplay entry points. npcId is a room-local slot in [0, MAX_ROOM_NPCS).
+	// Area slots remain reserved during respawn; explicit DespawnNpc cancels the reservation.
 	bool SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp, float speed);
 	bool DespawnNpc(uint32_t npcId);
 	void PlayerReady(User& user, const CS_IngameReady& request);
@@ -71,7 +72,10 @@ public:
 	}
 
 private:
-	void DespawnNpcLocked(NPC& npc);
+	friend struct RoomSpawnTests;
+	void DespawnNpcLocked(NPC& npc, bool died = false);
+	void BroadcastNpcSpawnLocked(const NPC& npc);
+	void SpawnAreaNpcsLocked(uint64_t now, bool broadcast);
 	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
 	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
 	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;
@@ -86,6 +90,12 @@ private:
 	uint32_t m_userCount = 0;
 
 	std::array<NPC, MAX_ROOM_NPCS> m_npcs{};   // 방 인스턴스 NPC
+	struct NpcSpawnSlot
+	{
+		int areaIndex = -1; // Reserved even while waiting for respawn.
+		uint64_t readyAt = 0;
+	};
+	std::array<NpcSpawnSlot, MAX_ROOM_NPCS> m_npcSpawnSlots{};
 	std::atomic<bool> m_isActive{ false };
 	bool              m_inGame = false;
 
