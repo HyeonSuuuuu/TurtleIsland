@@ -75,6 +75,7 @@ class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTi
 	GENERATED_BODY()
 public:
 	UNetSubsystem() = default;
+	friend class FLoginReconnectTest;
 	virtual ~UNetSubsystem() = default;
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;

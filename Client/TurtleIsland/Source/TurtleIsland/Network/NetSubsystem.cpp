@@ -228,17 +228,14 @@ void UNetSubsystem::RequestLogin(const FString& UserID, const FString& Password)
 
 	StoredUserID = PendingLoginID;
 	PlayMode = EPlayMode::Multi;
-	bLoginPending = true;
-	PendingLoginElapsed = 0.f;
-
-	if (IsConnected())
-	{
-		SendPendingLogin();
-	}
-	else
+	if (!IsConnected())
 	{
 		Reconnect(StoredServerIP);
 	}
+	// Reconnect calls ShutdownNetwork, which clears any previous pending login.
+	bLoginPending = true;
+	PendingLoginElapsed = 0.f;
+	SendPendingLogin();
 }
 
 void UNetSubsystem::PollPendingLogin(float DeltaTime)
