@@ -678,7 +678,13 @@ void Room::ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t n
 		npc.m_hp -= std::min(npc.m_hp, damage.damage);
 		damage.remainHP = npc.m_hp; damage.maxHP = npc.m_maxHp;
 		BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
-		if (!npc.IsAlive()) { GameplayRules::RewardKill(state); DespawnNpcLocked(npc, true); }
+		if (!npc.IsAlive())
+		{
+			const MonsterDef fallback;
+			const auto& def = npc.m_type < g_monsterDefs.size() ? g_monsterDefs[npc.m_type] : fallback;
+			GameplayRules::RewardKill(state, def.gold, def.exp);
+			DespawnNpcLocked(npc, true);
+		}
 		if (request.skillId == SKILL_ID_BASIC_ATTACK) break;
 	}
 	SendStateLocked(user, state, now);
