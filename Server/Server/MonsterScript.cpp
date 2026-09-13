@@ -36,10 +36,10 @@ namespace
 		return fallback;
 	}
 
-	void LoadSpawnAreas(lua_State* L)
+	bool LoadSpawnAreas(lua_State* L)
 	{
 		lua_getglobal(L, "SpawnAreas");
-		if (lua_isnil(L, -1)) { lua_pop(L, 1); return; } // Legacy scripts keep the default area.
+		if (lua_isnil(L, -1)) { lua_pop(L, 1); return true; } // Legacy scripts keep the default area.
 		g_monsterSpawnAreas.clear();
 		uint32_t total = 0;
 		bool valid = lua_istable(L, -1);
@@ -70,24 +70,27 @@ namespace
 			g_monsterSpawnAreas.clear();
 			Log::Warning("[LUA] invalid SpawnAreas (types, fields or total count > {}); area spawning disabled", MAX_ROOM_NPCS);
 		}
+		return valid;
 	}
 }
 
-void LoadMonsterScript(const char* path)
+bool LoadMonsterScript(const char* path)
 {
 	g_monsterDefs = {{"Fallback", 100, 6.f}};
 	SetDefaultSpawnAreas();
 	lua_State* L = luaL_newstate();
+	if (!L) return false;
 	luaL_openlibs(L);
 
 	if (luaL_dofile(L, path) != LUA_OK)
 	{
 		Log::Warning("[LUA] '{}' load fail: {}", path, lua_tostring(L, -1));
 		lua_close(L);
-		return;
+		return false;
 	}
 
 	lua_getglobal(L, "Monsters");
+	bool validDefinitions = lua_istable(L, -1) && lua_rawlen(L, -1) > 0;
 	if (lua_istable(L, -1))
 	{
 		g_monsterDefs.clear();
@@ -110,15 +113,21 @@ void LoadMonsterScript(const char* path)
 				def.attackCooldownMs = std::max(def.attackCooldownMs, def.attackWindupMs + 1);
 				g_monsterDefs.push_back(def);
 			}
+			else validDefinitions = false;
 			lua_pop(L, 1);
 		}
 	}
 	lua_pop(L, 1);
-	if (g_monsterDefs.empty()) g_monsterDefs = {{"Fallback", 100, 6.f}};
+	if (g_monsterDefs.empty())
+	{
+		g_monsterDefs = {{"Fallback", 100, 6.f}};
+		validDefinitions = false;
+	}
 	SetDefaultSpawnAreas();
-	LoadSpawnAreas(L);
+	const bool validAreas = LoadSpawnAreas(L);
 	lua_close(L);
 
 	Log::Success("[LUA] monsters loaded: {}", g_monsterDefs.size());
 	Log::Info("[LUA] spawn areas loaded: {}", g_monsterSpawnAreas.size());
+	return validDefinitions && validAreas;
 }

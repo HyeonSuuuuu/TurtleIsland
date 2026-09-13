@@ -25,4 +25,5 @@ struct MonsterSpawnArea
 
 inline std::vector<MonsterSpawnArea> g_monsterSpawnAreas;
 
-void LoadMonsterScript(const char* path);   // 서버 시작 시 1회 (Monster.lua -> g_monsterDefs)
+// Returns false on load/validation failure; runtime fallback behavior is preserved.
+bool LoadMonsterScript(const char* path);   // 서버 시작 시 1회 (Monster.lua -> g_monsterDefs)

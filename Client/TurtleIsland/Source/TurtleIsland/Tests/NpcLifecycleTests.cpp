@@ -14,6 +14,7 @@
 #include "Network/ClientPacketCodec.h"
 #include "Network/NetSettings.h"
 #include "Network/NpcSubsystem.h"
+#include "UI/PlayerNameplate.h"
 #include <limits>
 
 namespace
@@ -124,16 +125,23 @@ bool FNpcLifecycleTest::RunTest(const FString& Parameters)
 			TestNotNull(TEXT("Configured visual has animation instance"), Visual->GetMesh()->GetAnimInstance());
 			AServerMonster* Monster = Cast<AServerMonster>(Visual);
 			if (!TestNotNull(TEXT("Server monster uses dedicated presentation"), Monster)) return false;
+			const TCHAR* ExpectedNames[] = {TEXT("\uc2a4\ud1a0\ucee4"), TEXT("\ud0c0\ub974 \ud3ec\ub4dc"), TEXT("\uc13c\ud2b8\ub9ac \uc544\uc774")};
+			const TCHAR* ExpectedAttacks[] = {TEXT("Anim_Monster1_Hit_Left_Both"), TEXT("Anim_Monster3_Kick1"), TEXT("Anim_Monster5_HitBoth")};
+			TestEqual(TEXT("Type maps to its game display name"), Monster->MonsterDisplayName.ToString(), FString(ExpectedNames[Type]));
+			const auto Title = PlayerNameplate::FitText(Monster->MonsterDisplayName.ToString(), PlayerNameplate::NameWidth, 14, 11);
+			TestTrue(TEXT("Monster name fits its in-game label"), !Title.Text.IsEmpty() && Title.Size.X <= PlayerNameplate::NameWidth);
 			if (!TestNotNull(TEXT("Idle clip"), Monster->IdleAnimation.Get()) ||
 				!TestNotNull(TEXT("Movement clip"), Monster->MoveAnimation.Get()) ||
 				!TestNotNull(TEXT("Attack clip"), Monster->AttackAnimation.Get()) ||
 				!TestNotNull(TEXT("Hit clip"), Monster->HitAnimation.Get()) ||
 				!TestNotNull(TEXT("Death clip"), Monster->DeathAnimation.Get())) return false;
+			TestEqual(TEXT("One configured basic attack per monster"), Monster->AttackAnimation->GetName(), FString(ExpectedAttacks[Type]));
 			Monster->PlayAttack(45.f);
 			TestTrue(TEXT("Server attack plays configured clip"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() == Monster->AttackAnimation);
 			const float ActionTime = Monster->AttackAnimation->GetPlayLength() + 0.1f;
 			for (float Elapsed = 0.f; Elapsed < ActionTime; Elapsed += 0.02f)
 				TestWorld.TickTestWorld(0.02f);
+			TestTrue(TEXT("Basic attack finishes instead of looping"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() != Monster->AttackAnimation);
 			Monster->FindComponentByClass<UHealthComponent>()->ApplyServerDamage(40, 10, nullptr);
 			TestTrue(TEXT("Nonlethal damage plays hit clip"), Monster->GetMesh()->GetSingleNodeInstance()->GetCurrentAsset() == Monster->HitAnimation);
 			Monster->FindComponentByClass<UHealthComponent>()->ApplyServerDamage(0, 40, nullptr);
