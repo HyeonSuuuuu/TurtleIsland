@@ -23,9 +23,11 @@
 #include "Network/NpcSubsystem.h"
 #include "GameplayRules.h"
 #include "UI/MainHUDWidget.h"
+#include "UI/PlayerNameplate.h"
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
 #include "Components/UniformGridPanel.h"
+#include "Components/CapsuleComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FThirdPersonCameraTest, "TurtleIsland.Gameplay.ThirdPersonCamera",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -82,10 +84,10 @@ bool FViewportUIScalingTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAnimationAuthorityTest, "TurtleIsland.Gameplay.AnimationAuthority",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAnimationSettingsTest, "TurtleIsland.Gameplay.AnimationSettings",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FAnimationAuthorityTest::RunTest(const FString& Parameters)
+bool FAnimationSettingsTest::RunTest(const FString& Parameters)
 {
 	FTestWorldWrapper Wrapper;
 	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
@@ -100,28 +102,28 @@ bool FAnimationAuthorityTest::RunTest(const FString& Parameters)
 	UAnimInstance* Anim = Agent->GetMesh()->GetAnimInstance();
 	if (!TestNotNull(TEXT("Skill component"), Skills) || !TestNotNull(TEXT("Animation instance"), Anim)) return false;
 	UCharacterMovementComponent* Move = Agent->GetCharacterMovement();
-	Move->bRunPhysicsWithNoController = true;
-	Move->bOrientRotationToMovement = false;
-	Move->SetMovementMode(MOVE_Flying);
+	Move->SetComponentTickEnabled(false);
+	TestTrue(TEXT("BeginPlay preserves the animation blueprint root-motion setting"),
+		Anim->RootMotionMode == Anim->GetClass()->GetDefaultObject<UAnimInstance>()->RootMotionMode);
 	Agent->GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	for (int32 SkillId : {0, 2})
+	for (const ERootMotionMode::Type Mode : {ERootMotionMode::NoRootMotionExtraction, ERootMotionMode::IgnoreRootMotion,
+		ERootMotionMode::RootMotionFromMontagesOnly, ERootMotionMode::RootMotionFromEverything})
 	{
-		UAnimMontage* Montage = Skills->SkillMontages.FindRef(SkillId);
-		if (!TestNotNull(TEXT("Root-motion attack montage"), Montage)) return false;
-		Anim->SetRootMotionMode(ERootMotionMode::RootMotionFromMontagesOnly);
-		Agent->SetActorRotation(FRotator(12.f, 31.f, -8.f));
-		Skills->PlaySkill(SkillId, 90.f);
-		TestTrue(TEXT("Attack montage is playing"), Anim->Montage_IsPlaying(Montage));
-		TestTrue(TEXT("Animation cannot drive actor transform"), Anim->RootMotionMode == ERootMotionMode::IgnoreRootMotion);
-		TestEqual(TEXT("Attack clears pitch tilt"), Agent->GetActorRotation().Pitch, 0.0);
-		TestEqual(TEXT("Attack clears roll tilt"), Agent->GetActorRotation().Roll, 0.0);
-		TestEqual(TEXT("Attack keeps server yaw"), Agent->GetActorRotation().Yaw, 90.0);
-		const FVector StartLocation = Agent->GetActorLocation();
-		for (int32 Frame = 0; Frame < 60; ++Frame)
+		for (int32 SkillId = 0; SkillId < PLAYER_SKILL_COUNT; ++SkillId)
 		{
+			UAnimMontage* Montage = Skills->SkillMontages.FindRef(SkillId);
+			if (!TestNotNull(TEXT("Configured attack montage"), Montage)) return false;
+			Anim->SetRootMotionMode(Mode);
+			Agent->SetActorRotation(FRotator(12.f, 31.f, -8.f));
+			Skills->PlaySkill(SkillId, 90.f);
+			TestTrue(TEXT("Attack montage is playing"), Anim->Montage_IsPlaying(Montage));
+			TestTrue(TEXT("Skill respects the chosen root-motion mode"), Anim->RootMotionMode == Mode);
+			TestTrue(TEXT("Skill changes only server yaw, not pitch or roll"),
+				Agent->GetActorRotation().Equals(FRotator(12.f, 90.f, -8.f)));
+			TestTrue(TEXT("Authored animation settings retain skill input recovery"), Skills->IsMovementLocked());
 			Wrapper.TickTestWorld();
-			TestTrue(TEXT("Animation playback keeps actor upright"), Agent->GetActorRotation().Equals(FRotator(0.f, 90.f, 0.f)));
-			TestTrue(TEXT("Animation playback cannot displace actor"), Agent->GetActorLocation().Equals(StartLocation));
+			TestTrue(TEXT("Tick does not override animation settings"), Anim->RootMotionMode == Mode);
+			Skills->ResetCast();
 		}
 	}
 	Wrapper.ForwardErrorMessages(this);
@@ -151,6 +153,8 @@ bool FSkillMovementLockTest::RunTest(const FString& Parameters)
 	UAnimInstance* Anim = Player->GetMesh()->GetAnimInstance();
 	if (!TestNotNull(TEXT("Skills"), Skills) || !TestNotNull(TEXT("Mover"), Mover) ||
 		!TestNotNull(TEXT("Input"), Input) || !TestNotNull(TEXT("Animation instance"), Anim)) return false;
+	// Test input recovery with in-place playback, independently of authored root motion.
+	Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
 	UCharacterMovementComponent* Move = Player->GetCharacterMovement();
 	Move->SetMovementMode(MOVE_Flying);
 	Move->SetComponentTickEnabled(false);
@@ -327,6 +331,233 @@ namespace
 		Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(Id);
 		TArray<uint8> Bytes; Bytes.Append(reinterpret_cast<const uint8*>(&Packet), sizeof(Packet)); return Bytes;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerRespawnTest, "TurtleIsland.Network.PlayerRespawn",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerRespawnTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = ACombatTestGameMode::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	UClass* PlayerClass = LoadClass<APlayerAgent>(nullptr, TEXT("/Game/Lv3_Ingame/Paladin/BP_Paladin.BP_Paladin_C"));
+	if (!TestNotNull(TEXT("Player blueprint"), PlayerClass)) return false;
+	APlayerAgent* Player = World->SpawnActor<APlayerAgent>(PlayerClass);
+	APlayerController* PC = World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("Local player"), Player) || !TestNotNull(TEXT("Controller"), PC)) return false;
+	PC->SetAsLocalPlayerController(); PC->Possess(Player);
+	UCombatTestNetSubsystem* Net = NewObject<UCombatTestNetSubsystem>(World->GetGameInstance());
+	Net->Configure(World, 42);
+	World->GetSubsystem<UNpcSubsystem>()->SetReady(true);
+	UHealthComponent* Health = Player->FindComponentByClass<UHealthComponent>();
+	UAgentSkillComponent* Skills = Player->FindComponentByClass<UAgentSkillComponent>();
+	ULocalMoverComponent* Mover = Player->FindComponentByClass<ULocalMoverComponent>();
+	UPlayerInputComponent* Input = Player->FindComponentByClass<UPlayerInputComponent>();
+	UCharacterMovementComponent* Movement = Player->GetCharacterMovement();
+	if (!Health || !Skills || !Mover || !Input || !Movement) return false;
+	Movement->SetComponentTickEnabled(false);
+	SC_MoveNotify Pose{}; Pose.userIndex = 42; Pose.x = 100; Pose.y = 200; Pose.z = 96; Pose.hp = Pose.maxHP = 100;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	Input->OnMoveAxis.Broadcast(FVector2D(0, 1));
+	Skills->PlaySkill(1, 90.f);
+	Player->LandedDelegate.Broadcast(FHitResult());
+	Player->Jump();
+	Player->AddMovementInput(FVector::ForwardVector, 1.f, true);
+	Movement->Velocity = FVector(500, 100, -300);
+	SC_DamageNotify Damage{}; Damage.targetKind = ENTITY_PLAYER; Damage.targetId = 42;
+	Damage.damage = 100; Damage.maxHP = 100;
+	Net->Receive(PacketBytes(Damage, PACKET_ID::SC_DAMAGE_NOTIFY));
+	TestTrue(TEXT("Lethal server damage kills owner"), Health->IsDead());
+	TestTrue(TEXT("Dead movement is locked"), Mover->IsMovementLocked());
+	TestTrue(TEXT("Dead physics disabled"), Movement->MovementMode == MOVE_None);
+	TestTrue(TEXT("Dead capsule disabled"), Player->GetCapsuleComponent()->GetCollisionEnabled() == ECollisionEnabled::NoCollision);
+	TestTrue(TEXT("Death locks controller input"), PC->IsMoveInputIgnored() && PC->IsLookInputIgnored());
+	Input->OnJumpPressed.Broadcast();
+	TestFalse(TEXT("Dead player cannot jump"), Player->bPressedJump);
+	Pose.hp = 0;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	TestTrue(TEXT("Dead pose correction cannot enable physics"), Movement->MovementMode == MOVE_None);
+	SC_RespawnNotify Respawn{}; Respawn.userIndex = 42; Respawn.lifeId = 1;
+	Respawn.hp = Respawn.maxHP = 100; Respawn.yaw = 30.f;
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	TestFalse(TEXT("Server respawn revives owner"), Health->IsDead());
+	TestEqual(TEXT("Server restores HP"), Health->CurrentHP, 100);
+	TestTrue(TEXT("World origin is a valid respawn destination"), Player->GetActorLocation().IsNearlyZero());
+	TestTrue(TEXT("Respawn restores facing"), FMath::IsNearlyEqual(Player->GetActorRotation().Yaw, 30.0));
+	TestTrue(TEXT("Respawn restores walking"), Movement->MovementMode == MOVE_Walking);
+	TestTrue(TEXT("Respawn restores collision"), Player->GetCapsuleComponent()->GetCollisionEnabled() == ECollisionEnabled::QueryAndPhysics);
+	TestFalse(TEXT("Respawn releases death input lock"), PC->IsMoveInputIgnored() || PC->IsLookInputIgnored());
+	TestFalse(TEXT("Respawn clears cast and landing locks"), Mover->IsMovementLocked());
+	TestTrue(TEXT("Respawn stops velocity and buffered movement"), Movement->Velocity.IsNearlyZero() && Player->GetPendingMovementInputVector().IsNearlyZero());
+	Mover->TickComponent(0.01f, LEVELTICK_All, nullptr);
+	TestTrue(TEXT("Old held key cannot restart movement after respawn"), Player->GetPendingMovementInputVector().IsNearlyZero());
+	TestFalse(TEXT("Respawn clears held jump"), Player->bPressedJump);
+	TestEqual(TEXT("Outgoing requests use the current life"), Net->GetPlayerLifeId(), uint32(1));
+	SC_PlayerState State{}; State.playerId = 42; State.lifeId = 1; State.hp = State.maxHP = 100;
+	State.mp = State.maxMP = 120; State.level = 4; State.expToNext = 250; State.gold = 123; State.moveSpeed = 500;
+	State.items[0] = {1, 3};
+	Net->Receive(PacketBytes(State, PACKET_ID::SC_PLAYER_STATE));
+	if (!TestNotNull(TEXT("Respawn HUD state"), Net->GetPlayerState())) return false;
+	TestEqual(TEXT("HUD receives full MP"), Net->GetPlayerState()->mp, 120);
+	TestEqual(TEXT("HUD preserves gold"), Net->GetPlayerState()->gold, 123);
+	Player->SetActorLocation(FVector(20, 30, 96));
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	Pose.hp = 0;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	State.lifeId = 0; State.hp = 0; State.gold = 0;
+	Net->Receive(PacketBytes(State, PACKET_ID::SC_PLAYER_STATE));
+	TestTrue(TEXT("Duplicate respawn and old-life poses cannot teleport owner"), Player->GetActorLocation().Equals(FVector(20, 30, 96)));
+	TestFalse(TEXT("Old-life state cannot kill revived owner"), Health->IsDead());
+	TestEqual(TEXT("Old-life state cannot overwrite HUD"), Net->GetPlayerState()->gold, 123);
+
+	PC->SetIgnoreMoveInput(true); PC->SetIgnoreLookInput(true);
+	Net->Receive(PacketBytes(Damage, PACKET_ID::SC_DAMAGE_NOTIFY));
+	Respawn.lifeId = 2;
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	TestTrue(TEXT("Respawn preserves independent UI input locks"), PC->IsMoveInputIgnored() && PC->IsLookInputIgnored());
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	TestTrue(TEXT("Duplicate respawn cannot decrement UI locks"), PC->IsMoveInputIgnored() && PC->IsLookInputIgnored());
+	PC->SetIgnoreMoveInput(false); PC->SetIgnoreLookInput(false);
+	TestFalse(TEXT("Death lock was released exactly once"), PC->IsMoveInputIgnored() || PC->IsLookInputIgnored());
+
+	Pose.userIndex = 7; Pose.lifeId = 0; Pose.hp = 100;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	AServerAgent* Remote = Cast<AServerAgent>(Net->FindEntity(ENTITY_PLAYER, 7));
+	if (!TestNotNull(TEXT("Remote player"), Remote)) return false;
+	Wrapper.TickTestWorld(0.01f);
+	Damage.targetId = 7;
+	Net->Receive(PacketBytes(Damage, PACKET_ID::SC_DAMAGE_NOTIFY));
+	TestTrue(TEXT("Remote death visible"), Remote->FindComponentByClass<UHealthComponent>()->IsDead());
+	Respawn.userIndex = 7; Respawn.lifeId = 1; Respawn.x = 120; Respawn.y = 220; Respawn.z = 96;
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	const FVector RemoteSpawn(120, 220, 96);
+	TestTrue(TEXT("Nearby respawn teleports without interpolation"), Remote->GetActorLocation().Equals(RemoteSpawn));
+	TestFalse(TEXT("Remote revived"), Remote->FindComponentByClass<UHealthComponent>()->IsDead());
+	Wrapper.TickTestWorld(0.01f);
+	TestTrue(TEXT("Proxy target reset to spawn"), Remote->GetActorLocation().Equals(RemoteSpawn));
+	TestTrue(TEXT("Same remote actor reused"), Net->FindEntity(ENTITY_PLAYER, 7) == Remote);
+	TestFalse(TEXT("Remote physics stays disabled"), Remote->GetCharacterMovement()->IsComponentTickEnabled());
+	Pose.hp = 0;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	TestFalse(TEXT("Old remote life cannot kill new one"), Remote->FindComponentByClass<UHealthComponent>()->IsDead());
+	Net->ResetForTest();
+	TestEqual(TEXT("Session reset clears life ID"), Net->GetPlayerLifeId(), uint32(0));
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	TestNull(TEXT("Late respawn cannot recreate player after leave"), Net->FindEntity(ENTITY_PLAYER, 7));
+	Wrapper.ForwardErrorMessages(this);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlayerNameplateTest, "TurtleIsland.UI.PlayerNameplates",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPlayerNameplateTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = ACombatTestGameMode::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	UClass* PlayerClass = LoadClass<APlayerAgent>(nullptr, TEXT("/Game/Lv3_Ingame/Paladin/BP_Paladin.BP_Paladin_C"));
+	if (!TestNotNull(TEXT("Player blueprint"), PlayerClass)) return false;
+	APlayerAgent* Local = World->SpawnActor<APlayerAgent>(PlayerClass);
+	APlayerController* PC = World->SpawnActor<APlayerController>();
+	if (!Local || !PC) return false;
+	PC->SetAsLocalPlayerController(); PC->Possess(Local);
+	UCombatTestNetSubsystem* Net = NewObject<UCombatTestNetSubsystem>(World->GetGameInstance());
+	Net->Configure(World, 42);
+	Net->SetUserID(TEXT("Owner"));
+	UNpcSubsystem* Npcs = World->GetSubsystem<UNpcSubsystem>();
+	Npcs->SetReady(true);
+	FString Name;
+	int32 Level = 0;
+	TestTrue(TEXT("Owner identified before private snapshot"), Net->GetPlayerDisplayInfo(Local, Name, Level));
+	TestEqual(TEXT("Local name fallback"), Name, FString(TEXT("Owner")));
+	TestEqual(TEXT("Unknown online level is not invented"), Level, 0);
+	SC_PlayerInfo Info{}; Info.playerId = 7; Info.level = 8;
+	const FString UnicodeName(TEXT("\uac70\ubd81\uc774"));
+	Net->CopyStringToBuffer(Info.userName, sizeof(Info.userName), UnicodeName);
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	TestNull(TEXT("Identity does not spawn an actor"), Net->FindAgentById(7));
+	TestNull(TEXT("Public identity does not create private HUD state"), Net->GetPlayerState());
+	SC_MoveNotify Pose{}; Pose.userIndex = 7; Pose.x = 300; Pose.z = 96; Pose.hp = 80; Pose.maxHP = 120;
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	ATurtleAgent* Remote = Net->FindAgentById(7);
+	if (!TestNotNull(TEXT("Remote created"), Remote)) return false;
+	TestTrue(TEXT("Early identity binds to later actor"), Net->GetPlayerDisplayInfo(Remote, Name, Level));
+	TestEqual(TEXT("UTF-8 name decoded"), Name, UnicodeName);
+	TestEqual(TEXT("Public level applied"), Level, 8);
+	TestEqual(TEXT("Nameplate health comes from pose"), Remote->FindComponentByClass<UHealthComponent>()->CurrentHP, 80);
+	Info.level = 9;
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Net->GetPlayerDisplayInfo(Remote, Name, Level);
+	TestEqual(TEXT("Level-up updates existing actor"), Level, 9);
+	SC_HealthState Health{}; Health.playerId = 7; Health.hp = Health.maxHP = 140;
+	Net->Receive(PacketBytes(Health, PACKET_ID::SC_HEALTH_STATE));
+	TestEqual(TEXT("Nameplate max HP updates on level-up"), Remote->FindComponentByClass<UHealthComponent>()->MaxHP, 140);
+	SC_DamageNotify Damage{}; Damage.targetKind = ENTITY_PLAYER; Damage.targetId = 7;
+	Damage.damage = 140; Damage.maxHP = 140;
+	Net->Receive(PacketBytes(Damage, PACKET_ID::SC_DAMAGE_NOTIFY));
+	TestEqual(TEXT("Nameplate shows zero on death"), Remote->FindComponentByClass<UHealthComponent>()->CurrentHP, 0);
+	SC_RespawnNotify Respawn{}; Respawn.userIndex = 7; Respawn.lifeId = 1; Respawn.hp = Respawn.maxHP = 140;
+	Net->Receive(PacketBytes(Respawn, PACKET_ID::SC_RESPAWN_NOTIFY));
+	Info.lifeId = 1; Info.level = 10;
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Info.lifeId = 0; Info.level = 2;
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Net->GetPlayerDisplayInfo(Remote, Name, Level);
+	TestEqual(TEXT("Old life cannot overwrite nameplate"), Level, 10);
+	TestEqual(TEXT("Respawn restores nameplate HP"), Remote->FindComponentByClass<UHealthComponent>()->CurrentHP, 140);
+	Info.lifeId = 1; Info.level = 0;
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Info.level = 2; FMemory::Memset(Info.userName, 'A', sizeof(Info.userName));
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	TArray<uint8> Truncated = PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO); Truncated.Pop();
+	reinterpret_cast<PacketHeader*>(Truncated.GetData())->size = Truncated.Num();
+	AddExpectedErrorPlain(TEXT("[Codec] Packet size mismatch."), EAutomationExpectedErrorFlags::Contains, 1);
+	Net->Receive(Truncated);
+	Net->GetPlayerDisplayInfo(Remote, Name, Level);
+	TestEqual(TEXT("Malformed identities leave valid state intact"), Level, 10);
+	SC_NpcSpawn Spawn{}; Spawn.npcId = 7; Spawn.hp = Spawn.maxHp = 100;
+	Net->Receive(PacketBytes(Spawn, PACKET_ID::SC_NPC_SPAWN));
+	TestFalse(TEXT("NPC cannot inherit overlapping player identity"), Net->GetPlayerDisplayInfo(Net->FindEntity(ENTITY_NPC, 7), Name, Level));
+	SC_RoomLeaveNotify Leave{}; Leave.userIndex = 7;
+	Net->Receive(PacketBytes(Leave, PACKET_ID::SC_ROOM_LEAVE_NOTIFY));
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	Net->GetPlayerDisplayInfo(Net->FindAgentById(7), Name, Level);
+	TestEqual(TEXT("Leave clears reused ID level"), Level, 0);
+	Net->CopyStringToBuffer(Info.userName, sizeof(Info.userName), UnicodeName);
+	Info.lifeId = 0; Info.level = 8;
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Net->ResetForTest();
+	Net->Receive(PacketBytes(Info, PACKET_ID::SC_PLAYER_INFO));
+	Npcs->SetReady(true);
+	Net->Receive(PacketBytes(Pose, PACKET_ID::SC_MOVE_NOTIFY));
+	Net->GetPlayerDisplayInfo(Net->FindAgentById(7), Name, Level);
+	TestEqual(TEXT("Session reset discards identity and late packets"), Level, 0);
+	Net->SetSingleForTest();
+	Local->FindComponentByClass<UPlayerStatsComponent>()->Level = 3;
+	Net->GetPlayerDisplayInfo(Local, Name, Level);
+	TestEqual(TEXT("Single-player level uses local stats"), Level, 3);
+	TestEqual(TEXT("Single-player name visible without server state"), Name, FString(TEXT("Owner")));
+	const auto Short = PlayerNameplate::FitText(TEXT("Lv. 3  Owner"), PlayerNameplate::NameWidth, 14, 11);
+	TestEqual(TEXT("Short names keep normal size"), Short.Font.Size, 14.f);
+	TestEqual(TEXT("Short name unchanged"), Short.Text, FString(TEXT("Lv. 3  Owner")));
+	const auto Long = PlayerNameplate::FitText(FString::ChrN(32, TEXT('W')), PlayerNameplate::NameWidth, 14, 11);
+	TestTrue(TEXT("Long names fit fixed width"), Long.Size.X <= PlayerNameplate::NameWidth);
+	TestTrue(TEXT("Long name ellipsis"), Long.Text.EndsWith(TEXT("...")));
+	const auto Korean = PlayerNameplate::FitText(UnicodeName, PlayerNameplate::NameWidth, 14, 11);
+	TestEqual(TEXT("Korean text preserved"), Korean.Text, UnicodeName);
+	const auto SingleLine = PlayerNameplate::FitText(TEXT("A\nB\r\tC"), PlayerNameplate::NameWidth, 14, 11);
+	TestEqual(TEXT("Name cannot inject lines"), SingleLine.Text, FString(TEXT("A B  C")));
+	const auto LargeHP = PlayerNameplate::FitText(TEXT("2147483647 / 2147483647"), PlayerNameplate::BarWidth - 8, 10, 8);
+	TestTrue(TEXT("HP text stays inside bar"), LargeHP.Size.X <= PlayerNameplate::BarWidth - 8 && LargeHP.Size.Y <= PlayerNameplate::BarHeight);
+	Net->ResetForTest();
+	Wrapper.ForwardErrorMessages(this);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCombatNetworkTest, "TurtleIsland.Network.CombatState",

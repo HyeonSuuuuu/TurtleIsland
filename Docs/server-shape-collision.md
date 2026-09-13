@@ -7,13 +7,20 @@ The Box2D 3.1.0 backend is enabled for the reviewed Lv3_Ingame map.
 alone never changes the running server,
 map assets, the legacy `map.dat`, or `PlayerSpawn.json`.
 
-Current Lv3_Ingame audit: 40,843 candidate convex parts, 82,316 dry ground cells,
+Current Lv3_Ingame audit: 40,845 candidate convex parts, 82,316 dry ground cells,
 and zero unresolved entries. The user's puddle/well collision edits resolved all
 22 complex-as-simple entries. Read-only Blueprint graph and instance-option
 inspection classified 35 of the original 137 Movable components as static.
 The user approved freezing the remaining door/shutter/sign/gate actors in their
 current poses. The real candidate passes the server loader and capsule-safe spawn
 check. Two-PC visual/play testing remains; no production session was restarted.
+
+The 2026-09-14 origin migration moved all three map levels by (+16670,+6200,0).
+PlayerStart is now (0,0), and the monster centers are (-20,1600). Navigation
+was rebuilt at a tile-aligned origin and both shape/grid exports were regenerated.
+Terrain heights and authored mesh/instance/spline transforms relative to the
+start were verified before and after saving. See `Client/TurtleIsland/Docs/MapExport.md`
+for the coordinated backup, migration tool and audit reports.
 
 The 35 reviewed components belong to 18 actors in Ingame_Env: 11 fireplace
 decorations (22 components), five flag stands (8), Forest_ISM (4), and the fake

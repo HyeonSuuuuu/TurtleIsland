@@ -63,4 +63,7 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category="Damage")
 	virtual void ResetForRespawn(const FVector& At, int32 HP);
+
+private:
+	TWeakObjectPtr<AController> DeathController;
 };

@@ -37,7 +37,7 @@ void ATurtleGameMode::ScheduleRespawn(ATurtleAgent* Agent, float Delay)
 	{
 		if (ATurtleAgent* Alive = WeakAgent.Get())
 		{
-			RespawnAgent(Alive, FVector::ZeroVector, 0);
+			RespawnAgent(Alive, Alive->GetActorLocation(), 0);
 		}
 	}, FMath::Max(0.01f, Delay), false);
 }

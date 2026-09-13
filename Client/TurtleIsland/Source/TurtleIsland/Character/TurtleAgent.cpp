@@ -3,6 +3,8 @@
 #include "Character/TurtleAgent.h"
 #include "Gameplay/HealthComponent.h"
 #include "Gameplay/AgentSkillComponent.h"
+#include "Gameplay/LocalMoverComponent.h"
+#include "Gameplay/PlayerInputComponent.h"
 #include "Core/TurtleGameMode.h"
 #include "TurtleIsland.h"
 #include "Components/CapsuleComponent.h"
@@ -41,7 +43,7 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 	EnterDeadState();
 	OnDied();
 
-	// 리스폰 "실행"은 GameMode 한 곳에만 있다. 싱글이면 타이머, 멀티면 서버 통지를 기다린다.
+	// Single play uses the GameMode timer; multiplayer waits for SC_RESPAWN_NOTIFY.
 	ATurtleGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ATurtleGameMode>() : nullptr;
 	if (!GM)
 	{
@@ -57,7 +59,9 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 
 void ATurtleAgent::EnterDeadState()
 {
-	if (Skill) Skill->ResetCast();
+	if (Skill) Skill->ResetPlayback();
+	StopJumping();
+	ConsumeMovementInputVector();
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
 		Move->DisableMovement();
@@ -68,14 +72,26 @@ void ATurtleAgent::EnterDeadState()
 	}
 	if (AController* C = GetController())
 	{
-		C->SetIgnoreMoveInput(true);
-		C->SetIgnoreLookInput(true);
+		if (!DeathController.IsValid())
+		{
+			DeathController = C;
+			C->SetIgnoreMoveInput(true);
+			C->SetIgnoreLookInput(true);
+		}
 	}
 }
 
 void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 {
-	if (Skill) Skill->ResetCast();
+	if (Skill) Skill->ResetPlayback();
+	StopJumping();
+	ConsumeMovementInputVector();
+	if (ULocalMoverComponent* Mover = FindComponentByClass<ULocalMoverComponent>()) Mover->ResetForRespawn();
+	if (UPlayerInputComponent* Input = FindComponentByClass<UPlayerInputComponent>())
+	{
+		Input->OnMoveReleased.Broadcast();
+		Input->OnJumpReleased.Broadcast();
+	}
 	if (Health)
 	{
 		// 서버가 값을 주면 그 값으로, 아니면 컴포넌트가 알아서 최대치로
@@ -83,23 +99,22 @@ void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 		else        { Health->ResetToFull(); }
 	}
 
-	if (!At.IsNearlyZero())
-	{
-		SetActorLocation(At);
-	}
+	SetActorLocation(At, false, nullptr, ETeleportType::TeleportPhysics);
 
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
+		Move->StopMovementImmediately();
 		Move->SetMovementMode(MOVE_Walking);
 	}
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
 		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	}
-	if (AController* C = GetController())
+	if (AController* C = DeathController.Get())
 	{
 		C->SetIgnoreMoveInput(false);
 		C->SetIgnoreLookInput(false);
 	}
+	DeathController.Reset();
 
 }

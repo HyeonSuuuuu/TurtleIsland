@@ -19,6 +19,125 @@ namespace
 
 struct RoomSpawnTests
 {
+	static void TestPlayerInfo()
+	{
+		User user;
+		user.Login("NameplatePlayer");
+		GameplayRules::PlayerState state;
+		state.level = 7; state.lifeId = 3; state.gold = 987654;
+		const SC_PlayerInfo info = Room::MakePlayerInfo(user, state);
+		Check(info.size == SC_PLAYER_INFO_PACKET_SIZE && info.id == static_cast<uint16_t>(PACKET_ID::SC_PLAYER_INFO), "public identity header");
+		Check(info.playerId == user.GetId() && info.lifeId == 3 && info.level == 7, "public identity and level");
+		Check(std::string(info.userName) == "NameplatePlayer", "identity uses authenticated server name");
+		state.gold = 1; state.exp = 500; state.items[0].count = 8;
+		const SC_PlayerInfo changedPrivate = Room::MakePlayerInfo(user, state);
+		Check(std::memcmp(&info, &changedPrivate, sizeof(info)) == 0, "private gold XP and items cannot leak into public packet");
+		user.Login(std::string(MAX_USER_ID_LEN, 'W'));
+		const SC_PlayerInfo longest = Room::MakePlayerInfo(user, state);
+		Check(std::strlen(longest.userName) == MAX_USER_ID_LEN && longest.userName[MAX_USER_ID_LEN] == '\0', "maximum name is terminated");
+		state.level = 8; state.lifeId = 4;
+		const SC_PlayerInfo respawn = Room::MakePlayerInfo(user, state);
+		Check(respawn.level == 8 && respawn.lifeId == 4, "public identity follows level-up and respawn");
+		std::println("PASS: public player identity, level, private-state isolation, bounded name");
+	}
+
+	static void TestPlayerRespawn()
+	{
+		Check(g_obstacleMap.LoadConfigured("CollisionSettings.json"), "load active collision backend for respawn");
+		Room room;
+		room.m_inGame = true;
+		room.m_userSlots[0] = 0; room.m_userCount = 1;
+		User& user = *g_userPool.Get(0);
+		user.x = MapSpawn::PLAYER_X; user.y = MapSpawn::PLAYER_Y;
+		g_obstacleMap.SnapToFree(user.x, user.y, 42.f);
+		auto& state = room.m_playerStates[0];
+		state.ready = true; state.hp = 1; state.mp = 5;
+		state.maxHP = 150; state.maxMP = 120;
+		state.gold = 123; state.exp = 17; state.level = 4;
+		state.skillReadyAt[2] = 9000; state.itemReadyAt = 8000;
+		state.castReadyAt = 7000; state.landingReadyAt = 6500;
+		state.z = 900; state.velocityZ = -300;
+		room.m_pendingAttacks[0] = {};
+		room.m_movementBudgets[0] = {1000, 125};
+		auto& chat = room.m_npcConversations[0];
+		chat.Begin("old-life-context", "hello", 1000);
+		chat.relationship.affinity = 40; chat.quote = {{"unit_price", 30}};
+		auto& npc = room.m_npcs[0];
+		npc.Spawn(0, 0, user.x, user.y, 50, 0);
+		npc.m_attackTarget = 0; npc.m_attackImpactAt = 1000;
+		room.m_npcs[1].m_attackTarget = 0; room.m_npcs[1].m_attackImpactAt = 2000;
+		room.ResolveNpcAttackLocked(npc, 1000);
+		Check(state.hp == 0 && state.respawnReadyAt == 1000 + GameplayRules::PlayerRespawnDelayMs,
+			"lethal NPC impact schedules server respawn");
+		Check(room.m_pendingAttacks.empty() && room.m_movementBudgets.empty(), "death cancels attack and movement credit");
+		Check(room.m_npcs[1].m_attackImpactAt == 0, "death cancels other NPC wind-ups targeting player");
+		Check(chat.context.empty() && chat.quote.is_null() && chat.relationship.affinity == 40,
+			"death invalidates AI capabilities but preserves relationship");
+		Check(!state.airborne && state.velocityZ == 0, "death clears airborne motion");
+		const auto deadline = state.respawnReadyAt;
+		room.TickPlayerRespawnLocked(0, deadline - 1);
+		Check(state.hp == 0 && state.lifeId == 0 && state.respawnReadyAt == deadline, "no early respawn or timer extension");
+		Check(GameplayRules::UseSkill(state, 0, deadline - 1) == ActionResult::Dead, "dead player cannot attack");
+		CS_UseItem item{}; item.expectedItemId = 1; item.inventoryRevision = state.inventoryRevision;
+		Check(GameplayRules::UseItem(state, item, deadline - 1) == ActionResult::Dead, "dead player cannot use items");
+
+		const auto validMap = g_obstacleMap;
+		g_obstacleMap = ObstacleMap{};
+		room.TickPlayerRespawnLocked(0, deadline);
+		Check(state.hp == 0 && state.lifeId == 0, "invalid collision map delays respawn");
+		g_obstacleMap = validMap;
+		const float spawnX = MapSpawn::PLAYER_X;
+		MapSpawn::PLAYER_X = 9000000.f;
+		room.TickPlayerRespawnLocked(0, deadline);
+		Check(state.hp == 0, "distant fallback cannot relocate respawn across the map");
+		MapSpawn::PLAYER_X = spawnX;
+		room.TickPlayerRespawnLocked(0, deadline);
+		Check(state.hp == 150 && state.mp == 120 && state.lifeId == 1 && state.respawnReadyAt == 0, "deadline restores full HP/MP exactly once");
+		Check(state.gold == 123 && state.exp == 17 && state.level == 4 && state.inventoryRevision == 1 &&
+			state.items[0].count == 3 && state.items[1].count == 3, "respawn preserves progression and items");
+		Check(state.skillReadyAt[2] == 9000 && state.itemReadyAt == 8000, "respawn cannot reset individual cooldowns");
+		Check(state.castReadyAt == 0 && state.landingReadyAt == 0 && !state.airborne && state.velocityZ == 0,
+			"respawn clears death, cast, landing and jump state");
+		Check(std::hypot(user.x - MapSpawn::PLAYER_X, user.y - MapSpawn::PLAYER_Y) <= 150.f &&
+			g_obstacleMap.CanTraverse(user.x, user.y, user.x, user.y, 42), "respawn at capsule-safe PlayerStart");
+		Check(state.z == MapSpawn::PLAYER_GROUND_Z + GameplayRules::PlayerCapsuleHalfHeight + 2.f,
+			"respawn height uses exported floor plus capsule clearance");
+		room.TickPlayerRespawnLocked(0, deadline + 1);
+		Check(state.lifeId == 1, "alive ticks do not repeat respawn");
+
+		// Detached user fixture exercises handlers without a live IOCP session.
+		Room actions;
+		User actor; actor.x = user.x; actor.y = user.y;
+		actions.m_inGame = true;
+		auto& alive = actions.m_playerStates[actor.GetSlotIndex()]; alive = state;
+		actions.m_movementBudgets[actor.GetSlotIndex()] = room.m_movementBudgets.at(0);
+		CS_Move move{}; move.x = actor.x; move.y = actor.y; move.z = state.z;
+		Check(!actions.ApplyPlayerMoveLocked(actor, move, deadline), "old-life move rejected after respawn");
+		move.lifeId = alive.lifeId;
+		Check(actions.ApplyPlayerMoveLocked(actor, move, deadline), "new-life move accepted after respawn");
+		CS_Attack attack{}; attack.skillId = 1;
+		actions.Attack(actor, attack);
+		Check(actions.m_pendingAttacks.empty() && alive.mp == 120, "old-life attack cannot consume MP or create an impact");
+		attack.lifeId = alive.lifeId;
+		actions.Attack(actor, attack);
+		Check(!actions.m_pendingAttacks.empty() && alive.mp == 100, "new-life attack works after respawn");
+		alive.hp = 100;
+		Check(GameplayRules::UseItem(alive, item, 10000) == ActionResult::Invalid, "old-life item request rejected");
+		item.lifeId = alive.lifeId;
+		Check(GameplayRules::UseItem(alive, item, 10000) == ActionResult::Ok, "new-life item request accepted");
+
+		state.hp = 0;
+		room.TickPlayerRespawnLocked(0, 10000);
+		room.TickPlayerRespawnLocked(0, 10000 + GameplayRules::PlayerRespawnDelayMs);
+		Check(state.lifeId == 2 && state.hp == state.maxHP, "second death has independent respawn cycle");
+		state.hp = 0;
+		room.TickPlayerRespawnLocked(0, 20000);
+		room.Leave(0);
+		room.TickPlayerRespawnLocked(0, 30000);
+		Check(room.m_playerStates.empty(), "leaving cancels scheduled respawn");
+		std::println("PASS: player death, respawn timing, resources, ground height, blocked spawn, old-life requests and leave");
+	}
+
 	static void TestNpcImpacts()
 	{
 		Room room;
@@ -427,6 +546,8 @@ int main()
 		RoomSpawnTests::TestAttackImpacts();
 		RoomSpawnTests::TestMovement();
 		RoomSpawnTests::TestNpcImpacts();
+		RoomSpawnTests::TestPlayerRespawn();
+		RoomSpawnTests::TestPlayerInfo();
 		const auto fixture = std::filesystem::temp_directory_path() /
 			("TurtleIslandSpawnTest-" + std::to_string(GetCurrentProcessId()) + ".lua");
 		const std::string monsters = "Monsters = {{name='Test',hp=50,speed=4}}\n";

@@ -84,8 +84,10 @@ private:
 	void ResolvePendingAttackLocked(User& user, uint64_t now);
 	void ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t now);
 	void ResolveNpcAttackLocked(NPC& npc, uint64_t now);
+	void TickPlayerRespawnLocked(uint32_t slot, uint64_t now);
 	bool ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t now);
 	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
+	static SC_PlayerInfo MakePlayerInfo(const User& user, const GameplayRules::PlayerState& state);
 	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
 	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;
 	std::unordered_map<uint32_t, NpcConversation> m_npcConversations;

@@ -3,6 +3,7 @@
 #include "Gameplay/LocalMoverComponent.h"
 #include "Gameplay/AgentMovementInput.h"
 #include "Gameplay/AgentSkillComponent.h"
+#include "Gameplay/HealthComponent.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Engine/World.h"
 #include "GameplayRules.h"
@@ -46,8 +47,15 @@ bool ULocalMoverComponent::IsLandingLocked() const
 
 bool ULocalMoverComponent::IsMovementLocked() const
 {
+	const UHealthComponent* Health = GetOwner() ? GetOwner()->FindComponentByClass<UHealthComponent>() : nullptr;
 	const UAgentSkillComponent* Skills = GetOwner() ? GetOwner()->FindComponentByClass<UAgentSkillComponent>() : nullptr;
-	return IsLandingLocked() || (Skills && Skills->IsMovementLocked());
+	return (Health && Health->IsDead()) || IsLandingLocked() || (Skills && Skills->IsMovementLocked());
+}
+
+void ULocalMoverComponent::ResetForRespawn()
+{
+	LandingReadyAt = 0.;
+	CurrentSpeed2D = 0.f;
 }
 
 void ULocalMoverComponent::HandleLanded(const FHitResult& Hit)

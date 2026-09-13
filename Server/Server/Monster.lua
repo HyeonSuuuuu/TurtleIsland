@@ -10,7 +10,7 @@ Monsters = {
 -- Total count across all areas must not exceed MAX_ROOM_NPCS (currently 8).
 -- Death removes the monster immediately; respawn uses a new random position.
 SpawnAreas = {
-  { type = 0, count = 2, x = -16690, y = -4600, radius = 150, respawnSeconds = 10 },
-  { type = 1, count = 2, x = -16690, y = -4600, radius = 150, respawnSeconds = 10 },
-  { type = 2, count = 1, x = -16690, y = -4600, radius = 150, respawnSeconds = 10 },
+  { type = 0, count = 2, x = -20, y = 1600, radius = 150, respawnSeconds = 10 },
+  { type = 1, count = 2, x = -20, y = 1600, radius = 150, respawnSeconds = 10 },
+  { type = 2, count = 1, x = -20, y = 1600, radius = 150, respawnSeconds = 10 },
 }

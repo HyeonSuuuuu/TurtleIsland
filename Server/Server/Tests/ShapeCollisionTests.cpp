@@ -103,11 +103,12 @@ int main(int argc, char** argv)
             if(test==8) scene["polygons"][0]["vertices"]={{0,0},{50,0},{100,0}};
             write(scene); Check(!map.Load(path.string().c_str()) && !map.CanTraverse(-100,0,-100,0,42), "bad export fails closed");
         }
-        scene=Scene(); write(scene);
+        scene=Scene(); scene["spawn"]["ground_z"]=12.5; scene["spawn"]["z"]=2000; write(scene);
         const auto config = folder / "settings.json";
         { std::ofstream file(config); file << Json{{"mode","shapes"},{"scene",path.string()}}.dump(); }
         ObstacleMap configured;
         Check(configured.LoadConfigured(config.string().c_str()), "shape backend selected");
+        Check(MapSpawn::PLAYER_GROUND_Z == 12.5f, "respawn uses exported ground height, not elevated PlayerStart Z");
         Check(configured.CanTraverse(-100,0,-48,0,42), "shape mode does not AND the legacy grid");
         Check(!configured.CanTraverse(-100,0,100,0,42), "adapter enforces polygon collision");
         { std::ofstream file(folder / "PlayerSpawn.json"); file << scene["spawn"].dump(); }
@@ -119,6 +120,7 @@ int main(int argc, char** argv)
         Check(!configured.CanTraverse(-250,0,-48,0,42), "shadow keeps legacy rejection even where precise scene allows movement");
         { std::ofstream file(config); file << Json{{"mode","grid"},{"scene","absent.json"}}.dump(); }
         Check(configured.LoadConfigured(config.string().c_str()), "grid rollback does not require a shape export");
+        Check(MapSpawn::PLAYER_GROUND_Z == 12.5f, "grid fallback retains exported ground height");
         { std::ofstream file(config); file << R"({"mode":"typo"})"; }
         Check(!configured.LoadConfigured(config.string().c_str()) && !configured.CanMoveTo(-100,0), "invalid mode fails closed");
         std::println("PASS: terrain boundary, rotated polygons, export validation and runtime mode selection");

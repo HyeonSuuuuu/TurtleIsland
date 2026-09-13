@@ -18,6 +18,13 @@ UNetSyncComponent::UNetSyncComponent()
 	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
+void UNetSyncComponent::ResetForRespawn()
+{
+	PendingFlag = 0;
+	Accumulated = 0.f;
+	bSentPose = false;
+}
+
 void UNetSyncComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -100,6 +107,7 @@ void UNetSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	}
 
 	CS_Move MovePacket{};
+	MovePacket.lifeId = Net->GetPlayerLifeId();
 	MovePacket.size      = CS_MOVE_PACKET_SIZE;
 	MovePacket.id        = static_cast<uint16>(PACKET_ID::CS_MOVE);
 	MovePacket.inputFlag = Flag;

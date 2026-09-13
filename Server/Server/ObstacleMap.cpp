@@ -15,11 +15,12 @@ bool MapSpawn::LoadPlayerStart(const char* path)
 	{
 		std::ifstream file(path);
 		const auto data = nlohmann::json::parse(file);
-		for (const char* key : {"x", "y", "yaw"})
+		for (const char* key : {"x", "y", "yaw", "ground_z"})
 			if (!data.contains(key) || !data[key].is_number() || !std::isfinite(data[key].get<double>()) ||
 				std::abs(data[key].get<double>()) > 10000000.) return false;
 		PLAYER_X = data["x"].get<float>(); PLAYER_Y = data["y"].get<float>();
 		PLAYER_YAW = std::remainder(data["yaw"].get<float>(), 360.f);
+		PLAYER_GROUND_Z = data["ground_z"].get<float>();
 		NPC_ANCHOR_X = PLAYER_X - 20.f; NPC_ANCHOR_Y = PLAYER_Y + 1600.f;
 		Log::Success("[Map] PlayerStart loaded ({},{}) yaw={}", PLAYER_X, PLAYER_Y, PLAYER_YAW);
 		return true;
@@ -208,6 +209,7 @@ bool ObstacleMap::LoadConfigured(const char* settingsPath)
 			if (mode == "shapes")
 			{
 				MapSpawn::PLAYER_X = m_shapes.SpawnX(); MapSpawn::PLAYER_Y = m_shapes.SpawnY();
+				MapSpawn::PLAYER_GROUND_Z = m_shapes.SpawnGroundZ();
 				MapSpawn::PLAYER_YAW = std::remainder(m_shapes.SpawnYaw(), 360.f);
 				MapSpawn::NPC_ANCHOR_X = MapSpawn::PLAYER_X - 20.f;
 				MapSpawn::NPC_ANCHOR_Y = MapSpawn::PLAYER_Y + 1600.f;
