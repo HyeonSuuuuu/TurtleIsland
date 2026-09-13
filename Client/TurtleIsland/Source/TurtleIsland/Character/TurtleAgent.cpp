@@ -57,6 +57,7 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 
 void ATurtleAgent::EnterDeadState()
 {
+	if (Skill) Skill->ResetCast();
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
 		Move->DisableMovement();
@@ -74,6 +75,7 @@ void ATurtleAgent::EnterDeadState()
 
 void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 {
+	if (Skill) Skill->ResetCast();
 	if (Health)
 	{
 		// 서버가 값을 주면 그 값으로, 아니면 컴포넌트가 알아서 최대치로

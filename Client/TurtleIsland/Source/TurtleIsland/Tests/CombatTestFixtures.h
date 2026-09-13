@@ -1,6 +1,13 @@
 #pragma once
 #include "Network/NetSubsystem.h"
+#include "Core/TurtleGameMode.h"
 #include "CombatTestFixtures.generated.h"
+
+UCLASS()
+class ACombatTestGameMode : public ATurtleGameMode
+{
+	GENERATED_BODY()
+};
 
 UCLASS()
 class UCombatTestNetSubsystem : public UNetSubsystem

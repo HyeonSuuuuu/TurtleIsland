@@ -512,10 +512,12 @@ void Room::MovePlayer(User& user, const CS_Move& request)
 	auto found = m_playerStates.find(user.GetSlotIndex());
 	if (!m_inGame || found == m_playerStates.end() || !found->second.ready) return;
 	auto& state = found->second;
-	const bool accepted = ApplyPlayerMoveLocked(user, request, GetTickCount64());
+	const uint64_t now = GetTickCount64();
+	const bool accepted = ApplyPlayerMoveLocked(user, request, now);
 	SC_MoveNotify packet{};
 	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
-	packet.userIndex = user.GetId(); packet.inputFlag = accepted ? request.inputFlag : 0;
+	packet.userIndex = user.GetId();
+	packet.inputFlag = accepted && now >= state.castReadyAt && now >= state.landingReadyAt ? request.inputFlag : 0;
 	packet.x = user.x; packet.y = user.y; packet.yaw = user.yaw;
 	packet.z = state.z; packet.velocityZ = state.velocityZ; packet.airborne = state.airborne;
 	packet.hp = state.hp; packet.maxHP = state.maxHP;
@@ -538,11 +540,16 @@ bool Room::ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t no
 	credit.updatedAt = std::max(now, credit.updatedAt);
 	credit.distance = std::min(state.moveSpeed * MovementBurstSeconds, credit.distance + state.moveSpeed * elapsed);
 	const double distance = std::hypot(static_cast<double>(request.x) - user.x, static_cast<double>(request.y) - user.y);
+	const bool casting = now < state.castReadyAt;
+	// Casting stops XY and new jumps, but must still accept gravity and landing updates.
+	if (casting && (distance > 0. || (!state.airborne && (request.airborne || request.velocityZ > 0.f)) ||
+		(state.airborne && request.airborne && request.velocityZ > state.velocityZ))) return false;
 	if (now < state.landingReadyAt && (distance > 0. || request.airborne || request.velocityZ > 0.f)) return false;
 	if (distance > credit.distance || !g_obstacleMap.CanTraverse(user.x, user.y, request.x, request.y, PlayerRadius)) return false;
 	if (state.airborne && !request.airborne) state.landingReadyAt = now + GameplayRules::LandingRecoveryMs;
 	credit.distance -= distance;
-	user.x = request.x; user.y = request.y; user.yaw = request.yaw;
+	user.x = request.x; user.y = request.y;
+	if (!casting) user.yaw = request.yaw;
 	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;
 	return true;
 }
@@ -565,6 +572,7 @@ void Room::Attack(User& user, const CS_Attack& request)
 	user.Send({reinterpret_cast<const uint8_t*>(&response), sizeof(response)});
 	if (result != ActionResult::Ok) { SendStateLocked(user, state, now); return; }
 
+	user.yaw = request.yaw;
 	SC_AttackNotify attack{};
 	attack.size = sizeof(attack); attack.id = static_cast<uint16_t>(PACKET_ID::SC_ATTACK_NOTIFY);
 	attack.casterId = user.GetId(); attack.casterKind = ENTITY_PLAYER; attack.skillId = request.skillId;

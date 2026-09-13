@@ -105,6 +105,7 @@ struct RoomSpawnTests
 		Check(!room.ApplyPlayerMoveLocked(user, move, landingReadyAt - 1), "ground flag cannot bypass vertical launch lock");
 		move.velocityZ = 0; move.x = 201;
 		Check(room.ApplyPlayerMoveLocked(user, move, landingReadyAt), "movement resumes at recovery deadline");
+		TestSkillMovement();
 		{ std::ofstream file(fixture); file << "5 5 100 0 0\n00000\n"; }
 		Check(!g_obstacleMap.Load(fixture.string().c_str()), "truncated grid rejected");
 		Check(!g_obstacleMap.CanMoveTo(50, 50) && !g_obstacleMap.CanTraverse(50, 50, 60, 50), "invalid map fails closed");
@@ -119,6 +120,81 @@ struct RoomSpawnTests
 			Check(g_obstacleMap.CanTraverse(x, y, x, y, 42), "all player spawns have capsule clearance");
 		}
 		std::println("PASS: path collision, radius, boundary, server spawn, speed budget, jump, fail-closed map");
+	}
+
+	static void TestSkillMovement()
+	{
+		for (uint16_t id = 0; id < PLAYER_SKILL_COUNT; ++id)
+		{
+			Room room;
+			User user;
+			room.m_inGame = true;
+			user.x = 50; user.y = 50;
+			auto& state = room.m_playerStates[user.GetSlotIndex()];
+			state.ready = true;
+			room.m_movementBudgets[user.GetSlotIndex()] = {GetTickCount64(), 125};
+			CS_Attack attack{};
+			attack.skillId = id; attack.targetKind = ENTITY_NONE; attack.yaw = 90.f;
+			room.Attack(user, attack);
+			const uint64_t due = state.castReadyAt;
+			const uint64_t start = due - GameplayRules::Skills[id].movementLockMs;
+			Check(start <= GetTickCount64() && due > GetTickCount64(), "approved attack starts full cast recovery");
+			CS_Move move{};
+			move.x = 51; move.y = 50; move.z = 96;
+			Check(!room.ApplyPlayerMoveLocked(user, move, start + 1) && user.x == 50, "every skill blocks XY from cast start");
+			move.x = 50;
+			Check(room.ApplyPlayerMoveLocked(user, move, start + 2) && user.yaw == 90.f,
+				"stationary updates preserve cast facing");
+			move.airborne = 1; move.velocityZ = 300;
+			Check(!room.ApplyPlayerMoveLocked(user, move, start + 3), "every skill blocks a new jump");
+			move.airborne = 0;
+			Check(!room.ApplyPlayerMoveLocked(user, move, start + 4), "ground flag cannot bypass cast launch lock");
+			const uint64_t impact = room.m_pendingAttacks.at(user.GetSlotIndex()).impactAt;
+			Check(impact < due, "impact is earlier than full recovery");
+			Resolve(room, user);
+			move.velocityZ = 0; move.x = 51;
+			Check(!room.ApplyPlayerMoveLocked(user, move, impact) && state.castReadyAt == due,
+				"consuming the pending hit does not unlock movement");
+			const auto mana = state.mp;
+			attack.skillId = (id + 1) % PLAYER_SKILL_COUNT;
+			room.Attack(user, attack);
+			Check(state.mp == mana && state.castReadyAt == due && room.m_pendingAttacks.empty(),
+				"different skill cannot interrupt recovery after impact or spend mana");
+			Check(!room.ApplyPlayerMoveLocked(user, move, due - 1), "cast blocks movement until final millisecond");
+			Check(room.ApplyPlayerMoveLocked(user, move, due) && user.x == 51, "movement resumes at cast deadline");
+			Check(GameplayRules::UseSkill(state, attack.skillId, due) == ActionResult::Ok, "another skill can start after recovery");
+		}
+
+		Room room;
+		User user;
+		room.m_inGame = true;
+		user.x = 50; user.y = 50;
+		auto& state = room.m_playerStates[user.GetSlotIndex()];
+		state.ready = true; state.airborne = true; state.z = 296; state.velocityZ = 200;
+		room.m_movementBudgets[user.GetSlotIndex()] = {GetTickCount64(), 125};
+		CS_Attack attack{};
+		attack.skillId = 1; attack.targetKind = ENTITY_NONE;
+		room.Attack(user, attack);
+		const uint64_t due = state.castReadyAt;
+		CS_Move move{};
+		move.x = 50; move.y = 50; move.z = 300; move.velocityZ = 150; move.airborne = 1;
+		Check(room.ApplyPlayerMoveLocked(user, move, due - 400), "airborne cast preserves existing upward momentum and gravity");
+		move.velocityZ = 300;
+		Check(!room.ApplyPlayerMoveLocked(user, move, due - 300), "airborne cast cannot launch another jump");
+		move.z = 200; move.velocityZ = -100;
+		Check(room.ApplyPlayerMoveLocked(user, move, due - 200), "cast accepts falling updates");
+		move.z = 96; move.velocityZ = 0; move.airborne = 0;
+		Check(room.ApplyPlayerMoveLocked(user, move, due - 100), "cast accepts landing");
+		move.x = 51;
+		Check(!room.ApplyPlayerMoveLocked(user, move, due), "cast expiry cannot bypass remaining landing recovery");
+		Check(room.ApplyPlayerMoveLocked(user, move, state.landingReadyAt), "movement resumes after both recoveries end");
+		std::println("PASS: all skill movement locks, jump prevention, facing, post-impact recovery, gravity and landing");
+	}
+
+	static void ResetSkillRecovery(GameplayRules::PlayerState& state)
+	{
+		state.skillReadyAt.fill(0);
+		state.castReadyAt = 0;
 	}
 
 	static void Resolve(Room& room, User& user)
@@ -153,23 +229,23 @@ struct RoomSpawnTests
 		room.ResolvePendingAttackLocked(user, due + 1);
 		Check(npc.m_hp == 463, "repeated impact tick cannot damage twice");
 
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.Attack(user, attack);
 		npc.x += 1000.f;
 		Resolve(room, user);
 		Check(npc.m_hp == 463, "target moving out before impact is a miss");
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.Attack(user, attack);
 		npc.x = user.x + 100.f;
 		Resolve(room, user);
 		Check(npc.m_hp == 426, "target entering range at impact can be hit");
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		attack.yaw = 180.f;
 		room.Attack(user, attack);
 		Resolve(room, user);
 		Check(npc.m_hp == 426, "wrong-facing swing misses");
 
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		attack.yaw = 0.f; attack.skillId = 1;
 		room.Attack(user, attack);
 		const auto mana = state.mp;
@@ -181,14 +257,14 @@ struct RoomSpawnTests
 		Resolve(room, user);
 		Check(npc.m_hp == 369, "Q retains skill bonus at impact");
 
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		attack.skillId = 0;
 		room.Attack(user, attack);
 		state.hp = 0;
 		Resolve(room, user);
 		Check(npc.m_hp == 369, "dead caster cannot finish wind-up");
 		state.hp = 100;
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.Attack(user, attack);
 		room.DespawnNpc(0);
 		Check(room.m_pendingAttacks.empty(), "target despawn cancels targeted wind-up");
@@ -196,7 +272,7 @@ struct RoomSpawnTests
 		room.ResolvePendingAttackLocked(user, firstImpact + 10000);
 		Check(npc.m_hp == 500, "reused target ID cannot receive old hit");
 
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.Attack(user, attack);
 		room.m_userSlots[0] = user.GetSlotIndex(); room.m_userCount = 1;
 		room.Leave(user.GetSlotIndex());
@@ -255,13 +331,13 @@ struct RoomSpawnTests
 		Resolve(room, user);
 		Check(room.m_npcs[0].IsAlive() && room.m_npcs[0].m_hp < room.m_npcs[0].m_maxHp, "nonlethal hit");
 		Check(state.gold == gold && state.exp == exp, "damage alone grants no reward");
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.m_npcs[0].m_hp = 1;
 		room.Attack(user, attack);
 		Resolve(room, user);
 		Check(!room.m_npcs[0].IsActive() && state.gold == gold + 10 && state.exp == exp + 25, "kill grants 10 gold and 25 XP");
 		Check(room.m_npcSpawnSlots[0].readyAt >= GetTickCount64() + 9900, "death schedules 10-second respawn");
-		state.skillReadyAt.fill(0);
+		ResetSkillRecovery(state);
 		room.Attack(user, attack);
 		room.TickNpcs();
 		Check(state.gold == gold + 10 && state.exp == exp + 25, "duplicate attack and death tick grant no extra reward");
@@ -271,7 +347,7 @@ struct RoomSpawnTests
 			Check(state.gold == gold + (kills - 1) * 10, "respawn itself grants no gold");
 			user.x = room.m_npcs[0].x; user.y = room.m_npcs[0].y;
 			room.m_npcs[0].m_hp = 1;
-			state.skillReadyAt.fill(0);
+			ResetSkillRecovery(state);
 			room.Attack(user, attack);
 			Resolve(room, user);
 			Check(state.gold == gold + kills * 10, "respawned monster grants gold on each kill");

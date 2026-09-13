@@ -3,6 +3,7 @@
 #include "Network/NetSyncComponent.h"
 #include "Network/NetSubsystem.h"
 #include "Gameplay/AgentMovementInput.h"
+#include "Gameplay/LocalMoverComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Character.h"
@@ -75,7 +76,9 @@ void UNetSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 
 	// 전송 주기보다 짧게 눌렸다 떼는 입력을 놓치지 않도록 매 프레임 OR 로 누적한다
 	// (원래 캐릭터 Tick 이 하던 방식과 같다)
-	PendingFlag |= BuildInputFlag();
+	const ULocalMoverComponent* Mover = GetOwner() ? GetOwner()->FindComponentByClass<ULocalMoverComponent>() : nullptr;
+	if (Mover && Mover->IsMovementLocked()) PendingFlag = 0;
+	else PendingFlag |= BuildInputFlag();
 
 	const float Interval = SendRate > 0.f ? (1.f / SendRate) : (1.f / 30.f);
 

@@ -128,6 +128,110 @@ bool FAnimationAuthorityTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSkillMovementLockTest, "TurtleIsland.Gameplay.SkillMovementLock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSkillMovementLockTest::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Wrapper;
+	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
+	UWorld* World = Wrapper.GetTestWorld();
+	World->GetWorldSettings()->DefaultGameMode = ACombatTestGameMode::StaticClass();
+	if (!Wrapper.BeginPlayInTestWorld()) return false;
+	UClass* PlayerClass = LoadClass<APlayerAgent>(nullptr, TEXT("/Game/Lv3_Ingame/Paladin/BP_Paladin.BP_Paladin_C"));
+	if (!TestNotNull(TEXT("Player blueprint"), PlayerClass)) return false;
+	APlayerAgent* Player = World->SpawnActor<APlayerAgent>(PlayerClass);
+	APlayerController* PC = World->SpawnActor<APlayerController>();
+	if (!TestNotNull(TEXT("Player"), Player) || !TestNotNull(TEXT("Controller"), PC)) return false;
+	PC->SetAsLocalPlayerController();
+	PC->Possess(Player);
+	UAgentSkillComponent* Skills = Player->FindComponentByClass<UAgentSkillComponent>();
+	ULocalMoverComponent* Mover = Player->FindComponentByClass<ULocalMoverComponent>();
+	UPlayerInputComponent* Input = Player->FindComponentByClass<UPlayerInputComponent>();
+	UAnimInstance* Anim = Player->GetMesh()->GetAnimInstance();
+	if (!TestNotNull(TEXT("Skills"), Skills) || !TestNotNull(TEXT("Mover"), Mover) ||
+		!TestNotNull(TEXT("Input"), Input) || !TestNotNull(TEXT("Animation instance"), Anim)) return false;
+	UCharacterMovementComponent* Move = Player->GetCharacterMovement();
+	Move->SetMovementMode(MOVE_Flying);
+	Move->SetComponentTickEnabled(false);
+	Player->GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	Input->OnMoveAxis.Broadcast(FVector2D(0.f, 1.f));
+	for (int32 SkillId = 0; SkillId < PLAYER_SKILL_COUNT; ++SkillId)
+	{
+		UAnimMontage* Montage = Skills->SkillMontages.FindRef(SkillId);
+		if (!TestNotNull(TEXT("Configured skill montage"), Montage)) return false;
+		const float Duration = GameplayRules::Skills[SkillId].movementLockMs / 1000.f;
+		TestTrue(TEXT("Shared recovery covers the default montage"),
+			Montage->GetPlayLength() / (Skills->PlayRate * Montage->RateScale) <= Duration + 0.001f);
+		Move->Velocity = FVector(500.f, 120.f, 250.f);
+		Player->AddMovementInput(FVector::ForwardVector, 1.f, true);
+		Player->Jump();
+		Skills->PlaySkill(SkillId, 90.f);
+		TestTrue(TEXT("Server-approved cast starts playback"), Anim->Montage_IsPlaying(Montage));
+		TestTrue(TEXT("Every skill locks movement"), Mover->IsMovementLocked());
+		TestEqual(TEXT("Cast immediately stops horizontal drift"), Move->Velocity.Size2D(), 0.0);
+		TestEqual(TEXT("Cast preserves airborne velocity"), Move->Velocity.Z, 250.0);
+		TestTrue(TEXT("Cast clears buffered movement"), Player->GetPendingMovementInputVector().IsNearlyZero());
+		TestFalse(TEXT("Cast cancels buffered jump"), Player->bPressedJump);
+		Input->OnJumpPressed.Broadcast();
+		TestFalse(TEXT("New jump input is blocked during cast"), Player->bPressedJump);
+		Move->Velocity = FVector(500.f, 0.f, -100.f);
+		Mover->TickComponent(0.01f, LEVELTICK_All, nullptr);
+		TestEqual(TEXT("Held movement cannot restart drift"), Move->Velocity.Size2D(), 0.0);
+		TestEqual(TEXT("Gravity remains independent of skill lock"), Move->Velocity.Z, -100.0);
+		TestTrue(TEXT("Held movement does not add input"), Player->GetPendingMovementInputVector().IsNearlyZero());
+		// Q also exercises an interrupted montage: visual cancellation cannot shorten server recovery.
+		if (SkillId == 1) Anim->Montage_Stop(0.f, Montage);
+		Move->Velocity = FVector::ZeroVector;
+		Move->SetComponentTickEnabled(true);
+		const FVector CastPosition = Player->GetActorLocation();
+		const double Deadline = World->GetTimeSeconds() + Duration;
+		while (World->GetTimeSeconds() + 0.01 < Deadline)
+		{
+			Wrapper.TickTestWorld(0.01f);
+			TestTrue(TEXT("Movement remains locked through cast recovery"), Mover->IsMovementLocked());
+			TestTrue(TEXT("Character physics cannot move a casting player with held input"), Player->GetActorLocation().Equals(CastPosition));
+		}
+		for (int32 Frame = 0; Frame < 4; ++Frame) Wrapper.TickTestWorld(0.01f);
+		Move->SetComponentTickEnabled(false);
+		TestFalse(TEXT("Movement unlocks when cast finishes"), Mover->IsMovementLocked());
+		Mover->TickComponent(0.01f, LEVELTICK_All, nullptr);
+		TestFalse(TEXT("Held movement resumes without another key press"), Player->GetPendingMovementInputVector().IsNearlyZero());
+		Input->OnJumpPressed.Broadcast();
+		TestTrue(TEXT("Jump resumes after recovery"), Player->bPressedJump);
+		Player->StopJumping();
+		Player->ConsumeMovementInputVector();
+	}
+
+	Skills->PlaySkill(-1, 0.f);
+	Skills->PlaySkill(PLAYER_SKILL_COUNT, 0.f);
+	TestFalse(TEXT("Invalid skill cannot create a movement lock"), Mover->IsMovementLocked());
+	Skills->PlayRate = 0.5f;
+	Skills->PlaySkill(2, 0.f);
+	for (int32 Frame = 0; Frame < 140; ++Frame) Wrapper.TickTestWorld(0.01f);
+	TestTrue(TEXT("Slower montage remains locked past minimum recovery"), Mover->IsMovementLocked());
+	Skills->ResetCast();
+	TestFalse(TEXT("Explicit reset stops montage and recovery"), Mover->IsMovementLocked());
+	Skills->SkillMontages.Empty();
+	Skills->PlaySkill(1, 0.f);
+	TestTrue(TEXT("Missing visual assets still enforce server recovery"), Mover->IsMovementLocked());
+	for (int32 Frame = 0; Frame < 170; ++Frame) Wrapper.TickTestWorld(0.01f);
+	TestFalse(TEXT("Missing assets cannot leave a permanent lock"), Mover->IsMovementLocked());
+	Skills->PlaySkill(1, 0.f);
+	Player->FindComponentByClass<UHealthComponent>()->ApplyServerDeath(nullptr);
+	TestFalse(TEXT("Death clears cast state"), Skills->IsMovementLocked());
+	Skills->PlaySkill(1, 0.f);
+	TestFalse(TEXT("Dead player cannot start a cast lock"), Skills->IsMovementLocked());
+	Player->ResetForRespawn(FVector::ZeroVector, 100);
+	TestFalse(TEXT("Respawn is not held by the previous cast"), Skills->IsMovementLocked());
+	Skills->PlaySkill(1, 0.f);
+	Player->LandedDelegate.Broadcast(FHitResult());
+	Skills->ResetCast();
+	TestTrue(TEXT("Clearing skill recovery does not clear landing recovery"), Mover->IsMovementLocked());
+	Wrapper.ForwardErrorMessages(this);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLandingRecoveryTest, "TurtleIsland.Gameplay.LandingRecovery",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -181,11 +285,16 @@ bool FServerGameplayRulesTest::RunTest(const FString& Parameters)
 	State.ready = true;
 	TestTrue(TEXT("Skill accepted"), GameplayRules::UseSkill(State, 1, 100) == ActionResult::Ok);
 	TestEqual(TEXT("Mana spent once"), State.mp, 80);
+	const uint64_t CastReadyAt = 100 + GameplayRules::Skills[1].movementLockMs;
+	TestEqual(TEXT("Skill starts shared cast recovery"), State.castReadyAt, CastReadyAt);
+	TestTrue(TEXT("Different skill cannot interrupt recovery"), GameplayRules::UseSkill(State, 2, CastReadyAt - 1) == ActionResult::Cooldown);
+	TestEqual(TEXT("Rejected cast does not extend recovery"), State.castReadyAt, CastReadyAt);
 	TestTrue(TEXT("Cooldown rejects duplicate"), GameplayRules::UseSkill(State, 1, 101) == ActionResult::Cooldown);
 	TestEqual(TEXT("Rejected cast keeps mana"), State.mp, 80);
 	State.mp = 0;
 	TestTrue(TEXT("Insufficient mana"), GameplayRules::UseSkill(State, 2, 5000) == ActionResult::NotEnoughMP);
 	TestTrue(TEXT("Unknown skill"), GameplayRules::UseSkill(State, 3, 5000) == ActionResult::Invalid);
+	TestEqual(TEXT("Invalid and insufficient-MP casts leave recovery unchanged"), State.castReadyAt, CastReadyAt);
 	CS_UseItem Item{}; Item.slot = 1; Item.expectedItemId = 2; Item.inventoryRevision = State.inventoryRevision;
 	TestTrue(TEXT("Mana potion accepted"), GameplayRules::UseItem(State, Item, 5000) == ActionResult::Ok);
 	TestEqual(TEXT("Mana restored"), State.mp, 50);
@@ -306,6 +415,21 @@ bool FCombatNetworkTest::RunTest(const FString& Parameters)
 	Net->Receive(PacketBytes(Correction, PACKET_ID::SC_MOVE_NOTIFY));
 	TestTrue(TEXT("Own correction retains airborne state"), Local->GetCharacterMovement()->IsFalling());
 	TestEqual(TEXT("Own correction restores jump velocity"), Local->GetVelocity().Z, 300.0);
+	UAgentSkillComponent* LocalSkills = Local->FindComponentByClass<UAgentSkillComponent>();
+	SC_ActionResult RejectedCast{};
+	RejectedCast.requestId = static_cast<uint16>(PACKET_ID::CS_ATTACK);
+	RejectedCast.actionId = 1; RejectedCast.result = ActionResult::NotEnoughMP;
+	Net->Receive(PacketBytes(RejectedCast, PACKET_ID::SC_ACTION_RESULT));
+	TestFalse(TEXT("Server rejection cannot lock local movement"), LocalSkills->IsMovementLocked());
+	SC_AttackNotify Cast{};
+	Cast.casterId = 42; Cast.casterKind = ENTITY_PLAYER; Cast.skillId = 1; Cast.yaw = 90.f;
+	Net->Receive(PacketBytes(Cast, PACKET_ID::SC_ATTACK_NOTIFY));
+	TestTrue(TEXT("Server approval locks the local caster without montage assets"), LocalSkills->IsMovementLocked());
+	Net->Receive(PacketBytes(Correction, PACKET_ID::SC_MOVE_NOTIFY));
+	TestTrue(TEXT("Position correction cannot clear skill recovery"), LocalSkills->IsMovementLocked());
+	Cast.casterId = 0; Cast.skillId = 2;
+	Net->Receive(PacketBytes(Cast, PACKET_ID::SC_ATTACK_NOTIFY));
+	TestTrue(TEXT("Remote E follows the same approved cast path"), Remote->FindComponentByClass<UAgentSkillComponent>()->IsMovementLocked());
 	State.playerId = 99; State.gold = 999;
 	Net->Receive(PacketBytes(State, PACKET_ID::SC_PLAYER_STATE));
 	TestEqual(TEXT("Other player's private state rejected"), Net->GetPlayerState()->gold, 130);

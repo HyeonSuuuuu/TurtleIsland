@@ -28,7 +28,8 @@ public:
 	ULocalMoverComponent();
 	UFUNCTION(BlueprintPure, Category="Movement")
 	bool IsLandingLocked() const;
-
+	UFUNCTION(BlueprintPure, Category="Movement")
+	bool IsMovementLocked() const;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 private:

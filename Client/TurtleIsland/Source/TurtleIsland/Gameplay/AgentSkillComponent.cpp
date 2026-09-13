@@ -11,6 +11,7 @@
 #include "Animation/AnimMontage.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "GameplayRules.h"
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
@@ -44,7 +45,7 @@ void UAgentSkillComponent::RequestSkill(int32 SkillId)
 	UNetSubsystem* Net = GI ? GI->GetSubsystem<UNetSubsystem>() : nullptr;
 	const UHealthComponent* Health = Owner ? Owner->FindComponentByClass<UHealthComponent>() : nullptr;
 	const APawn* Pawn = Cast<APawn>(Owner);
-	if (!Owner || !Net || (Health && Health->IsDead()) || !Pawn || !Pawn->IsLocallyControlled() ||
+	if (!Owner || !Net || IsMovementLocked() || (Health && Health->IsDead()) || !Pawn || !Pawn->IsLocallyControlled() ||
 		(Pawn->GetController() && Pawn->GetController()->IsMoveInputIgnored()))
 	{
 		return;
@@ -108,11 +109,29 @@ bool UAgentSkillComponent::IsPlaying() const
 	return Anim && Anim->IsAnyMontagePlaying();
 }
 
+bool UAgentSkillComponent::IsMovementLocked() const
+{
+	if (GetWorld() && GetWorld()->GetTimeSeconds() < MovementReadyAt) return true;
+	const UAnimInstance* Anim = GetAnimInstance();
+	return Anim && ActiveSkillMontage && Anim->Montage_IsActive(ActiveSkillMontage);
+}
+
+void UAgentSkillComponent::ResetCast()
+{
+	MovementReadyAt = 0.;
+	if (UAnimInstance* Anim = GetAnimInstance())
+	{
+		if (ActiveSkillMontage) Anim->Montage_Stop(0.f, ActiveSkillMontage);
+	}
+	ActiveSkillMontage = nullptr;
+}
+
 void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 {
 	AActor* Owner = GetOwner();
 	const UHealthComponent* Health = Owner ? Owner->FindComponentByClass<UHealthComponent>() : nullptr;
-	if (!Owner || (Health && Health->IsDead()))
+	if (!Owner || !GetWorld() || SkillId < 0 || SkillId >= PLAYER_SKILL_COUNT || !FMath::IsFinite(Yaw) ||
+		(Health && Health->IsDead()))
 	{
 		return;
 	}
@@ -120,6 +139,8 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 	// 서버가 기록한 시전 방향으로 몸을 돌린다. 로컬 플레이어도 예외가 아니다 —
 	// 눌렀을 때가 아니라 서버가 승인한 그 방향이 정답이다.
 	Owner->SetActorRotation(FRotator(0.f, Yaw, 0.f));
+	float LockDuration = GameplayRules::Skills[SkillId].movementLockMs / 1000.f;
+	ActiveSkillMontage = nullptr;
 
 	if (UAnimMontage** Found = SkillMontages.Find(SkillId))
 	{
@@ -128,8 +149,29 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 			if (UAnimInstance* Anim = GetAnimInstance())
 			{
 				Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
-				Anim->Montage_Play(Montage, PlayRate);
+				const float Rate = FMath::IsFinite(PlayRate) && PlayRate > 0.f ? PlayRate : 1.f;
+				if (Anim->Montage_Play(Montage, Rate) > 0.f)
+				{
+					ActiveSkillMontage = Montage;
+					const float EffectiveRate = Rate * Montage->RateScale;
+					if (EffectiveRate > 0.f && FMath::IsFinite(EffectiveRate))
+						LockDuration = FMath::Max(LockDuration, Montage->GetPlayLength() / EffectiveRate);
+				}
 			}
+		}
+	}
+
+	// Approval starts recovery even if visual assets are missing or playback is interrupted.
+	MovementReadyAt = GetWorld()->GetTimeSeconds() + LockDuration;
+	if (ACharacter* Character = Cast<ACharacter>(Owner))
+	{
+		Character->StopJumping();
+		Character->ConsumeMovementInputVector();
+		if (UCharacterMovementComponent* Move = Character->GetCharacterMovement())
+		{
+			const float VerticalVelocity = Move->Velocity.Z;
+			Move->StopMovementImmediately();
+			Move->Velocity.Z = VerticalVelocity;
 		}
 	}
 

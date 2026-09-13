@@ -32,7 +32,7 @@ void ULocalMoverComponent::BeginPlay()
 
 void ULocalMoverComponent::HandleJumpPressed()
 {
-	if (IsLandingLocked()) return;
+	if (IsMovementLocked()) return;
 	if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
 	{
 		OwnerChar->Jump();
@@ -42,6 +42,12 @@ void ULocalMoverComponent::HandleJumpPressed()
 bool ULocalMoverComponent::IsLandingLocked() const
 {
 	return GetWorld() && GetWorld()->GetTimeSeconds() < LandingReadyAt;
+}
+
+bool ULocalMoverComponent::IsMovementLocked() const
+{
+	const UAgentSkillComponent* Skills = GetOwner() ? GetOwner()->FindComponentByClass<UAgentSkillComponent>() : nullptr;
+	return IsLandingLocked() || (Skills && Skills->IsMovementLocked());
 }
 
 void ULocalMoverComponent::HandleLanded(const FHitResult& Hit)
@@ -77,7 +83,7 @@ void ULocalMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	{
 		return;
 	}
-	if (IsLandingLocked())
+	if (IsMovementLocked())
 	{
 		OwnerChar->StopJumping();
 		OwnerChar->ConsumeMovementInputVector();

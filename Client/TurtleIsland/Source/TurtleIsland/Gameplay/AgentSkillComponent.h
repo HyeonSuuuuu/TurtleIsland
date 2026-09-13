@@ -67,7 +67,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Skill")
 	bool IsPlaying() const;
+
+	UFUNCTION(BlueprintPure, Category="Skill")
+	bool IsMovementLocked() const;
+	void ResetCast();
 private:
+	double MovementReadyAt = 0.;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ActiveSkillMontage;
 	bool bWasAirborne = false;
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> AirMontage;
 };
