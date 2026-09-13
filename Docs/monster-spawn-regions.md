@@ -44,6 +44,27 @@ without changing meshes, capsule dimensions, scale or other animation slots.
 Each attack plays once; only the server's single impact applies damage. Existing
 attack damage, range, wind-up/cooldown, movement and death/respawn behavior remain unchanged.
 
+### Movement animation tuning
+
+Open a server monster blueprint's Class Defaults > Monster > Animation > Movement.
+`Move Reference Speed` is the world speed in cm/s that matches its movement clip
+at 1x, taking the current mesh scale into account. The default `100` is a tuning
+starting point, not an automatically measured stride speed. A value of `100`
+gives 0.5x playback at 50 cm/s. Increasing the reference slows the animation;
+decreasing it speeds the animation up without changing server movement.
+
+`Move Animation Smoothing` defaults to `8` inverse seconds; lower values respond
+more gently and higher values react faster. The frame-rate-independent filter
+uses actual horizontal proxy velocity, not height changes or network teleports.
+`Move Start Speed` (`7 cm/s`) and `Move Stop Speed` (`3 cm/s`) form a hysteresis
+band to avoid toggling idle/move around one threshold. Stop must be below start.
+Movement clips are not restarted when their rate changes. Idle, attack, hit and
+death clips keep normal playback rate; this does not synchronize attack impact
+timing or change Lua speed, collision, capsule dimensions or animation assets.
+
+Automation coverage: `TurtleIsland.Network.Npc.MovementAnimation`, including all
+three blueprints, 150ms server updates, stop/start, teleports and action playback.
+
 The existing settings are center `(-20, 1600)`, radius `150 cm`, types `0 x2`,
 `1 x2`, `2 x1`, and `10 seconds` respawn delay. Editing a region's Z does not
 change spawn height: the server uses XY and the client resolves ground height.
