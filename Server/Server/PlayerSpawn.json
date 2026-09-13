@@ -1,0 +1,9 @@
+{
+  "x": -16670.0,
+  "y": -6200.0,
+  "z": 28689.0,
+  "yaw": 31.566703966140786,
+  "ground_z": 2.2158509113250053,
+  "nav_height_range": 200.0,
+  "source": "/Game/Lv3_Ingame/SubLevels/Ingame_Env.Ingame_Env:PersistentLevel.PlayerStart_0"
+}

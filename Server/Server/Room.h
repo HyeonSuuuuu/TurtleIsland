@@ -4,6 +4,7 @@
 #include "NPC.h"
 #include "../../Common/Protocol.h"
 #include "../../Common/GameplayRules.h"
+#include "NpcConversation.h"
 
 class User;
 
@@ -41,6 +42,9 @@ public:
 	void MovePlayer(User& user, const CS_Move& request);
 	void Attack(User& user, const CS_Attack& request);
 	void UseItem(User& user, const CS_UseItem& request);
+	void BeginNpcChat(User& user, uint32_t npcId, const std::string& message);
+	bool HandleNpcMcp(const NpcMcp::Json& request, NpcMcp::Json& response);
+	bool CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response);
 
 	// NPC (방 인스턴스 소유)
 	void TickNpcs();    // 틱 스레드가 호출: AI/이동 갱신 + 방 broadcast
@@ -73,12 +77,30 @@ public:
 
 private:
 	friend struct RoomSpawnTests;
+	friend struct NpcMcpTests;
 	void DespawnNpcLocked(NPC& npc, bool died = false);
 	void BroadcastNpcSpawnLocked(const NPC& npc);
 	void SpawnAreaNpcsLocked(uint64_t now, bool broadcast);
+	void ResolvePendingAttackLocked(User& user, uint64_t now);
+	void ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t now);
+	void ResolveNpcAttackLocked(NPC& npc, uint64_t now);
+	bool ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t now);
 	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
 	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
 	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;
+	std::unordered_map<uint32_t, NpcConversation> m_npcConversations;
+	struct PendingAttack
+	{
+		CS_Attack request{};
+		uint64_t impactAt = 0;
+	};
+	std::unordered_map<uint32_t, PendingAttack> m_pendingAttacks;
+	struct MovementBudget
+	{
+		uint64_t updatedAt = 0;
+		double distance = 0.;
+	};
+	std::unordered_map<uint32_t, MovementBudget> m_movementBudgets;
 	void SetHost(uint32_t slotIndex, std::string_view userName);
 
 	uint16_t m_roomId   = 0;

@@ -14,9 +14,18 @@
 				"UMG",
 				"DeveloperSettings"
 			]
+		},
+		{
+			"Name": "TurtleIslandCollisionEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
+		{
+			"Name": "Water",
+			"Enabled": true
+		},
 		{
 			"Name": "StateTree",
 			"Enabled": true

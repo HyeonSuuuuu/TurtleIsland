@@ -22,6 +22,7 @@ public:
 	bool IsConnectionAttemptComplete() const { return bConnectionAttemptComplete.load(); }
 
 private:
+	friend class FLoginReconnectTest;
 	void DrainSendQueue();
 	void PumpSocketRecv();
 	void ProcessRecvBuffer();

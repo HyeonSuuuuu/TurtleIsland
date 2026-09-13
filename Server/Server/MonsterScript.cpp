@@ -24,6 +24,18 @@ namespace
 		return valid && std::isfinite(value);
 	}
 
+	double ReadCombatValue(lua_State* L, const char* field, double fallback, double maximum)
+	{
+		lua_getfield(L, -1, field);
+		const bool missing = lua_isnil(L, -1);
+		lua_pop(L, 1);
+		if (missing) return fallback;
+		double value;
+		if (ReadNumber(L, field, value) && value >= 1 && value <= maximum && std::floor(value) == value) return value;
+		Log::Warning("[LUA] invalid monster {}; using {}", field, fallback);
+		return fallback;
+	}
+
 	void LoadSpawnAreas(lua_State* L)
 	{
 		lua_getglobal(L, "SpawnAreas");
@@ -91,6 +103,11 @@ void LoadMonsterScript(const char* path)
 				lua_getfield(L, -1, "speed"); if (lua_isnumber(L, -1)) def.speed = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
 				if (def.hp <= 0) def.hp = 50;
 				if (!std::isfinite(def.speed) || def.speed < 0.f) def.speed = 6.f;
+				def.attackDamage = static_cast<int>(ReadCombatValue(L, "attackDamage", 10, 100000));
+				def.attackRange = static_cast<float>(ReadCombatValue(L, "attackRange", 90, 2000));
+				def.attackWindupMs = static_cast<uint32_t>(ReadCombatValue(L, "attackWindupMs", 350, 60000));
+				def.attackCooldownMs = static_cast<uint32_t>(ReadCombatValue(L, "attackCooldownMs", 1000, 60000));
+				def.attackCooldownMs = std::max(def.attackCooldownMs, def.attackWindupMs + 1);
 				g_monsterDefs.push_back(def);
 			}
 			lua_pop(L, 1);

@@ -4,6 +4,7 @@
 #include "Network/ClientTransport.h"
 #include "Network/NetSettings.h"
 #include "Network/NpcSubsystem.h"
+#include "Character/ServerMonster.h"
 
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/HealthComponent.h"
@@ -227,17 +228,14 @@ void UNetSubsystem::RequestLogin(const FString& UserID, const FString& Password)
 
 	StoredUserID = PendingLoginID;
 	PlayMode = EPlayMode::Multi;
-	bLoginPending = true;
-	PendingLoginElapsed = 0.f;
-
-	if (IsConnected())
-	{
-		SendPendingLogin();
-	}
-	else
+	if (!IsConnected())
 	{
 		Reconnect(StoredServerIP);
 	}
+	// Reconnect calls ShutdownNetwork, which clears any previous pending login.
+	bLoginPending = true;
+	PendingLoginElapsed = 0.f;
+	SendPendingLogin();
 }
 
 void UNetSubsystem::PollPendingLogin(float DeltaTime)
@@ -425,9 +423,25 @@ void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
 	}
 
 	const SC_MoveNotify* Pkt = reinterpret_cast<const SC_MoveNotify*>(RecvData.GetData());
-	if (Pkt->userIndex == myId || !GameplayRules::ValidPose(Pkt->x, Pkt->y, Pkt->z, Pkt->yaw, Pkt->velocityZ) || Pkt->airborne > 1 ||
+	if (!GameplayRules::ValidPose(Pkt->x, Pkt->y, Pkt->z, Pkt->yaw, Pkt->velocityZ) || Pkt->airborne > 1 ||
 		Pkt->maxHP <= 0 || Pkt->hp < 0 || Pkt->hp > Pkt->maxHP) return;
 	const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
+	if (Pkt->userIndex == myId)
+	{
+		// Own movement packets are authoritative spawn/rejection corrections, not echoes.
+		if (ATurtleAgent* Self = FindAgentById(myId))
+		{
+			Self->SetActorLocationAndRotation(FVector(Pkt->x, Pkt->y, Pkt->z), NewRotation, false, nullptr, ETeleportType::TeleportPhysics);
+			if (UCharacterMovementComponent* Movement = Self->GetCharacterMovement())
+			{
+				Movement->StopMovementImmediately();
+				Movement->SetMovementMode(Pkt->airborne ? MOVE_Falling : MOVE_Walking);
+				Movement->Velocity.Z = Pkt->velocityZ;
+			}
+			ApplyHealthState(Self, Pkt->hp, Pkt->maxHP);
+		}
+		return;
+	}
 
 	if (AServerAgent** Found = players.Find(Pkt->userIndex))
 	{
@@ -465,6 +479,11 @@ void UNetSubsystem::HandleAttackNotify(const TArray<uint8>& RecvData)
 	if (!FMath::IsFinite(Pkt->yaw)) return;
 	if (ATurtleAgent* Caster = FindEntity(Pkt->casterKind, Pkt->casterId))
 	{
+		if (AServerMonster* Monster = Cast<AServerMonster>(Caster))
+		{
+			Monster->PlayAttack(Pkt->yaw);
+			return;
+		}
 		if (UAgentSkillComponent* Skill = Caster->FindComponentByClass<UAgentSkillComponent>())
 		{
 			Skill->PlaySkill(static_cast<int32>(Pkt->skillId), Pkt->yaw);

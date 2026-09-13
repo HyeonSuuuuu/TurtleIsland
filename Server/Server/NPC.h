@@ -20,6 +20,8 @@ public:
 		m_targetSlot = INVALID_SESSION_INDEX;
 		m_speed      = 0.f;
 		m_attackReadyAt = 0;
+		m_attackImpactAt = 0;
+		m_attackTarget = INVALID_SESSION_INDEX;
 	}
 
 	void Spawn(uint32_t npcId, uint16_t type, float spawnX, float spawnY, int32_t hp, float speed)
@@ -35,6 +37,8 @@ public:
 		m_targetSlot = INVALID_SESSION_INDEX;
 		m_active  = true;
 		m_attackReadyAt = 0;
+		m_attackImpactAt = 0;
+		m_attackTarget = INVALID_SESSION_INDEX;
 	}
 
 	bool IsActive() const { return m_active; }
@@ -49,4 +53,6 @@ public:
 	float    m_anchorX = 0.f, m_anchorY = 0.f;
 	float    m_speed   = 0.f;   // units/tick (MonsterDef)
 	uint64_t m_attackReadyAt = 0;
+	uint64_t m_attackImpactAt = 0;
+	uint32_t m_attackTarget = INVALID_SESSION_INDEX;
 };

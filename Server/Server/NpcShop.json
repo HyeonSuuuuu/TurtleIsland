@@ -1,0 +1,6 @@
+{
+  "products": [
+    { "item_id": 1, "base_price": 100, "minimum_price": 70, "maximum_price": 120 },
+    { "item_id": 2, "base_price": 100, "minimum_price": 70, "maximum_price": 120 }
+  ]
+}

@@ -19,6 +19,7 @@
 #include "../../../Common/Type.h"
 #include "../../../Common/Log.h"
 #include "../../../Common/Protocol.h"
+#include "NpcAgent.h"
 
 #include "llamaCpp/llama-cpp.h"
 #include "llamaCpp/ggml-backend.h"
@@ -165,7 +166,8 @@ std::vector<llama_token> TokenizeText(
 std::vector<std::string> GenerateBatchResponses(
 	llama_model* model,
 	llama_context* ctx,
-	const std::vector<std::string>& formattedPrompts);
+	const std::vector<std::string>& formattedPrompts,
+	const std::vector<bool>& agentSteps = {});
 
 std::string LoadTextFileOrDefault(
 	const std::filesystem::path& path,
@@ -515,6 +517,7 @@ struct AiRequest
 	std::string userText;
 	std::vector<ChatTurn>* history = nullptr;
 	std::shared_ptr<std::promise<std::string>> result;
+	bool agentStep = false;
 };
 
 class AiBatchWorkerQueue
@@ -567,12 +570,14 @@ public:
 	std::future<std::string> Submit(
 		int clientId,
 		const std::string& userText,
-		std::vector<ChatTurn>& history)
+		std::vector<ChatTurn>& history,
+		bool agentStep = false)
 	{
 		auto request = std::make_shared<AiRequest>();
 		request->clientId = clientId;
 		request->userText = userText;
 		request->history = &history;
+		request->agentStep = agentStep;
 		request->result = std::make_shared<std::promise<std::string>>();
 
 		std::future<std::string> future = request->result->get_future();
@@ -685,7 +690,7 @@ private:
 				std::string formattedPrompt =
 					FormatPromptForModel(
 						model_,
-						*systemPrompt_,
+						request->agentStep ? std::string(NpcAgent::SystemPrompt) : *systemPrompt_,
 						*request->history,
 						request->userText
 					);
@@ -731,7 +736,9 @@ private:
 
 		try
 		{
-			responses = GenerateBatchResponses(model_, ctx_, formattedPrompts);
+			std::vector<bool> agentSteps;
+			for (const auto& request:validRequests) agentSteps.push_back(request->agentStep);
+			responses = GenerateBatchResponses(model_, ctx_, formattedPrompts,agentSteps);
 		}
 		catch (const std::exception& e)
 		{
@@ -780,9 +787,9 @@ private:
 			if (!validResponse)
 				aiText = "(No response)";
 
-			request->history->push_back({ "user", request->userText });
+			if (!request->agentStep) request->history->push_back({ "user", request->userText });
 
-			if (validResponse)
+			if (validResponse && !request->agentStep)
 			{
 				request->history->push_back({ "assistant", aiText });
 			}
@@ -805,6 +812,65 @@ private:
 
 // ==================== client thread ====================
 
+NpcMcp::Json ExchangeMcp(SOCKET socket, std::string& stream, const NpcMcp::Json& request)
+{
+	using namespace NpcMcp;
+	const auto body=request.dump();
+	std::vector<char> data(sizeof(PacketHeader)+body.size());
+	auto* header=reinterpret_cast<PacketHeader*>(data.data());
+	header->size=static_cast<uint16_t>(data.size()); header->id=static_cast<uint16_t>(PACKET_ID::AS_MCP);
+	std::memcpy(data.data()+sizeof(PacketHeader),body.data(),body.size());
+	if (!SendAllBytes(socket,data.data(),static_cast<int>(data.size()))) throw std::runtime_error("MCP send failed");
+	if (!request.contains("id")) return nullptr;
+	std::string deferred;
+	const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+	try
+	{
+		while (std::chrono::steady_clock::now()<deadline)
+		{
+			while (stream.size()>=sizeof(PacketHeader))
+			{
+				PacketHeader frame{}; std::memcpy(&frame,stream.data(),sizeof(frame));
+				if (frame.size<sizeof(PacketHeader) || frame.size>kMaxWirePacketBytes) throw std::runtime_error("Invalid MCP frame");
+				if (stream.size()<frame.size) break;
+				const auto packet=stream.substr(0,frame.size); stream.erase(0,frame.size);
+				if (frame.id==static_cast<uint16_t>(PACKET_ID::SA_MCP))
+				{
+					const auto response=Json::parse(packet.substr(sizeof(PacketHeader)));
+					if (response.value("id",Json{})==request["id"])
+					{ stream.insert(0,deferred); return response; }
+					continue;
+				}
+				if (deferred.size()+packet.size()>16*kMaxWirePacketBytes)
+				{ stream.insert(0,packet); throw std::runtime_error("NPC queue full"); }
+				deferred+=packet;
+			}
+			fd_set reads; FD_ZERO(&reads); FD_SET(socket,&reads);
+			timeval timeout{0,100000};
+			const auto ready=select(0,&reads,nullptr,nullptr,&timeout);
+			if (ready<0) throw std::runtime_error("MCP socket failed");
+			if (ready==0) continue;
+			char buffer[kRecvBufferSize]; const auto received=recv(socket,buffer,sizeof(buffer),0);
+			if (received<=0) throw std::runtime_error("MCP disconnected");
+			stream.append(buffer,received);
+		}
+		throw std::runtime_error("MCP response timeout");
+	}
+	catch (...) { stream.insert(0,deferred); throw; }
+}
+
+bool SendAgentResponse(SOCKET socket, uint32_t playerId, const std::string& context, const std::string& say, bool completed)
+{
+	auto body=NpcMcp::Json{{"context",context},{"say",say},{"completed",completed}}.dump();
+	if (body.size()+sizeof(AS_AI)>kMaxWirePacketBytes)
+		body=NpcMcp::Json{{"context",context},{"say","답변이 너무 길어 다시 정리해야겠네."},{"completed",false}}.dump();
+	std::vector<char> data(sizeof(AS_AI)+body.size());
+	auto* header=reinterpret_cast<AS_AI*>(data.data());
+	header->size=static_cast<uint16_t>(data.size()); header->id=static_cast<uint16_t>(PACKET_ID::AS_AI_AGENT); header->userIndex=playerId;
+	std::memcpy(data.data()+sizeof(AS_AI),body.data(),body.size());
+	return SendAllBytes(socket,data.data(),static_cast<int>(data.size()));
+}
+
 void HandleClient(
 	SOCKET clientSocket,
 	int clientId,
@@ -812,10 +878,13 @@ void HandleClient(
 	std::atomic<int>& activeClientCount)
 {
 	Log::Info("Client connected. clientId={}", clientId);
+	const DWORD sendTimeout=5000;
+	setsockopt(clientSocket,SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&sendTimeout),sizeof(sendTimeout));
 
 	// 게임서버는 모든 플레이어의 대화를 이 소켓 하나로 보낸다.
 	// history 를 연결 단위로 두면 손님끼리 대화가 섞이므로 userIndex 로 나눈다.
 	ConversationStore conversations;
+	std::map<std::string,NpcMcp::Json> agentHistory;
 
 	// TCP 는 메시지 경계가 없다. 받은 바이트를 여기 쌓아 두고
 	// PacketHeader.size 만큼씩 떼어 한 패킷으로 처리한다.
@@ -826,9 +895,13 @@ void HandleClient(
 
 	while (keepRunning)
 	{
-		int recvLen = recv(clientSocket, recvBuf, sizeof(recvBuf), 0);
+		// Tool calls may already have received subsequent chat frames on this shared link.
+		PacketHeader buffered{};
+		if (recvStream.size()>=sizeof(buffered)) std::memcpy(&buffered,recvStream.data(),sizeof(buffered));
+		int recvLen = (buffered.size>=sizeof(buffered) && recvStream.size()>=buffered.size)
+			? 0 : recv(clientSocket, recvBuf, sizeof(recvBuf), 0);
 
-		if (recvLen <= 0)
+		if (recvLen < 0 || (recvLen==0 && !(buffered.size>=sizeof(buffered) && recvStream.size()>=buffered.size)))
 		{
 			Log::Warning("Client disconnected. clientId={}", clientId);
 			break;
@@ -863,6 +936,35 @@ void HandleClient(
 				header.size - sizeof(SA_AI));
 
 			recvStream.erase(0, header.size);
+
+			if (header.id == static_cast<uint16_t>(PACKET_ID::SA_AI_AGENT))
+			{
+				std::string context, say;
+				bool completed=false;
+				try
+				{
+					const auto envelope=NpcMcp::Json::parse(userText);
+					context=NpcMcp::Text(envelope,"context",32);
+					const auto conversation=NpcMcp::Text(envelope,"conversation",32);
+					const auto speech=NpcMcp::Text(envelope,"say",600);
+					if (context.size()!=32 || conversation.size()!=32 || speech.empty()) throw std::runtime_error("Invalid NPC envelope");
+					if (!agentHistory.contains(conversation) && agentHistory.size()>=128) agentHistory.erase(agentHistory.begin());
+					auto& history=agentHistory[conversation];
+					if (!history.is_array() || speech=="/reset") history=NpcMcp::Json::array();
+					NpcAgent::Client mcp(context,[&](const auto& rpc){return ExchangeMcp(clientSocket,recvStream,rpc);});
+					say=NpcAgent::Run(mcp,speech,history,[&](const std::string& prompt)
+					{
+						std::vector<ChatTurn> scratch;
+						return aiQueue.Submit(clientId,prompt,scratch,true).get();
+					});
+					history.push_back({{"customer",speech},{"npc",say}});
+					while (history.size()>4 || history.dump().size()>4000) history.erase(history.begin());
+					completed=true;
+				}
+				catch (const std::exception&) { say="지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?"; }
+				if (!SendAgentResponse(clientSocket,request.userIndex,context,say,completed)) keepRunning=false;
+				continue;
+			}
 
 			if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI))
 			{
@@ -939,7 +1041,76 @@ void HandleClient(
 
 // ==================== main ====================
 
-int main()
+std::string ResolveModelPath()
+{
+	namespace fs = std::filesystem;
+	constexpr auto filename = "gemma-4-E4B-it-Q4_K_M.gguf";
+	std::vector<fs::path> candidates;
+	auto add = [&](const fs::path& path)
+	{
+		const auto absolute = fs::absolute(path).lexically_normal();
+		if (std::find(candidates.begin(), candidates.end(), absolute) == candidates.end())
+			candidates.push_back(absolute);
+	};
+	size_t envSize = 0;
+	if (_wgetenv_s(&envSize, nullptr, 0, L"TI_AI_MODEL") != 0)
+		throw std::runtime_error("Cannot read TI_AI_MODEL");
+	if (envSize > 1)
+	{
+		std::vector<wchar_t> value(envSize);
+		if (_wgetenv_s(&envSize, value.data(), value.size(), L"TI_AI_MODEL") != 0)
+			throw std::runtime_error("Cannot read TI_AI_MODEL");
+		// An explicit override must not silently load a different model.
+		add(fs::path(value.data()));
+	}
+	else
+	{
+		std::vector<wchar_t> module(32768);
+		const auto length = GetModuleFileNameW(nullptr, module.data(), static_cast<DWORD>(module.size()));
+		if (!length || length >= module.size()) throw std::runtime_error("Cannot resolve executable path");
+		const auto exeDir = fs::path(std::wstring(module.data(), length)).parent_path();
+		add(exeDir / "models" / filename);
+		add(fs::current_path() / "models" / filename);
+		// Source builds may place executables in a different output directory than the model.
+		for (const auto& root : {exeDir, fs::current_path()})
+		{
+			for (auto dir = root; !dir.empty();)
+			{
+				for (const auto& project : {dir, dir / "Server", dir / "AI/Server/Server"})
+				{
+					std::error_code error;
+					if (!fs::is_regular_file(project / "Server.vcxproj", error)) continue;
+					if (!fs::is_regular_file(project / "main.cpp", error)) continue;
+					add(project / "models" / filename);
+					add(project / "x64/Release/models" / filename);
+					add(project / "x64/Debug/models" / filename);
+					add(project.parent_path() / "models" / filename);
+					add(project.parent_path() / "x64/Release/models" / filename);
+					add(project.parent_path() / "x64/Debug/models" / filename);
+				}
+				const auto parent = dir.parent_path();
+				if (parent == dir) break;
+				dir = parent;
+			}
+		}
+	}
+	for (const auto& candidate : candidates)
+	{
+		std::error_code error;
+		if (!fs::is_regular_file(candidate, error)) continue;
+		const auto utf8 = candidate.u8string();
+		return std::string(utf8.begin(), utf8.end());
+	}
+	Log::Error("GGUF not found. Set TI_AI_MODEL to the full path of an existing .gguf file.");
+	for (const auto& candidate : candidates)
+	{
+		const auto utf8 = candidate.u8string();
+		Log::Error("Checked model path: {}", std::string(utf8.begin(), utf8.end()));
+	}
+	return {};
+}
+
+int main(int argc, char** argv)
 {
 	// 콘솔 입출력을 UTF-8로 고정한다.
 	// - SetConsoleOutputCP : 콘솔에 찍는 한글(UTF-8)이 깨지지 않게.
@@ -947,6 +1118,13 @@ int main()
 	// (모델 출력/입력이 전부 UTF-8이므로 둘 다 맞춰 준다.)
 	SetConsoleOutputCP(CP_UTF8);
 	SetConsoleCP(CP_UTF8);
+
+	std::string model_path;
+	try { model_path = ResolveModelPath(); }
+	catch (const std::exception& error) { Log::Error("Model path error: {}", error.what()); return -1; }
+	if (model_path.empty()) return -1;
+	Log::Info("GGUF model: {}", model_path);
+	if (argc == 2 && std::string(argv[1]) == "--check-model-path") return 0;
 
 	llama_backend_init();
 	ggml_backend_load_all();
@@ -962,27 +1140,14 @@ int main()
 	llama_model_params model_params = llama_model_default_params();
 	model_params.n_gpu_layers = 99;
 
-	// 모델 경로 — E4B. (E2B로 줄여도 이 코드 그대로 동작: 템플릿 호환)
-	std::string model_path = "models/gemma-4-E4B-it-Q4_K_M.gguf";
-
 	Log::Info("GGUF를 로딩중...");
 	Log::Info("Loading .gguf file...");
-
-	std::cout << "[Debug] model_path : " << model_path << std::endl;
-	std::cout << "[Debug] cwd        : " << std::filesystem::current_path().string() << std::endl;
-	std::cout << "[Debug] full path  : "
-		<< std::filesystem::absolute(std::filesystem::path(model_path)).string()
-		<< std::endl;
-	std::cout << "[Debug] exists     : "
-		<< (std::filesystem::exists(std::filesystem::path(model_path)) ? "YES" : "NO")
-		<< std::endl;
 
 	llama_model_ptr model(llama_model_load_from_file(model_path.c_str(), model_params));
 
 	if (!model)
 	{
-		Log::Error("GGUF 모델을 찾을 수 없습니다!");
-		Log::Error("Cannot find .gguf model!");
+		Log::Error("GGUF file exists, but loading failed: {}. Check the llama.cpp errors above (format, access or memory).", model_path);
 		return -1;
 	}
 
@@ -1215,8 +1380,17 @@ int main()
 
 	sockaddr_in serverAddr = {};
 	serverAddr.sin_family = AF_INET;
-	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	// The trusted game/AI link carries scoped tool capabilities, never expose it publicly.
+	serverAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	serverAddr.sin_port = htons(NetConfig::AI_SERVER_PORT);
+	char portText[16]{}; size_t portLength=0;
+	getenv_s(&portLength,portText,sizeof(portText),"TI_AI_PORT");
+	if (portLength>1)
+	{
+		char* end=nullptr; const long port=std::strtol(portText,&end,10);
+		if (!end || *end!='\0' || port<1024 || port>65535) { Log::Error("Invalid TI_AI_PORT"); closesocket(listenSocket); WSACleanup(); return -1; }
+		serverAddr.sin_port=htons(static_cast<u_short>(port));
+	}
 
 	if (bind(listenSocket, (SOCKADDR*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR)
 	{
@@ -1242,7 +1416,7 @@ int main()
 	std::atomic<int> activeClientCount = 0;
 	std::atomic<int> nextClientId = 1;
 
-	Log::Info("AI TCP server listening... (Port: {})", NetConfig::AI_SERVER_PORT);
+	Log::Info("AI TCP server listening on loopback... (Port: {})", ntohs(serverAddr.sin_port));
 	Log::Info("최대 {}개의 클라이언트를 동시에 받습니다.", kMaxClientCount);
 
 	while (true)
@@ -1500,7 +1674,8 @@ struct BatchGenerationState
 std::vector<std::string> GenerateBatchResponses(
 	llama_model* model,
 	llama_context* ctx,
-	const std::vector<std::string>& formattedPrompts)
+	const std::vector<std::string>& formattedPrompts,
+	const std::vector<bool>& agentSteps)
 {
 	std::vector<std::string> outputs(formattedPrompts.size());
 
@@ -1557,6 +1732,12 @@ std::vector<std::string> GenerateBatchResponses(
 			continue;
 		}
 
+		if (i<static_cast<int>(agentSteps.size()) && agentSteps[i])
+		{
+			auto* grammar=llama_sampler_init_grammar(vocab,NpcAgent::Grammar,"root");
+			if (!grammar) { states[i].failed=true; states[i].active=false; continue; }
+			llama_sampler_chain_add(states[i].sampler,grammar);
+		}
 		llama_sampler_chain_add(states[i].sampler, llama_sampler_init_top_k(64));
 		llama_sampler_chain_add(states[i].sampler, llama_sampler_init_top_p(0.95f, 1));
 		llama_sampler_chain_add(states[i].sampler, llama_sampler_init_temp(1.00f));

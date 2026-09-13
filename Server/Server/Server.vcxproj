@@ -89,9 +89,11 @@
     <ClCompile Include="IOCPNetwork.cpp" />
     <ClCompile Include="User.cpp" />
     <ClCompile Include="Room.cpp" />
+    <ClCompile Include="RoomNpcChat.cpp" />
     <ClCompile Include="NpcTick.cpp" />
     <ClCompile Include="MonsterScript.cpp" />
     <ClCompile Include="ObstacleMap.cpp" />
+    <ClCompile Include="ShapeCollisionMap.cpp" />
     <ClCompile Include="Database.cpp" />
     <ClCompile Include="GameServer.cpp" />
     <ClCompile Include="GameMain.cpp" />
@@ -110,10 +112,13 @@
     <ClInclude Include="IOCPNetwork.h" />
     <ClInclude Include="User.h" />
     <ClInclude Include="Room.h" />
+    <ClInclude Include="NpcConversation.h" />
+    <ClInclude Include="NpcShopConfig.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="GameServer.h" />
     <ClInclude Include="MonsterScript.h" />
     <ClInclude Include="ObstacleMap.h" />
+    <ClInclude Include="ShapeCollisionMap.h" />
     <ClInclude Include="Database.h" />
     <ClInclude Include="..\..\Common\Protocol.h" />
     <ClInclude Include="..\..\Common\Type.h" />
@@ -128,6 +133,20 @@
       <CopyToOutputDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Database.md" />
+    <None Include="PlayerSpawn.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="CollisionSettings.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Include="CollisionMap.json" Condition="Exists('CollisionMap.json')"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Include="NpcShop.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Box2D\Box2D.vcxproj">
+      <Project>{6E2A8B25-0FB8-42C5-966A-56995AE5A271}</Project>
+      <GlobalPropertiesToRemove>OutDir;IntDir;TargetName</GlobalPropertiesToRemove>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -7,12 +7,14 @@
 
 namespace GameplayRules
 {
-	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; };
+	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; uint32_t movementLockMs; };
+	// Full cast recovery, matching AM_Attack / AM_SkillQ / AM_SkillE at their default play rates.
 	inline constexpr std::array<SkillDef, PLAYER_SKILL_COUNT> Skills = {{
-		{20, 0, 500, 180.f, 0.2f}, {40, 20, 4000, 260.f, -1.f}, {60, 30, 6000, 350.f, 0.2f}
+		{20, 0, 500, 180.f, 0.2f, 1500}, {40, 20, 4000, 260.f, -1.f, 1667}, {60, 30, 6000, 350.f, 0.2f, 1300}
 	}};
 	inline constexpr uint16_t HealthPotion = 1, ManaPotion = 2;
 	inline constexpr uint32_t ItemCooldownMs = 1000;
+	inline constexpr uint32_t LandingRecoveryMs = 500;
 
 	struct PlayerState
 	{
@@ -26,6 +28,8 @@ namespace GameplayRules
 		bool ready = false;
 		float z = 96.f, velocityZ = 0.f;
 		bool airborne = false;
+		uint64_t landingReadyAt = 0;
+		uint64_t castReadyAt = 0;
 	};
 
 	inline bool ValidPose(float x, float y, float z, float yaw, float velocityZ)
@@ -38,10 +42,11 @@ namespace GameplayRules
 	{
 		if (!state.ready || id >= Skills.size()) return ActionResult::Invalid;
 		if (state.hp <= 0) return ActionResult::Dead;
-		if (now < state.skillReadyAt[id]) return ActionResult::Cooldown;
+		if (now < state.castReadyAt || now < state.skillReadyAt[id]) return ActionResult::Cooldown;
 		if (state.mp < Skills[id].mana) return ActionResult::NotEnoughMP;
 		state.mp -= Skills[id].mana;
 		state.skillReadyAt[id] = now + Skills[id].cooldownMs;
+		state.castReadyAt = now + Skills[id].movementLockMs;
 		return ActionResult::Ok;
 	}
 	inline ActionResult UseItem(PlayerState& state, const CS_UseItem& request, uint64_t now)

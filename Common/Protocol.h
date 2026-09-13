@@ -81,9 +81,13 @@ enum class PACKET_ID : uint16_t
 
 	// AI To Server (3000 ~ 3099)
 	AS_AI = 3001,
+	AS_AI_AGENT = 3002, // AS_AI header + {context,say} JSON; never sent to a client verbatim
+	AS_MCP = 3003,      // PacketHeader + one MCP JSON-RPC message
 
 	// Server To AI (3100 ~ 3199)
 	SA_AI = 3101,
+	SA_AI_AGENT = 3102, // SA_AI header + {context,conversation,say} JSON
+	SA_MCP = 3103,      // PacketHeader + one MCP JSON-RPC message
 
 };
 

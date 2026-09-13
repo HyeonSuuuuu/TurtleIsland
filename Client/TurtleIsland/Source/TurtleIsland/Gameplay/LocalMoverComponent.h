@@ -22,10 +22,16 @@ protected:
 
 	void HandleJumpPressed();
 	void HandleJumpReleased();
+	UFUNCTION() void HandleLanded(const FHitResult& Hit);
 
 public:
 	ULocalMoverComponent();
-
+	UFUNCTION(BlueprintPure, Category="Movement")
+	bool IsLandingLocked() const;
+	UFUNCTION(BlueprintPure, Category="Movement")
+	bool IsMovementLocked() const;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+private:
+	double LandingReadyAt = 0.;
 };
