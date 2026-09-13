@@ -4,6 +4,7 @@
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Character/TurtleAgent.h"
+#include "Character/ServerMonster.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -230,20 +231,23 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 		FString Name;
 		int32 Level = 0;
 		const bool bPlayer = Net->GetPlayerDisplayInfo(*It, Name, Level);
+		const AServerMonster* Monster = Cast<AServerMonster>(*It);
 		FVector2D Position;
 		if (!Health || (!bPlayer && Health->IsDead()) || !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC,
 			It->GetActorLocation() + FVector(0, 0, It->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 20), Position, true)) continue;
 		if (Position.X < 0 || Position.Y < 0 || Position.X > Geometry.GetLocalSize().X || Position.Y > Geometry.GetLocalSize().Y) continue;
-		if (bPlayer)
+		if (bPlayer || Monster)
 		{
-			const auto Title = PlayerNameplate::FitText(FString::Printf(TEXT("Lv. %s  %s"),
-				Level > 0 ? *FString::FromInt(Level) : TEXT("?"), *Name), PlayerNameplate::NameWidth, 14, 11);
+			const FString TitleText = bPlayer ? FString::Printf(TEXT("Lv. %s  %s"),
+				Level > 0 ? *FString::FromInt(Level) : TEXT("?"), *Name) : Monster->MonsterDisplayName.ToString();
+			const auto Title = PlayerNameplate::FitText(TitleText, PlayerNameplate::NameWidth, 14, 11);
 			const auto HP = PlayerNameplate::FitText(FString::Printf(TEXT("%d / %d"), Health->CurrentHP, Health->MaxHP),
 				PlayerNameplate::BarWidth - 8.f, 10, 8);
 			const FVector2D BarSize(PlayerNameplate::BarWidth, PlayerNameplate::BarHeight);
 			const FVector2D BarPosition = Position - FVector2D(BarSize.X / 2.f, BarSize.Y);
 			const bool bOwner = *It == PC->GetPawn();
-			const FLinearColor Color = bOwner ? FLinearColor(0.12f, 0.65f, 0.25f) : FLinearColor(0.08f, 0.48f, 0.7f);
+			const FLinearColor Color = !bPlayer ? FLinearColor(0.8f, 0.12f, 0.12f) :
+				(bOwner ? FLinearColor(0.12f, 0.65f, 0.25f) : FLinearColor(0.08f, 0.48f, 0.7f));
 			FSlateDrawElement::MakeBox(Elements, TopLayer, Geometry.ToPaintGeometry(BarSize, FSlateLayoutTransform(BarPosition)),
 				White, ESlateDrawEffect::None, FLinearColor(0.015f, 0.015f, 0.015f, 0.95f));
 			FSlateDrawElement::MakeBox(Elements, TopLayer + 1,

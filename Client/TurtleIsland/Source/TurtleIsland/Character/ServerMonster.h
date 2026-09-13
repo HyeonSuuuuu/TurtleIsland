@@ -12,6 +12,7 @@ class TURTLEISLAND_API AServerMonster : public AServerAgent
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Monster") FText MonsterDisplayName;
 	UPROPERTY(EditDefaultsOnly, Category="Monster|Animation") TObjectPtr<UAnimSequence> IdleAnimation;
 	UPROPERTY(EditDefaultsOnly, Category="Monster|Animation") TObjectPtr<UAnimSequence> MoveAnimation;
 	UPROPERTY(EditDefaultsOnly, Category="Monster|Animation") TObjectPtr<UAnimSequence> AttackAnimation;

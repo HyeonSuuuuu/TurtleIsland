@@ -6,6 +6,6 @@ public class TurtleIslandCollisionEditor : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine" });
-        PrivateDependencyModuleNames.AddRange(new[] { "UnrealEd", "Json", "PhysicsCore", "Landscape", "Water", "NavigationSystem" });
+        PrivateDependencyModuleNames.AddRange(new[] { "UnrealEd", "Json", "PhysicsCore", "Landscape", "Water", "NavigationSystem", "TurtleIsland" });
     }
 }

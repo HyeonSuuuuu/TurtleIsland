@@ -403,6 +403,9 @@ struct RoomSpawnTests
 	{
 		LoadMonsterScript("Monster.lua");
 		Check(g_monsterDefs.size() == 3 && g_monsterSpawnAreas.size() == 3, "default Lua config");
+		const char8_t* expectedNames[] = {u8"\uc2a4\ud1a0\ucee4", u8"\ud0c0\ub974 \ud3ec\ub4dc", u8"\uc13c\ud2b8\ub9ac \uc544\uc774"};
+		for (size_t type = 0; type < g_monsterDefs.size(); ++type)
+			Check(g_monsterDefs[type].name == reinterpret_cast<const char*>(expectedNames[type]), "monster type uses its Korean game name");
 		Check(g_obstacleMap.Load("map.dat"), "real obstacle map loaded");
 		Room room;
 		room.m_isActive = true;
@@ -521,10 +524,17 @@ struct RoomSpawnTests
 	}
 };
 
-int main()
+int main(int argc, char** argv)
 {
 	try
 	{
+		if (argc != 1)
+		{
+			Check(argc == 3 && std::string_view(argv[1]) == "--validate-script", "usage: --validate-script Monster.lua");
+			Check(LoadMonsterScript(argv[2]), "candidate Lua must load without fallback or invalid SpawnAreas");
+			std::println("PASS: candidate Lua, {} monster types, {} spawn areas", g_monsterDefs.size(), g_monsterSpawnAreas.size());
+			return 0;
+		}
 		Check(MapSpawn::LoadPlayerStart("PlayerSpawn.json"), "exported PlayerStart loaded");
 		Check(g_obstacleMap.Load("map.dat"), "exported map loaded");
 		float safeX = MapSpawn::PLAYER_X, safeY = MapSpawn::PLAYER_Y;
@@ -562,12 +572,12 @@ int main()
 		for (const char* area : invalid)
 		{
 			{ std::ofstream file(fixture); file << monsters << "SpawnAreas = {" << area << "}"; }
-			LoadMonsterScript(fixture.string().c_str());
+			Check(!LoadMonsterScript(fixture.string().c_str()), "invalid Lua returns failure to the editor validator");
 			Check(g_monsterSpawnAreas.empty(), "invalid config rejected");
 		}
 		const std::string area = "{type=0,count=4,x=-24750,y=-23150,radius=150,respawnSeconds=10}";
 		{ std::ofstream file(fixture); file << monsters << "SpawnAreas = {" << area << "," << area << "}"; }
-		LoadMonsterScript(fixture.string().c_str());
+		Check(LoadMonsterScript(fixture.string().c_str()), "valid Lua returns success to the editor validator");
 		Check(g_monsterSpawnAreas.size() == 2, "exactly eight slots accepted");
 		{ std::ofstream file(fixture); file << monsters << "SpawnAreas = {" << area << "," << area << "," << area << "}"; }
 		LoadMonsterScript(fixture.string().c_str());
