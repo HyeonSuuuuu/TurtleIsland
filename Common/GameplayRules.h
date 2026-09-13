@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "Protocol.h"
 #include <algorithm>
 #include <array>
@@ -72,11 +72,12 @@ namespace GameplayRules
 		state.itemReadyAt = now + ItemCooldownMs;
 		return ActionResult::Ok;
 	}
-	inline void RewardKill(PlayerState& state)
+	inline void RewardKill(PlayerState& state, int32_t gold = 10, int32_t exp = 25)
 	{
-		state.gold = std::min(state.gold, std::numeric_limits<int32_t>::max() - 10) + 10;
+		gold = std::max(gold, 0); exp = std::max(exp, 0);
+		state.gold = std::min(state.gold, std::numeric_limits<int32_t>::max() - gold) + gold;
 		if (state.level >= 30) return;
-		state.exp += 25;
+		state.exp += exp;
 		while (state.exp >= state.expToNext && state.level < 30)
 		{
 			state.exp -= state.expToNext;

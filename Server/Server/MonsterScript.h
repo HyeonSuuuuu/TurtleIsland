@@ -11,6 +11,9 @@ struct MonsterDef
 	float attackRange = 90.f;
 	uint32_t attackWindupMs = 350;
 	uint32_t attackCooldownMs = 1000;
+
+	int gold = 10;
+	int exp = 25;
 };
 
 inline std::vector<MonsterDef> g_monsterDefs;

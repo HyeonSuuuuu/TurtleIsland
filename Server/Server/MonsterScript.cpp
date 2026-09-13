@@ -4,6 +4,7 @@
 #include "Define.h"
 #include "ObstacleMap.h"
 #include <cmath>
+#include <type_traits>
 
 namespace
 {
@@ -24,16 +25,20 @@ namespace
 		return valid && std::isfinite(value);
 	}
 
-	double ReadCombatValue(lua_State* L, const char* field, double fallback, double maximum)
+	// 없으면 out(기본값) 유지, 범위 밖·정수형에 소수면 경고 후 유지.
+	template<typename T>
+	void ReadField(lua_State* L, const char* field, T& out, std::type_identity_t<T> minimum, std::type_identity_t<T> maximum)
 	{
 		lua_getfield(L, -1, field);
-		const bool missing = lua_isnil(L, -1);
+		const int type = lua_type(L, -1);
+		const double value = type == LUA_TNUMBER ? lua_tonumber(L, -1) : 0.;
 		lua_pop(L, 1);
-		if (missing) return fallback;
-		double value;
-		if (ReadNumber(L, field, value) && value >= 1 && value <= maximum && std::floor(value) == value) return value;
-		Log::Warning("[LUA] invalid monster {}; using {}", field, fallback);
-		return fallback;
+		if (type == LUA_TNIL) return;
+		if (type == LUA_TNUMBER && std::isfinite(value) && value >= minimum && value <= maximum &&
+			(!std::is_integral_v<T> || std::floor(value) == value))
+			out = static_cast<T>(value);
+		else
+			Log::Warning("[LUA] invalid monster {}; using {}", field, out);
 	}
 
 	bool LoadSpawnAreas(lua_State* L)
@@ -102,14 +107,14 @@ bool LoadMonsterScript(const char* path)
 			{
 				MonsterDef def;
 				lua_getfield(L, -1, "name");  if (lua_isstring(L, -1)) def.name = lua_tostring(L, -1);        lua_pop(L, 1);
-				lua_getfield(L, -1, "hp");    if (lua_isnumber(L, -1)) def.hp = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
-				lua_getfield(L, -1, "speed"); if (lua_isnumber(L, -1)) def.speed = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
-				if (def.hp <= 0) def.hp = 50;
-				if (!std::isfinite(def.speed) || def.speed < 0.f) def.speed = 6.f;
-				def.attackDamage = static_cast<int>(ReadCombatValue(L, "attackDamage", 10, 100000));
-				def.attackRange = static_cast<float>(ReadCombatValue(L, "attackRange", 90, 2000));
-				def.attackWindupMs = static_cast<uint32_t>(ReadCombatValue(L, "attackWindupMs", 350, 60000));
-				def.attackCooldownMs = static_cast<uint32_t>(ReadCombatValue(L, "attackCooldownMs", 1000, 60000));
+				ReadField(L, "hp", def.hp, 1, 1000000);
+				ReadField(L, "speed", def.speed, 0, 1000);
+				ReadField(L, "attackDamage", def.attackDamage, 1, 100000);
+				ReadField(L, "attackRange", def.attackRange, 1, 2000);
+				ReadField(L, "attackWindupMs", def.attackWindupMs, 1, 60000);
+				ReadField(L, "attackCooldownMs", def.attackCooldownMs, 1, 60000);
+				ReadField(L, "gold", def.gold, 0, 1000000);
+				ReadField(L, "exp", def.exp, 0, 1000000);
 				def.attackCooldownMs = std::max(def.attackCooldownMs, def.attackWindupMs + 1);
 				g_monsterDefs.push_back(def);
 			}
