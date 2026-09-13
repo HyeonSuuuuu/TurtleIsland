@@ -190,7 +190,10 @@ void Room::TickNpcs()
 		if (!m_inGame) return;
 		for (uint32_t i = 0; i < m_userCount; ++i)
 			if (User* user = g_userPool.Get(m_userSlots[i]))
+			{
+				TickPlayerRespawnLocked(m_userSlots[i], GetTickCount64());
 				ResolvePendingAttackLocked(*user, GetTickCount64());
+			}
 		SpawnAreaNpcsLocked(GetTickCount64(), true);
 
 		for (uint32_t i = 0; i < m_userCount; ++i)
@@ -302,8 +305,53 @@ void Room::ResolveNpcAttackLocked(NPC& npc, uint64_t now)
 	damage.causerId = npc.GetId(); damage.causerKind = ENTITY_NPC;
 	damage.damage = std::max(1, def.attackDamage - state.defense);
 	state.hp -= std::min(state.hp, damage.damage); damage.remainHP = state.hp; damage.maxHP = state.maxHP;
+	if (state.hp == 0) TickPlayerRespawnLocked(slot, now);
 	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&damage), sizeof(damage)});
 	SendStateLocked(*target, state, now);
+}
+
+void Room::TickPlayerRespawnLocked(uint32_t slot, uint64_t now)
+{
+	auto found = m_playerStates.find(slot);
+	if (!m_inGame || slot >= MAX_CLIENTS || found == m_playerStates.end() || !found->second.ready || found->second.hp > 0 ||
+		std::find(m_userSlots.begin(), m_userSlots.begin() + m_userCount, slot) == m_userSlots.begin() + m_userCount) return;
+	auto& state = found->second;
+	if (!state.respawnReadyAt)
+	{
+		state.respawnReadyAt = now + GameplayRules::PlayerRespawnDelayMs;
+		state.airborne = false; state.velocityZ = 0.f;
+		m_pendingAttacks.erase(slot);
+		m_movementBudgets.erase(slot);
+		for (auto& npc : m_npcs)
+			if (npc.m_attackTarget == slot) { npc.m_attackImpactAt = 0; npc.m_attackTarget = INVALID_SESSION_INDEX; }
+		if (auto chat = m_npcConversations.find(slot); chat != m_npcConversations.end())
+		{
+			chat->second.context.clear();
+			chat->second.quote = nullptr;
+		}
+		return;
+	}
+	if (now < state.respawnReadyAt) return;
+	float x = MapSpawn::PLAYER_X, y = MapSpawn::PLAYER_Y;
+	g_obstacleMap.SnapToFree(x, y, PlayerRadius);
+	// Do not revive inside an obstacle or at a distant fallback position. Retry on the next tick.
+	if (std::hypot(x - MapSpawn::PLAYER_X, y - MapSpawn::PLAYER_Y) > 150.f ||
+		!g_obstacleMap.CanTraverse(x, y, x, y, PlayerRadius)) return;
+	User& user = *g_userPool.Get(slot);
+	user.x = x; user.y = y; user.yaw = MapSpawn::PLAYER_YAW;
+	state.z = MapSpawn::PLAYER_GROUND_Z + GameplayRules::PlayerCapsuleHalfHeight + 2.f;
+	state.hp = state.maxHP; state.mp = state.maxMP;
+	state.airborne = false; state.velocityZ = 0.f;
+	state.landingReadyAt = state.castReadyAt = state.respawnReadyAt = 0;
+	++state.lifeId;
+	m_movementBudgets[slot] = {now, state.moveSpeed * MovementBurstSeconds};
+	SC_RespawnNotify packet{};
+	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_RESPAWN_NOTIFY);
+	packet.userIndex = user.GetId(); packet.lifeId = state.lifeId;
+	packet.x = user.x; packet.y = user.y; packet.z = state.z; packet.yaw = user.yaw;
+	packet.hp = state.hp; packet.maxHP = state.maxHP;
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)});
+	SendStateLocked(user, state, now);
 }
 
 void Room::BroadcastNpcSpawns(uint32_t toSlot)
@@ -438,7 +486,10 @@ void Room::SendPlayerStatesToUser(uint32_t toSlot)
 		{
 			if (!state->second.ready) continue;
 			m.z = state->second.z; m.velocityZ = state->second.velocityZ; m.airborne = state->second.airborne;
+			m.lifeId = state->second.lifeId;
 			m.hp = state->second.hp; m.maxHP = state->second.maxHP;
+			const SC_PlayerInfo info = MakePlayerInfo(*src, state->second);
+			dst->Send({reinterpret_cast<const uint8_t*>(&info), sizeof(info)});
 		}
 		dst->Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&m), SC_MOVE_NOTIFY_PACKET_SIZE));
 	}
@@ -455,11 +506,21 @@ void Room::BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclu
 	}
 }
 
+SC_PlayerInfo Room::MakePlayerInfo(const User& user, const GameplayRules::PlayerState& state)
+{
+	SC_PlayerInfo info{};
+	info.size = sizeof(info); info.id = static_cast<uint16_t>(PACKET_ID::SC_PLAYER_INFO);
+	info.playerId = user.GetId(); info.lifeId = state.lifeId; info.level = state.level;
+	strncpy_s(info.userName, user.GetUserId().c_str(), MAX_USER_ID_LEN);
+	return info;
+}
+
 void Room::SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now)
 {
 	SC_PlayerState packet{};
 	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_PLAYER_STATE);
 	packet.playerId = user.GetId();
+	packet.lifeId = state.lifeId;
 	packet.hp = state.hp; packet.maxHP = state.maxHP; packet.mp = state.mp; packet.maxMP = state.maxMP;
 	packet.level = state.level; packet.exp = state.exp; packet.expToNext = state.expToNext; packet.gold = state.gold;
 	packet.attack = state.attack; packet.defense = state.defense; packet.moveSpeed = state.moveSpeed;
@@ -473,6 +534,8 @@ void Room::SendStateLocked(User& user, const GameplayRules::PlayerState& state, 
 	health.size = sizeof(health); health.id = static_cast<uint16_t>(PACKET_ID::SC_HEALTH_STATE);
 	health.playerId = user.GetId(); health.hp = state.hp; health.maxHP = state.maxHP;
 	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&health), sizeof(health)}, user.GetSlotIndex());
+	const SC_PlayerInfo info = MakePlayerInfo(user, state);
+	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&info), sizeof(info)});
 }
 
 void Room::PlayerReady(User& user, const CS_IngameReady& request)
@@ -497,6 +560,7 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 		SC_MoveNotify me{};
 		me.size = sizeof(me); me.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
 		me.userIndex = user.GetId(); me.x = user.x; me.y = user.y; me.yaw = user.yaw;
+		me.lifeId = state.lifeId;
 		me.z = state.z; me.velocityZ = state.velocityZ; me.airborne = state.airborne;
 		me.hp = state.hp; me.maxHP = state.maxHP;
 		user.Send({reinterpret_cast<const uint8_t*>(&me), sizeof(me)});
@@ -517,6 +581,7 @@ void Room::MovePlayer(User& user, const CS_Move& request)
 	SC_MoveNotify packet{};
 	packet.size = sizeof(packet); packet.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
 	packet.userIndex = user.GetId();
+	packet.lifeId = state.lifeId;
 	packet.inputFlag = accepted && now >= state.castReadyAt && now >= state.landingReadyAt ? request.inputFlag : 0;
 	packet.x = user.x; packet.y = user.y; packet.yaw = user.yaw;
 	packet.z = state.z; packet.velocityZ = state.velocityZ; packet.airborne = state.airborne;
@@ -532,6 +597,7 @@ bool Room::ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t no
 	auto found = m_playerStates.find(user.GetSlotIndex());
 	auto budget = m_movementBudgets.find(user.GetSlotIndex());
 	if (!m_inGame || found == m_playerStates.end() || !found->second.ready || found->second.hp <= 0 ||
+		request.lifeId != found->second.lifeId ||
 		budget == m_movementBudgets.end() || !GameplayRules::ValidPose(request.x, request.y, request.z, request.yaw, request.velocityZ) ||
 		request.airborne > 1) return false;
 	auto& state = found->second;
@@ -562,7 +628,7 @@ void Room::Attack(User& user, const CS_Attack& request)
 	auto& state = found->second;
 	const uint64_t now = GetTickCount64();
 	ActionResult result = ActionResult::Invalid;
-	if (std::isfinite(request.yaw) && (request.targetKind == ENTITY_NONE ||
+	if (request.lifeId == state.lifeId && std::isfinite(request.yaw) && (request.targetKind == ENTITY_NONE ||
 		(request.targetKind == ENTITY_NPC && request.targetId < m_npcs.size() && m_npcs[request.targetId].IsAlive())))
 		result = m_pendingAttacks.contains(user.GetSlotIndex()) ? ActionResult::Cooldown :
 			GameplayRules::UseSkill(state, request.skillId, now);

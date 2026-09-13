@@ -172,6 +172,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Items")
 	void UseItem(int32 Slot);
 	const SC_PlayerState* GetPlayerState() const { return bHasPlayerState ? &PlayerState : nullptr; }
+	uint32 GetPlayerLifeId() const { return PlayerLifeId; }
 	double GetPlayerStateTime() const { return PlayerStateTime; }
 	UPROPERTY(BlueprintAssignable, Category="Gameplay")
 	FOnGameplayStateChanged OnGameplayStateChanged;
@@ -184,6 +185,7 @@ public:
 	// NPC ids overlap player ids; NPC lifecycle uses UNpcSubsystem instead.
 	ATurtleAgent* FindAgentById(uint32 Id) const;
 	ATurtleAgent* FindEntity(uint8 Kind, uint32 Id) const;
+	bool GetPlayerDisplayInfo(const ATurtleAgent* Agent, FString& OutName, int32& OutLevel) const;
 
 	// NPC 답변 수신. 서버가 중계한 텍스트 그대로 넘어온다.
 	UPROPERTY(BlueprintAssignable, Category = "Npc")
@@ -297,11 +299,12 @@ protected:
 	void HandleRoomEnterNotify(const TArray<uint8>& RecvData);
 	void HandleRoomChatResponse(const TArray<uint8>& RecvData);
 	void HandleRoomChatNotify(const TArray<uint8>& RecvData);
-	void HandleMoveNotify(const TArray<uint8>& RecvData);
+	void HandleMoveNotify(const TArray<uint8>& RecvData, bool bRespawn = false);
 	void HandleAttackNotify(const TArray<uint8>& RecvData);
 	void HandleDamageNotify(const TArray<uint8>& RecvData);
 	void HandlePlayerState(const TArray<uint8>& RecvData);
 	void HandleHealthState(const TArray<uint8>& Data);
+	void HandlePlayerInfo(const TArray<uint8>& Data);
 	void ApplyHealthState(ATurtleAgent* Agent, int32 HP, int32 MaxHP);
 	void HandleActionResult(const TArray<uint8>& RecvData);
 	void HandleRoomLeaveNotify(const TArray<uint8>& RecvData);
@@ -340,6 +343,10 @@ protected:
 	TMap<uint32, AServerAgent*> players;
 
 	uint32 myId = 0;
+	uint32 PlayerLifeId = 0;
+	TMap<uint32, uint32> PlayerLives;
+	struct FPlayerDisplayInfo { FString Name; int32 Level; uint32 LifeId; };
+	TMap<uint32, FPlayerDisplayInfo> PlayerDisplayInfos;
 	SC_PlayerState PlayerState{};
 	bool bHasPlayerState = false;
 	double PlayerStateTime = 0;

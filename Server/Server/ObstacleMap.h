@@ -43,11 +43,12 @@ inline ObstacleMap g_obstacleMap;
 // 인게임(Lv3_Ingame) 플레이어 스폰 월드좌표 — Unreal PlayerStart 와 일치
 namespace MapSpawn
 {
-	inline float PLAYER_X = -24730.f;
-	inline float PLAYER_Y = -24750.f;
+	inline float PLAYER_X = 0.f;
+	inline float PLAYER_Y = 0.f;
+	inline float PLAYER_GROUND_Z = 0.f;
 	inline float PLAYER_YAW = 0.f;
 	bool LoadPlayerStart(const char* path);
 	// NPC 스폰 앵커 — 스폰 지점에서 이어지는 좌측 개방 통로 중앙(개방 칸)
-	inline float NPC_ANCHOR_X = -24750.f;
-	inline float NPC_ANCHOR_Y = -23150.f;
+	inline float NPC_ANCHOR_X = -20.f;
+	inline float NPC_ANCHOR_Y = 1600.f;
 }

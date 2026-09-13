@@ -22,9 +22,9 @@ public:
 	ATurtleGameMode();
 
 	/**
-	 * 리스폰 "실행"은 여기 한 곳에만 있다. 트리거만 모드에 따라 갈린다 —
+	 * 싱글 리스폰 진입점. 멀티는 NetSubsystem 이 서버 통지를 처리한다.
 	 *   싱글 : ScheduleRespawn 이 타이머로 스스로 호출
-	 *   멀티 : 서버의 SC_RESPAWN_NOTIFY 를 받아 NetSubsystem 이 호출 (패킷 설계 후 연결)
+	 *   멀티 : 서버의 SC_RESPAWN_NOTIFY 를 받아 NetSubsystem 이 Agent 상태를 복구
 	 *
 	 * 새 폰을 스폰하지 않는다. 상대 Agent 는 NetSubsystem 의 players 맵이 붙들고 있어서
 	 * Destroy 하면 맵이 깨지므로, 기존 폰의 상태만 되돌린다.

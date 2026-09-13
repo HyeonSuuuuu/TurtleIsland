@@ -71,6 +71,7 @@ public:
 	UFUNCTION(BlueprintPure, Category="Skill")
 	bool IsMovementLocked() const;
 	void ResetCast();
+	void ResetPlayback();
 private:
 	double MovementReadyAt = 0.;
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ActiveSkillMontage;

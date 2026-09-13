@@ -22,11 +22,6 @@ UAgentSkillComponent::UAgentSkillComponent()
 void UAgentSkillComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	if (UAnimInstance* Anim = GetAnimInstance())
-	{
-		// Animation is visual only; movement and facing are owned by gameplay/network state.
-		Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
-	}
 
 	// 로컬 플레이어에만 입력 컴포넌트가 있다. 원격 Agent 에서는 이 구독이 그냥 일어나지 않는다.
 	if (AActor* Owner = GetOwner())
@@ -126,6 +121,14 @@ void UAgentSkillComponent::ResetCast()
 	ActiveSkillMontage = nullptr;
 }
 
+void UAgentSkillComponent::ResetPlayback()
+{
+	ResetCast();
+	if (UAnimInstance* Anim = GetAnimInstance()) Anim->StopAllMontages(0.f);
+	AirMontage = nullptr;
+	bWasAirborne = false;
+}
+
 void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 {
 	AActor* Owner = GetOwner();
@@ -138,7 +141,9 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 
 	// 서버가 기록한 시전 방향으로 몸을 돌린다. 로컬 플레이어도 예외가 아니다 —
 	// 눌렀을 때가 아니라 서버가 승인한 그 방향이 정답이다.
-	Owner->SetActorRotation(FRotator(0.f, Yaw, 0.f));
+	FRotator Rotation = Owner->GetActorRotation();
+	Rotation.Yaw = Yaw;
+	Owner->SetActorRotation(Rotation);
 	float LockDuration = GameplayRules::Skills[SkillId].movementLockMs / 1000.f;
 	ActiveSkillMontage = nullptr;
 
@@ -148,7 +153,6 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 		{
 			if (UAnimInstance* Anim = GetAnimInstance())
 			{
-				Anim->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
 				const float Rate = FMath::IsFinite(PlayRate) && PlayRate > 0.f ? PlayRate : 1.f;
 				if (Anim->Montage_Play(Montage, Rate) > 0.f)
 				{

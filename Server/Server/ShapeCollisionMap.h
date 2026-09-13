@@ -14,6 +14,7 @@ public:
     const std::string& LastError() const { return m_error; }
     float SpawnX() const;
     float SpawnY() const;
+    float SpawnGroundZ() const;
     float SpawnYaw() const;
     size_t PolygonCount() const;
 

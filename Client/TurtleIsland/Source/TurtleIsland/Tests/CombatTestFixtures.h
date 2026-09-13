@@ -19,6 +19,7 @@ public:
 	void Configure(UWorld* World, uint32 PlayerId) { TestWorld = World; myId = PlayerId; OpponentClass = AServerAgent::StaticClass(); }
 	void Receive(const TArray<uint8>& Data) { DispatchPacket(Data); }
 	void ResetForTest() { ResetNpcWorld(); }
+	void SetSingleForTest() { PlayMode = EPlayMode::Single; }
 private:
 	UPROPERTY() TObjectPtr<UWorld> TestWorld;
 };

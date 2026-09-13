@@ -77,6 +77,8 @@ enum class PACKET_ID : uint16_t
 	SC_PLAYER_STATE = 393,
 	SC_ACTION_RESULT = 394,
 	SC_HEALTH_STATE = 395,
+	SC_RESPAWN_NOTIFY = 396,
+	SC_PLAYER_INFO = 397,
 
 
 	// AI To Server (3000 ~ 3099)
@@ -241,7 +243,7 @@ inline constexpr uint16_t INPUT_FLAG_W      = 1 << 0;
 inline constexpr uint16_t INPUT_FLAG_A      = 1 << 1;
 inline constexpr uint16_t INPUT_FLAG_S      = 1 << 2;
 inline constexpr uint16_t INPUT_FLAG_D      = 1 << 3;
-inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 2;
+inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 3;
 inline constexpr uint8_t ENTITY_NONE = 0;
 inline constexpr uint8_t ENTITY_PLAYER = 1;
 inline constexpr uint8_t ENTITY_NPC = 2;
@@ -250,6 +252,7 @@ inline constexpr int32_t PLAYER_SKILL_COUNT = 3;
 
 struct CS_Move : public PacketHeader
 {
+	uint32_t lifeId;
 	uint16_t inputFlag;
 	float yaw;
 	float x, y;   // 클라 실제 위치 (Unreal 월드 X, Y)
@@ -270,6 +273,7 @@ inline constexpr uint16_t CS_INGAME_READY_PACKET_SIZE = sizeof(CS_IngameReady);
 struct SC_MoveNotify : public PacketHeader
 {
 	uint32_t userIndex;
+	uint32_t lifeId;
 	uint16_t inputFlag;
 	float x, y;   // Unreal world position; player Z is relayed below.
 	float yaw;
@@ -278,6 +282,10 @@ struct SC_MoveNotify : public PacketHeader
 	int32_t hp, maxHP;
 };
 inline constexpr uint16_t SC_MOVE_NOTIFY_PACKET_SIZE = sizeof(SC_MoveNotify);
+
+// Same pose payload, but reset/teleport instead of interpolating from the previous life.
+struct SC_RespawnNotify : SC_MoveNotify {};
+inline constexpr uint16_t SC_RESPAWN_NOTIFY_PACKET_SIZE = sizeof(SC_RespawnNotify);
 
 // --------------- NPC (게임플레이) ----------------
 struct SC_NpcSpawn : public PacketHeader
@@ -314,6 +322,7 @@ inline constexpr uint16_t SKILL_ID_BASIC_ATTACK = 0;
 
 struct CS_Attack : public PacketHeader
 {
+	uint32_t lifeId;
 	uint16_t skillId;    // 0 = 기본공격
 	uint32_t targetId;   // Used only when targetKind != ENTITY_NONE (NPC 0 is valid).
 	uint8_t targetKind;  // ENTITY_NONE selects targets by server range/facing.
@@ -354,6 +363,15 @@ struct SC_HealthState : PacketHeader
 };
 inline constexpr uint16_t SC_HEALTH_STATE_PACKET_SIZE = sizeof(SC_HealthState);
 
+// Public identity only. Inventory, gold, XP and other private stats remain owner-only.
+struct SC_PlayerInfo : PacketHeader
+{
+	uint32_t playerId, lifeId;
+	int32_t level;
+	char userName[MAX_USER_ID_LEN + 1];
+};
+inline constexpr uint16_t SC_PLAYER_INFO_PACKET_SIZE = sizeof(SC_PlayerInfo);
+
 struct ItemSlot
 {
 	uint16_t itemId;
@@ -362,6 +380,7 @@ struct ItemSlot
 
 struct CS_UseItem : PacketHeader
 {
+	uint32_t lifeId;
 	uint8_t slot;
 	uint16_t expectedItemId;
 	uint32_t inventoryRevision;
@@ -372,6 +391,7 @@ inline constexpr uint16_t CS_USE_ITEM_PACKET_SIZE = sizeof(CS_UseItem);
 struct SC_PlayerState : PacketHeader
 {
 	uint32_t playerId;
+	uint32_t lifeId;
 	int32_t hp, maxHP, mp, maxMP;
 	int32_t level, exp, expToNext, gold;
 	int32_t attack, defense;

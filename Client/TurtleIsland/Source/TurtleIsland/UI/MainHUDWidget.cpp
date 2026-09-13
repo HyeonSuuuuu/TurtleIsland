@@ -1,4 +1,5 @@
 #include "UI/MainHUDWidget.h"
+#include "UI/PlayerNameplate.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
@@ -172,6 +173,8 @@ void UMainHUDWidget::RefreshState()
 void UMainHUDWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
 	Super::NativeTick(Geometry, DeltaTime);
+	// World-projected plates change even when no UMG property changes (camera movement).
+	if (const TSharedPtr<SWidget> SlateWidget = GetCachedWidget()) SlateWidget->Invalidate(EInvalidateWidgetReason::Paint);
 	const float Width = Geometry.GetLocalSize().X;
 	if (!FMath::IsNearlyEqual(Width, LastLayoutWidth))
 	{
@@ -218,15 +221,45 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 {
 	const int32 TopLayer = Super::NativePaint(Args, Geometry, CullingRect, Elements, Layer, Style, bParentEnabled) + 1;
 	APlayerController* PC = GetOwningPlayer();
-	if (!PC || !Net || !Net->GetPlayerState()) return TopLayer;
+	if (!PC || !Net) return TopLayer;
 	const FSlateBrush* White = FCoreStyle::Get().GetBrush("WhiteBrush");
 	for (TActorIterator<ATurtleAgent> It(GetWorld()); It; ++It)
 	{
-		if (*It == PC->GetPawn()) continue;
+		if (It->IsHidden()) continue;
 		const UHealthComponent* Health = It->FindComponentByClass<UHealthComponent>();
+		FString Name;
+		int32 Level = 0;
+		const bool bPlayer = Net->GetPlayerDisplayInfo(*It, Name, Level);
 		FVector2D Position;
-		if (!Health || Health->IsDead() || !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC,
+		if (!Health || (!bPlayer && Health->IsDead()) || !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC,
 			It->GetActorLocation() + FVector(0, 0, It->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 20), Position, true)) continue;
+		if (Position.X < 0 || Position.Y < 0 || Position.X > Geometry.GetLocalSize().X || Position.Y > Geometry.GetLocalSize().Y) continue;
+		if (bPlayer)
+		{
+			const auto Title = PlayerNameplate::FitText(FString::Printf(TEXT("Lv. %s  %s"),
+				Level > 0 ? *FString::FromInt(Level) : TEXT("?"), *Name), PlayerNameplate::NameWidth, 14, 11);
+			const auto HP = PlayerNameplate::FitText(FString::Printf(TEXT("%d / %d"), Health->CurrentHP, Health->MaxHP),
+				PlayerNameplate::BarWidth - 8.f, 10, 8);
+			const FVector2D BarSize(PlayerNameplate::BarWidth, PlayerNameplate::BarHeight);
+			const FVector2D BarPosition = Position - FVector2D(BarSize.X / 2.f, BarSize.Y);
+			const bool bOwner = *It == PC->GetPawn();
+			const FLinearColor Color = bOwner ? FLinearColor(0.12f, 0.65f, 0.25f) : FLinearColor(0.08f, 0.48f, 0.7f);
+			FSlateDrawElement::MakeBox(Elements, TopLayer, Geometry.ToPaintGeometry(BarSize, FSlateLayoutTransform(BarPosition)),
+				White, ESlateDrawEffect::None, FLinearColor(0.015f, 0.015f, 0.015f, 0.95f));
+			FSlateDrawElement::MakeBox(Elements, TopLayer + 1,
+				Geometry.ToPaintGeometry(FVector2D((BarSize.X - 2) * Health->GetHPRatio(), BarSize.Y - 2), FSlateLayoutTransform(BarPosition + FVector2D(1, 1))),
+				White, ESlateDrawEffect::None, Color);
+			const auto DrawLabel = [&](const PlayerNameplate::FTextLayout& Text, const FVector2D& TextPosition)
+			{
+				FSlateDrawElement::MakeText(Elements, TopLayer + 2, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(TextPosition + FVector2D(1, 1))),
+					Text.Text, Text.Font, ESlateDrawEffect::None, FLinearColor::Black);
+				FSlateDrawElement::MakeText(Elements, TopLayer + 3, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(TextPosition)),
+					Text.Text, Text.Font, ESlateDrawEffect::None, FLinearColor::White);
+			};
+			DrawLabel(Title, FVector2D(Position.X - Title.Size.X / 2.f, BarPosition.Y - Title.Size.Y - 3.f));
+			DrawLabel(HP, BarPosition + (BarSize - HP.Size) / 2.f);
+			continue;
+		}
 		Position -= FVector2D(36, 4);
 		FSlateDrawElement::MakeBox(Elements, TopLayer, Geometry.ToPaintGeometry(FVector2D(72, 7), FSlateLayoutTransform(Position)), White,
 			ESlateDrawEffect::None, FLinearColor(0.03f, 0.03f, 0.03f, 0.9f));
@@ -240,9 +273,9 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 		FVector2D Position;
 		if (Age > 1.2f || !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, Popup.Location + FVector(0, 0, Age * 45), Position, true)) continue;
 		const FString Text = (Popup.Flags & 2) ? TEXT("MISS") : FString::FromInt(Popup.Damage);
-		FSlateDrawElement::MakeText(Elements, TopLayer + 2, Geometry.ToPaintGeometry(FVector2D(100, 30), FSlateLayoutTransform(Position)), Text,
+		FSlateDrawElement::MakeText(Elements, TopLayer + 4, Geometry.ToPaintGeometry(FVector2D(100, 30), FSlateLayoutTransform(Position)), Text,
 			FCoreStyle::GetDefaultFontStyle("Bold", (Popup.Flags & 1) ? 22 : 18), ESlateDrawEffect::None,
 			FLinearColor(1.f, (Popup.Flags & 1) ? 0.7f : 1.f, 0.3f, FMath::Clamp(1.2f - Age, 0.f, 1.f)));
 	}
-	return TopLayer + 2;
+	return TopLayer + 4;
 }

@@ -1,8 +1,10 @@
 #include "Network/NetSubsystem.h"
+#include <cstring>
 
 #include "Network/ChatSubsystem.h"
 #include "Network/ClientTransport.h"
 #include "Network/NetSettings.h"
+#include "Network/NetSyncComponent.h"
 #include "Network/NpcSubsystem.h"
 #include "Character/ServerMonster.h"
 
@@ -176,8 +178,9 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	}
 
 	const auto Id = static_cast<PACKET_ID>(Header->id);
-	if (Id == PACKET_ID::SC_MOVE_NOTIFY || Id == PACKET_ID::SC_ATTACK_NOTIFY ||
-		Id == PACKET_ID::SC_DAMAGE_NOTIFY || Id == PACKET_ID::SC_PLAYER_STATE || Id == PACKET_ID::SC_ACTION_RESULT || Id == PACKET_ID::SC_HEALTH_STATE)
+	if (Id == PACKET_ID::SC_MOVE_NOTIFY || Id == PACKET_ID::SC_RESPAWN_NOTIFY || Id == PACKET_ID::SC_ATTACK_NOTIFY ||
+		Id == PACKET_ID::SC_DAMAGE_NOTIFY || Id == PACKET_ID::SC_PLAYER_STATE || Id == PACKET_ID::SC_ACTION_RESULT ||
+		Id == PACKET_ID::SC_HEALTH_STATE || Id == PACKET_ID::SC_PLAYER_INFO)
 	{
 		const UNpcSubsystem* Npcs = GetWorld() ? GetWorld()->GetSubsystem<UNpcSubsystem>() : nullptr;
 		if (!Npcs || !Npcs->IsReady()) return;
@@ -191,11 +194,13 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	case PACKET_ID::SC_ROOM_CHAT_RESPONSE: HandleRoomChatResponse(RecvData); break;
 	case PACKET_ID::SC_ROOM_CHAT_NOTIFY: HandleRoomChatNotify(RecvData); break;
 	case PACKET_ID::SC_MOVE_NOTIFY: HandleMoveNotify(RecvData); break;
+	case PACKET_ID::SC_RESPAWN_NOTIFY: HandleMoveNotify(RecvData, true); break;
 	case PACKET_ID::SC_ATTACK_NOTIFY: HandleAttackNotify(RecvData); break;
 	case PACKET_ID::SC_DAMAGE_NOTIFY: HandleDamageNotify(RecvData); break;
 	case PACKET_ID::SC_PLAYER_STATE: HandlePlayerState(RecvData); break;
 	case PACKET_ID::SC_ACTION_RESULT: HandleActionResult(RecvData); break;
 	case PACKET_ID::SC_HEALTH_STATE: HandleHealthState(RecvData); break;
+	case PACKET_ID::SC_PLAYER_INFO: HandlePlayerInfo(RecvData); break;
 	case PACKET_ID::SC_ROOM_LEAVE_NOTIFY: HandleRoomLeaveNotify(RecvData); break;
 	case PACKET_ID::SC_ROOM_START_NOTIFY: HandleRoomStartNotify(RecvData); break;
 	case PACKET_ID::SC_NPC_CHAT: HandleNpcChat(RecvData); break;
@@ -415,7 +420,7 @@ void UNetSubsystem::HandleRoomChatNotify(const TArray<uint8>& RecvData)
 	}
 }
 
-void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
+void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData, bool bRespawn)
 {
 	if (!FClientPacketCodec::HasExactSize(RecvData, SC_MOVE_NOTIFY_PACKET_SIZE))
 	{
@@ -425,20 +430,33 @@ void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
 	const SC_MoveNotify* Pkt = reinterpret_cast<const SC_MoveNotify*>(RecvData.GetData());
 	if (!GameplayRules::ValidPose(Pkt->x, Pkt->y, Pkt->z, Pkt->yaw, Pkt->velocityZ) || Pkt->airborne > 1 ||
 		Pkt->maxHP <= 0 || Pkt->hp < 0 || Pkt->hp > Pkt->maxHP) return;
+	if (bRespawn && (Pkt->lifeId == 0 || Pkt->hp == 0 || Pkt->airborne || Pkt->velocityZ != 0.f)) return;
+	if (Pkt->userIndex == myId && Pkt->lifeId < PlayerLifeId) return;
+	const uint32* PreviousLife = PlayerLives.Find(Pkt->userIndex);
+	if (PreviousLife && (Pkt->lifeId < *PreviousLife || (bRespawn && Pkt->lifeId == *PreviousLife))) return;
+	const bool bNewLife = bRespawn || (PreviousLife && Pkt->lifeId > *PreviousLife);
+	PlayerLives.Add(Pkt->userIndex, Pkt->lifeId);
+	const FVector Position(Pkt->x, Pkt->y, Pkt->z);
 	const FRotator NewRotation(0.f, Pkt->yaw, 0.f);
 	if (Pkt->userIndex == myId)
 	{
+		PlayerLifeId = Pkt->lifeId;
 		// Own movement packets are authoritative spawn/rejection corrections, not echoes.
 		if (ATurtleAgent* Self = FindAgentById(myId))
 		{
-			Self->SetActorLocationAndRotation(FVector(Pkt->x, Pkt->y, Pkt->z), NewRotation, false, nullptr, ETeleportType::TeleportPhysics);
+			if (bNewLife)
+			{
+				Self->ResetForRespawn(Position, Pkt->hp);
+				if (UNetSyncComponent* Sync = Self->FindComponentByClass<UNetSyncComponent>()) Sync->ResetForRespawn();
+			}
+			Self->SetActorLocationAndRotation(Position, NewRotation, false, nullptr, ETeleportType::TeleportPhysics);
+			ApplyHealthState(Self, Pkt->hp, Pkt->maxHP);
 			if (UCharacterMovementComponent* Movement = Self->GetCharacterMovement())
 			{
 				Movement->StopMovementImmediately();
-				Movement->SetMovementMode(Pkt->airborne ? MOVE_Falling : MOVE_Walking);
-				Movement->Velocity.Z = Pkt->velocityZ;
+				Movement->SetMovementMode(Pkt->hp == 0 ? MOVE_None : Pkt->airborne ? MOVE_Falling : MOVE_Walking);
+				Movement->Velocity.Z = Pkt->hp == 0 ? 0.f : Pkt->velocityZ;
 			}
-			ApplyHealthState(Self, Pkt->hp, Pkt->maxHP);
 		}
 		return;
 	}
@@ -447,7 +465,12 @@ void UNetSubsystem::HandleMoveNotify(const TArray<uint8>& RecvData)
 	{
 		if (IsValid(*Found))
 		{
-			(*Found)->UpdateNetPlayerState(FVector(Pkt->x, Pkt->y, Pkt->z), Pkt->yaw, Pkt->velocityZ, Pkt->airborne != 0);
+			if (bNewLife)
+			{
+				(*Found)->ResetForRespawn(Position, Pkt->hp);
+				(*Found)->SetActorLocationAndRotation(Position, NewRotation, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			(*Found)->UpdateNetPlayerState(Position, Pkt->yaw, Pkt->velocityZ, Pkt->airborne != 0);
 			ApplyHealthState(*Found, Pkt->hp, Pkt->maxHP);
 		}
 		return;
@@ -543,16 +566,31 @@ void UNetSubsystem::HandleHealthState(const TArray<uint8>& Data)
 	ApplyHealthState(FindAgentById(State.playerId), State.hp, State.maxHP);
 }
 
+void UNetSubsystem::HandlePlayerInfo(const TArray<uint8>& Data)
+{
+	if (!FClientPacketCodec::HasExactSize(Data, SC_PLAYER_INFO_PACKET_SIZE)) return;
+	const auto& Info = *reinterpret_cast<const SC_PlayerInfo*>(Data.GetData());
+	if (Info.level < 1 || Info.userName[0] == '\0' || !std::memchr(Info.userName, '\0', sizeof(Info.userName))) return;
+	if (Info.playerId == myId && Info.lifeId < PlayerLifeId) return;
+	if (const uint32* Life = PlayerLives.Find(Info.playerId); Life && Info.lifeId < *Life) return;
+	if (const FPlayerDisplayInfo* Previous = PlayerDisplayInfos.Find(Info.playerId); Previous && Info.lifeId < Previous->LifeId) return;
+	const FString Name = FClientPacketCodec::DecodeFixedUtf8(Info.userName, sizeof(Info.userName)).TrimStartAndEnd();
+	if (Name.IsEmpty()) return;
+	// Identity can arrive before the first pose; do not create actors or advance pose generations here.
+	PlayerDisplayInfos.Add(Info.playerId, {Name, Info.level, Info.lifeId});
+}
+
 void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 {
 	if (Data.Num() != SC_PLAYER_STATE_PACKET_SIZE) return;
 	const auto& State = *reinterpret_cast<const SC_PlayerState*>(Data.GetData());
-	if (State.playerId != myId || State.maxHP <= 0 || State.hp < 0 || State.hp > State.maxHP ||
+	if (State.playerId != myId || State.lifeId < PlayerLifeId || State.maxHP <= 0 || State.hp < 0 || State.hp > State.maxHP ||
 		State.maxMP <= 0 || State.mp < 0 || State.mp > State.maxMP || State.level < 1 || State.exp < 0 ||
 		State.expToNext <= 0 || State.gold < 0 || !FMath::IsFinite(State.moveSpeed) || State.moveSpeed <= 0.f) return;
 	for (const ItemSlot& Item : State.items)
 		if ((Item.itemId == 0) != (Item.count == 0)) return;
 	PlayerState = State;
+	PlayerLifeId = State.lifeId;
 	bHasPlayerState = true;
 	PlayerStateTime = FPlatformTime::Seconds();
 	if (ATurtleAgent* Agent = FindAgentById(myId))
@@ -590,6 +628,7 @@ void UNetSubsystem::UseItem(int32 Slot)
 {
 	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || Slot < 0 || Slot >= INVENTORY_SLOT_COUNT) return;
 	CS_UseItem Packet{};
+	Packet.lifeId = PlayerLifeId;
 	Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(PACKET_ID::CS_USE_ITEM);
 	Packet.slot = static_cast<uint8>(Slot); Packet.expectedItemId = PlayerState.items[Slot].itemId;
 	Packet.inventoryRevision = PlayerState.inventoryRevision;
@@ -604,6 +643,8 @@ void UNetSubsystem::HandleRoomLeaveNotify(const TArray<uint8>& RecvData)
 	}
 
 	const SC_RoomLeaveNotify* Pkt = reinterpret_cast<const SC_RoomLeaveNotify*>(RecvData.GetData());
+	PlayerLives.Remove(Pkt->userIndex);
+	PlayerDisplayInfos.Remove(Pkt->userIndex);
 	if (AServerAgent** Found = players.Find(Pkt->userIndex))
 	{
 		if (*Found)
@@ -773,6 +814,9 @@ void UNetSubsystem::ResetNpcWorld()
 	const bool bHadState = bHasPlayerState || !players.IsEmpty();
 	bHasPlayerState = false;
 	PlayerState = {};
+	PlayerLifeId = 0;
+	PlayerLives.Reset();
+	PlayerDisplayInfos.Reset();
 	for (auto& Entry : players) if (IsValid(Entry.Value)) Entry.Value->Destroy();
 	players.Reset();
 	if (bHadState) OnGameplayStateChanged.Broadcast();
@@ -808,6 +852,34 @@ ATurtleAgent* UNetSubsystem::FindAgentById(uint32 Id) const
 	return Found ? *Found : nullptr;
 }
 
+bool UNetSubsystem::GetPlayerDisplayInfo(const ATurtleAgent* Agent, FString& OutName, int32& OutLevel) const
+{
+	OutName.Reset(); OutLevel = 0;
+	if (!IsValid(Agent)) return false;
+	uint32 Id = myId;
+	const bool bLocal = Agent == FindAgentById(myId);
+	if (!bLocal)
+	{
+		bool bFound = false;
+		for (const auto& Entry : players)
+			if (Entry.Value == Agent) { Id = Entry.Key; bFound = true; break; }
+		if (!bFound) return false;
+	}
+	if (const FPlayerDisplayInfo* Info = PlayerDisplayInfos.Find(Id))
+	{
+		OutName = Info->Name; OutLevel = Info->Level;
+	}
+	else OutName = bLocal ? StoredUserID : FindUserNameByIndex(Id);
+	if (OutName.IsEmpty()) OutName = TEXT("Player");
+	if (bLocal)
+	{
+		if (!IsSinglePlay() && bHasPlayerState) OutLevel = PlayerState.level;
+		else if (IsSinglePlay())
+			if (const UPlayerStatsComponent* Stats = Agent->FindComponentByClass<UPlayerStatsComponent>()) OutLevel = Stats->Level;
+	}
+	return true;
+}
+
 void UNetSubsystem::SendAttack(int32 SkillId, int64 TargetId, float Yaw)
 {
 	if (IsSinglePlay() || !IsConnected())
@@ -816,6 +888,7 @@ void UNetSubsystem::SendAttack(int32 SkillId, int64 TargetId, float Yaw)
 	}
 
 	CS_Attack Pkt{};
+	Pkt.lifeId = PlayerLifeId;
 	Pkt.size = CS_ATTACK_PACKET_SIZE;
 	Pkt.id = static_cast<uint16>(PACKET_ID::CS_ATTACK);
 	Pkt.skillId = static_cast<uint16>(SkillId);

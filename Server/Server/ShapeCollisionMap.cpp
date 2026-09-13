@@ -88,6 +88,7 @@ struct ShapeCollisionMap::Data
     int cols = 0, rows = 0;
     float cell = 0, ox = 0, oy = 0;
     float spawnX = 0, spawnY = 0, spawnYaw = 0;
+    float spawnGroundZ = 0;
     std::vector<std::string> terrain;
     std::vector<b2ShapeProxy> polygons;
     b2DynamicTree tree = b2DynamicTree_Create();
@@ -135,7 +136,8 @@ bool ShapeCollisionMap::Load(const char* path)
         data->spawnX = static_cast<float>(Number(spawn.at("x")));
         data->spawnY = static_cast<float>(Number(spawn.at("y")));
         data->spawnYaw = static_cast<float>(Number(spawn.at("yaw")));
-        Number(spawn.at("z")); Number(spawn.at("ground_z"));
+        Number(spawn.at("z"));
+        data->spawnGroundZ = static_cast<float>(Number(spawn.at("ground_z")));
         const auto& shapes = root.at("polygons");
         if (!shapes.is_array() || shapes.size() > 200000) throw std::runtime_error("Invalid polygon count");
         for (const auto& shape : shapes)
@@ -244,5 +246,6 @@ bool ShapeCollisionMap::SnapToFree(float& x, float& y, float radius) const
 
 float ShapeCollisionMap::SpawnX() const { return m_data ? m_data->spawnX : 0.f; }
 float ShapeCollisionMap::SpawnY() const { return m_data ? m_data->spawnY : 0.f; }
+float ShapeCollisionMap::SpawnGroundZ() const { return m_data ? m_data->spawnGroundZ : 0.f; }
 float ShapeCollisionMap::SpawnYaw() const { return m_data ? m_data->spawnYaw : 0.f; }
 size_t ShapeCollisionMap::PolygonCount() const { return m_data ? m_data->polygons.size() : 0; }

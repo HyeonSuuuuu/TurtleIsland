@@ -15,6 +15,8 @@ namespace GameplayRules
 	inline constexpr uint16_t HealthPotion = 1, ManaPotion = 2;
 	inline constexpr uint32_t ItemCooldownMs = 1000;
 	inline constexpr uint32_t LandingRecoveryMs = 500;
+	inline constexpr uint32_t PlayerRespawnDelayMs = 3000;
+	inline constexpr float PlayerCapsuleHalfHeight = 96.f;
 
 	struct PlayerState
 	{
@@ -30,6 +32,8 @@ namespace GameplayRules
 		bool airborne = false;
 		uint64_t landingReadyAt = 0;
 		uint64_t castReadyAt = 0;
+		uint64_t respawnReadyAt = 0;
+		uint32_t lifeId = 0;
 	};
 
 	inline bool ValidPose(float x, float y, float z, float yaw, float velocityZ)
@@ -53,6 +57,7 @@ namespace GameplayRules
 	{
 		if (!state.ready || request.slot >= state.items.size()) return ActionResult::Invalid;
 		if (state.hp <= 0) return ActionResult::Dead;
+		if (request.lifeId != state.lifeId) return ActionResult::Invalid;
 		auto& slot = state.items[request.slot];
 		if (request.inventoryRevision != state.inventoryRevision || request.expectedItemId != slot.itemId)
 			return ActionResult::StaleInventory;

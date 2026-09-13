@@ -30,6 +30,7 @@ public:
 	bool IsLandingLocked() const;
 	UFUNCTION(BlueprintPure, Category="Movement")
 	bool IsMovementLocked() const;
+	void ResetForRespawn();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 private:
