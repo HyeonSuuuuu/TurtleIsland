@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <atomic>
+#include <filesystem>
 #include "../../Common/ThirdParty/nlohmann/json.hpp"
 
 bool MapSpawn::LoadPlayerStart(const char* path)
@@ -28,6 +30,8 @@ bool MapSpawn::LoadPlayerStart(const char* path)
 bool ObstacleMap::Load(const char* path)
 {
 	m_loaded = false;
+	m_mode = Mode::Grid;
+	m_shapes = ShapeCollisionMap{};
 	m_blocked.clear();
 
 	std::ifstream file(path);
@@ -78,6 +82,7 @@ bool ObstacleMap::Load(const char* path)
 
 bool ObstacleMap::IsBlockedWorld(float wx, float wy) const
 {
+	if (m_mode != Mode::Grid) return !CanTraverse(wx, wy, wx, wy);
 	if (!m_loaded || !std::isfinite(wx) || !std::isfinite(wy)) return true;
 	if (wx < m_ox || wy < m_oy || wx >= m_ox + static_cast<double>(m_cols) * m_cell ||
 		wy >= m_oy + static_cast<double>(m_rows) * m_cell) return true;
@@ -89,6 +94,26 @@ bool ObstacleMap::IsBlockedWorld(float wx, float wy) const
 }
 
 bool ObstacleMap::CanTraverse(float fromX, float fromY, float toX, float toY, float radius) const
+{
+	if (!m_loaded) return false;
+	if (m_mode == Mode::Shapes) return m_shapes.CanTraverse(fromX, fromY, toX, toY, radius);
+	const bool grid = CanTraverseGrid(fromX, fromY, toX, toY, radius);
+	if (m_mode == Mode::Shadow)
+	{
+		const bool shapes = m_shapes.CanTraverse(fromX, fromY, toX, toY, radius);
+		static std::atomic<uint64_t> differences = 0;
+		if (grid != shapes)
+		{
+			const auto count = ++differences;
+			if (count <= 20 || count % 1000 == 0)
+				Log::Warning("[Collision] difference #{} grid={} shapes={} ({},{}) -> ({},{}) r={}",
+					count, grid, shapes, fromX, fromY, toX, toY, radius);
+		}
+	}
+	return grid;
+}
+
+bool ObstacleMap::CanTraverseGrid(float fromX, float fromY, float toX, float toY, float radius) const
 {
 	if (!m_loaded || !std::isfinite(fromX) || !std::isfinite(fromY) || !std::isfinite(toX) ||
 		!std::isfinite(toY) || !std::isfinite(radius) || radius < 0.f) return false;
@@ -126,6 +151,7 @@ bool ObstacleMap::CanTraverse(float fromX, float fromY, float toX, float toY, fl
 
 void ObstacleMap::SnapToFree(float& wx, float& wy, float radius) const
 {
+	if (m_mode == Mode::Shapes) { m_shapes.SnapToFree(wx, wy, radius); return; }
 	if (!m_loaded || !std::isfinite(wx) || !std::isfinite(wy) || !std::isfinite(radius) || radius < 0.f ||
 		CanTraverse(wx, wy, wx, wy, radius)) return;
 
@@ -152,5 +178,51 @@ void ObstacleMap::SnapToFree(float& wx, float& wy, float radius) const
 				}
 			}
 		}
+	}
+}
+
+bool ObstacleMap::LoadConfigured(const char* settingsPath)
+{
+	*this = ObstacleMap{};
+	try
+	{
+		std::ifstream file(settingsPath);
+		const auto config = nlohmann::json::parse(file);
+		const auto base = std::filesystem::path(settingsPath).parent_path();
+		const auto mode = config.at("mode").get<std::string>();
+		if (mode != "grid" && mode != "shadow" && mode != "shapes")
+			throw std::runtime_error("Unknown collision mode");
+		if (mode != "shapes")
+		{
+			if (!MapSpawn::LoadPlayerStart((base / "PlayerSpawn.json").string().c_str()) ||
+				!Load((base / "map.dat").string().c_str()))
+				throw std::runtime_error("Missing or invalid legacy map/spawn");
+		}
+		if (mode != "grid")
+		{
+			const auto scene = (base / config.at("scene").get<std::string>()).string();
+			if (!m_shapes.Load(scene.c_str())) throw std::runtime_error(m_shapes.LastError());
+			if (mode == "shadow" && (std::abs(m_shapes.SpawnX() - MapSpawn::PLAYER_X) > 0.1f ||
+				std::abs(m_shapes.SpawnY() - MapSpawn::PLAYER_Y) > 0.1f))
+				throw std::runtime_error("Shadow scene and legacy PlayerStart do not match");
+			if (mode == "shapes")
+			{
+				MapSpawn::PLAYER_X = m_shapes.SpawnX(); MapSpawn::PLAYER_Y = m_shapes.SpawnY();
+				MapSpawn::PLAYER_YAW = std::remainder(m_shapes.SpawnYaw(), 360.f);
+				MapSpawn::NPC_ANCHOR_X = MapSpawn::PLAYER_X - 20.f;
+				MapSpawn::NPC_ANCHOR_Y = MapSpawn::PLAYER_Y + 1600.f;
+			}
+		}
+		m_mode = mode == "shapes" ? Mode::Shapes : mode == "shadow" ? Mode::Shadow : Mode::Grid;
+		m_loaded = true;
+		Log::Success("[Collision] mode={} polygons={} PlayerStart=({},{})", mode,
+			m_shapes.PolygonCount(), MapSpawn::PLAYER_X, MapSpawn::PLAYER_Y);
+		return true;
+	}
+	catch (const std::exception& e)
+	{
+		*this = ObstacleMap{};
+		Log::Warning("[Collision] {}: {}; gameplay movement disabled", settingsPath, e.what());
+		return false;
 	}
 }

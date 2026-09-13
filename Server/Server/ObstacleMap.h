@@ -2,6 +2,7 @@
 #include "pch.h"
 #include <vector>
 #include <cstdint>
+#include "ShapeCollisionMap.h"
 
 // 2D 장애물 그리드 (Unreal 월드좌표 기준). map.dat 로부터 로드.
 //   헤더 1줄: cols rows cell originX originY
@@ -11,19 +12,24 @@ class ObstacleMap
 {
 public:
 	bool Load(const char* path);
+	bool LoadConfigured(const char* settingsPath);
 	bool IsLoaded() const { return m_loaded; }
 
 	// Missing/invalid maps, non-finite positions and out-of-grid coordinates are blocked.
 	bool IsBlockedWorld(float wx, float wy) const;
 	bool CanMoveTo(float wx, float wy) const { return !IsBlockedWorld(wx, wy); }
-	// Sweeps the whole segment against blocked cells expanded by the actor radius.
-	// Fails closed for an unloaded map, non-finite coordinates or map bounds.
+	// Grid: expanded cells. Shapes: continuous circle cast against actual convex outlines.
+	// Shadow returns the grid decision and logs differences. All modes fail closed.
 	bool CanTraverse(float fromX, float fromY, float toX, float toY, float radius = 0.f) const;
 
 	// (x,y) 가 막힌 칸이면 가장 가까운 이동가능 칸 중심으로 보정. 스폰 안전망.
 	void SnapToFree(float& wx, float& wy, float radius = 0.f) const;
 
 private:
+	enum class Mode { Grid, Shadow, Shapes };
+	Mode m_mode = Mode::Grid;
+	ShapeCollisionMap m_shapes;
+	bool CanTraverseGrid(float fromX, float fromY, float toX, float toY, float radius) const;
 	bool BlockedCell(int c, int r) const { return m_blocked[(size_t)r * m_cols + c] != 0; }
 
 	int     m_cols = 0, m_rows = 0;

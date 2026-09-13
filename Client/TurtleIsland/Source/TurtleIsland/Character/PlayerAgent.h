@@ -40,7 +40,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Stats", meta = (AllowPrivateAccess = "true"))
 	UPlayerStatsComponent* Stats;
 
-	/** Fixed top-down camera boom, independent of character and control rotation. */
+	/** 카메라 붐. 컨트롤 회전을 따라간다 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	USpringArmComponent* CameraBoom;
 
@@ -65,20 +65,12 @@ private:
 	UInteractionComponent* Interaction;
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category="Camera|TopDown", meta=(ClampMin="600", ClampMax="3000"))
-	float TopDownDistance = 1400.f;
-	UPROPERTY(EditDefaultsOnly, Category="Camera|TopDown", meta=(ClampMin="-80", ClampMax="-35"))
-	float TopDownPitch = -55.f;
-	UPROPERTY(EditDefaultsOnly, Category="Camera|TopDown")
-	float TopDownYaw = 45.f;
-	void ConfigureTopDownCamera();
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void BeginPlay() override;
 
 public:
 	/** Constructor */
 	APlayerAgent();
-	float GetCameraViewYaw() const;
 
 
 	/** 스탯 컴포넌트 (몬스터 보상 지급/HUD 바인딩용) */

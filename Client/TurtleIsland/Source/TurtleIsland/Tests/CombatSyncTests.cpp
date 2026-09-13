@@ -5,6 +5,8 @@
 #include "Character/PlayerAgent.h"
 #include "Gameplay/HealthComponent.h"
 #include "Gameplay/LocalMoverComponent.h"
+#include "Gameplay/LocalMovementInput.h"
+#include "Gameplay/PlayerInputComponent.h"
 #include "Gameplay/AgentSkillComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -25,10 +27,10 @@
 #include "Components/ProgressBar.h"
 #include "Components/UniformGridPanel.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FTopDownCameraDefaultsTest, "TurtleIsland.Gameplay.TopDownCamera",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FThirdPersonCameraTest, "TurtleIsland.Gameplay.ThirdPersonCamera",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FTopDownCameraDefaultsTest::RunTest(const FString& Parameters)
+bool FThirdPersonCameraTest::RunTest(const FString& Parameters)
 {
 	FTestWorldWrapper Wrapper;
 	if (!Wrapper.CreateTestWorld(EWorldType::Game)) return false;
@@ -42,15 +44,27 @@ bool FTopDownCameraDefaultsTest::RunTest(const FString& Parameters)
 	const USpringArmComponent* Boom = Player->FindComponentByClass<USpringArmComponent>();
 	const UCameraComponent* Camera = Player->FindComponentByClass<UCameraComponent>();
 	if (!TestNotNull(TEXT("Camera boom"), Boom) || !TestNotNull(TEXT("Camera"), Camera)) return false;
-	TestEqual(TEXT("Top-down distance"), Boom->TargetArmLength, 1400.f);
-	TestEqual(TEXT("Downward pitch"), Boom->GetTargetRotation().Pitch, -55.0);
-	TestEqual(TEXT("Movement uses camera yaw"), Player->GetCameraViewYaw(), 45.f);
-	TestTrue(TEXT("Character turns do not rotate camera"), Boom->IsUsingAbsoluteRotation());
-	TestFalse(TEXT("Mouse look cannot tilt camera"), Boom->bUsePawnControlRotation);
-	TestEqual(TEXT("Field of view"), Camera->FieldOfView, 55.f);
-	Player->SetActorRotation(FRotator(10.f, 180.f, 15.f));
-	TestEqual(TEXT("Character rotation keeps camera pitch"), Boom->GetTargetRotation().Pitch, -55.0);
-	TestEqual(TEXT("Character rotation keeps movement basis"), Player->GetCameraViewYaw(), 45.f);
+	TestEqual(TEXT("Third-person distance"), Boom->TargetArmLength, 400.f);
+	TestFalse(TEXT("Camera has no fixed world rotation"), Boom->IsUsingAbsoluteRotation());
+	TestTrue(TEXT("Camera follows control rotation"), Boom->bUsePawnControlRotation);
+	TestTrue(TEXT("Camera collision restored"), Boom->bDoCollisionTest);
+	TestEqual(TEXT("Field of view"), Camera->FieldOfView, 90.f);
+	APlayerController* PC = World->SpawnActor<APlayerController>();
+	ULocalMovementInput* MovementInput = Player->FindComponentByClass<ULocalMovementInput>();
+	UPlayerInputComponent* Input = Player->FindComponentByClass<UPlayerInputComponent>();
+	if (!TestNotNull(TEXT("Controller"), PC) || !TestNotNull(TEXT("Movement input"), MovementInput) ||
+		!TestNotNull(TEXT("Player input"), Input)) return false;
+	PC->SetAsLocalPlayerController();
+	PC->Possess(Player);
+	PC->SetControlRotation(FRotator(-20.f, 120.f, 0.f));
+	TestEqual(TEXT("Camera uses control pitch"), Boom->GetTargetRotation().Pitch, -20.0);
+	TestEqual(TEXT("Movement uses control yaw"), MovementInput->GetViewYaw(), 120.f);
+	Input->OnMoveAxis.Broadcast(FVector2D(0.f, 1.f));
+	const FVector Forward = FRotator(0.f, 120.f, 0.f).Vector();
+	TestTrue(TEXT("Forward follows the current view"), MovementInput->GetMovementInput().Equals(FVector2D(Forward.X, Forward.Y)));
+	Input->OnLookAxis.Broadcast(FVector2D(1.f, 1.f));
+	TestFalse(TEXT("Mouse look produces yaw input"), FMath::IsNearlyZero(PC->RotationInput.Yaw));
+	TestFalse(TEXT("Mouse look produces pitch input"), FMath::IsNearlyZero(PC->RotationInput.Pitch));
 	Wrapper.ForwardErrorMessages(this);
 	return true;
 }

@@ -2,7 +2,6 @@
 
 #include "Gameplay/LocalMovementInput.h"
 #include "Gameplay/PlayerInputComponent.h"
-#include "Character/PlayerAgent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 
@@ -30,7 +29,7 @@ void ULocalMovementInput::BeginPlay()
 
 float ULocalMovementInput::GetViewYaw() const
 {
-	if (const APlayerAgent* Player = Cast<APlayerAgent>(GetOwner())) return Player->GetCameraViewYaw();
+	// 기준축은 컨트롤 회전이다. 카메라는 이 값을 따라올 뿐이라 여기서 알 필요가 없다.
 	if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
 	{
 		if (const AController* C = OwnerPawn->GetController())
@@ -66,7 +65,6 @@ void ULocalMovementInput::HandleMoveReleased()
 void ULocalMovementInput::HandleLookAxis(const FVector2D& LookAxis)
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (Cast<APlayerAgent>(OwnerPawn)) return;
 	if (!OwnerPawn || !OwnerPawn->GetController())
 	{
 		return;

@@ -301,6 +301,8 @@ struct RoomSpawnTests
 		g_obstacleMap = ObstacleMap{};
 		room.SpawnAreaNpcsLocked(1100, true);
 		Check(!room.m_npcs[0].IsActive() && room.m_npcSpawnSlots[0].readyAt == 2100, "missing map blocks area spawn");
+		room.m_npcSpawnSlots[0] = {-1, 0};
+		Check(!room.SpawnNpc(0, 0, firstX, firstY, 10, 1.f), "missing map also blocks manual spawn");
 
 		room.m_userSlots[0] = 0;
 		room.m_userCount = 1;

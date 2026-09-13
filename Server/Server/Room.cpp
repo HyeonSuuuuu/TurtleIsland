@@ -355,6 +355,7 @@ bool Room::SpawnNpc(uint32_t npcId, uint16_t type, float x, float y, int32_t hp,
 		return false;
 
 	g_obstacleMap.SnapToFree(x, y);
+	if (!g_obstacleMap.CanMoveTo(x, y)) return false;
 	m_npcs[npcId].Spawn(npcId, type, x, y, hp, speed);
 	BroadcastNpcSpawnLocked(m_npcs[npcId]);
 	return true;

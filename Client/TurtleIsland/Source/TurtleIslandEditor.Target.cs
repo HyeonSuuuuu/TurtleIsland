@@ -11,5 +11,6 @@ public class TurtleIslandEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
 		ExtraModuleNames.Add("TurtleIsland");
+		ExtraModuleNames.Add("TurtleIslandCollisionEditor");
 	}
 }
