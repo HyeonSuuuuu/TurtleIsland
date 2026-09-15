@@ -13,6 +13,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameplayRules.h"
+#include "Gameplay/TurtleVfxActor.h"
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
@@ -201,5 +202,7 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 		}
 	}
 
+	ATurtleVfxActor::Spawn(GetWorld(), SkillId == 0 ? ETurtleVfx::BasicAttack : SkillId == 1 ? ETurtleVfx::SkillQ : ETurtleVfx::SkillE,
+		Owner->GetActorLocation(), Yaw);
 	OnSkillPlayed.Broadcast(SkillId, Yaw);
 }
