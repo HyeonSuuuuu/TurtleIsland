@@ -26,9 +26,12 @@ struct NpcMcpTests
         Check(BuyItem(played,1004,1,2500,&g_npcShopConfig.Find(1004)->stats)==ActionResult::Ok,"equipment bought");
         RewardKill(played,300,260);
         played.hp=5; played.items[0].count=1;
-        const auto saved=Json::parse(PlayerProgress::Capture(played,12).dump()); // through text, like the DB
-        PlayerState loaded; int affinity=g_npcShopConfig.affinity.start;
-        PlayerProgress::Apply(loaded,affinity,saved);
+        g_questDefs={{1,"first","",0,5,10,10,1,0},{2,"second","",0,1,10,10,1,1},{3,"third","",0,2,10,10,1,2}};
+        QuestLog quests; quests.done.insert(1); quests.active[2]=1; quests.active[3]=1;
+        const auto saved=Json::parse(PlayerProgress::Capture(played,12,quests).dump()); // through text, like the DB
+        PlayerState loaded; int affinity=g_npcShopConfig.affinity.start; QuestLog loadedQuests;
+        PlayerProgress::Apply(loaded,affinity,loadedQuests,saved);
+        Check(loadedQuests.done==quests.done && loadedQuests.active==quests.active,"quest progress survives a save");
         Check(loaded.level==3 && loaded.exp==played.exp && loaded.expToNext==played.expToNext && loaded.gold==played.gold &&
             SameItems(loaded,played) && affinity==12,"level, exp, gold, items and affinity survive a save");
         Check(loaded.maxHP==played.maxHP && loaded.maxMP==played.maxMP && loaded.attack==played.attack && loaded.defense==played.defense &&
@@ -37,16 +40,20 @@ struct NpcMcpTests
         auto tampered=saved;
         tampered["level"]=999; tampered["gold"]=-5; tampered["shop_affinity"]=500;
         tampered["items"]=Json::array({Json::array({1004,5}),Json::array({9999,1}),Json::array({1,3}),"junk"});
-        PlayerState clamped; int clampedAffinity=30;
-        PlayerProgress::Apply(clamped,clampedAffinity,tampered);
+        tampered["quests"]={{"done",Json::array({1,77})},{"active",Json::array({Json::array({2,99}),Json::array({77,1}),Json::array({1,1})})}};
+        PlayerState clamped; int clampedAffinity=30; QuestLog clampedQuests;
+        PlayerProgress::Apply(clamped,clampedAffinity,clampedQuests,tampered);
+        Check(clampedQuests.done==std::set<uint16_t>{1} && clampedQuests.active.size()==1 && clampedQuests.active.at(2)==1,
+            "unknown quests are dropped, kills capped, done quests not active");
         Check(clamped.level==PlayerProgress::MaxLevel && clamped.exp==clamped.expToNext && clamped.gold==0 && clampedAffinity==100 &&
             clamped.items[0].itemId==0 && clamped.items[1].itemId==0 && clamped.items[2].itemId==1 && clamped.items[2].count==3 &&
             clamped.attack==PlayerState{}.attack+2*(PlayerProgress::MaxLevel-1),"invalid saved values are clamped or dropped");
 
-        PlayerState fresh; int freshAffinity=30;
-        PlayerProgress::Apply(fresh,freshAffinity,Json());
+        PlayerState fresh; int freshAffinity=30; QuestLog freshQuests; freshQuests.done.insert(1);
+        PlayerProgress::Apply(fresh,freshAffinity,freshQuests,Json());
+        Check(freshQuests.done.empty() && freshQuests.active.empty(),"new character has no quests");
         Check(fresh.level==1 && fresh.gold==0 && freshAffinity==30 && SameItems(fresh,PlayerState{}),"never-saved character starts new");
-        std::println("PASS: character progress capture/apply round trip, stat rebuild, tamper clamping, new character");
+        std::println("PASS: character progress and quests capture/apply round trip, stat rebuild, tamper clamping, new character");
     }
 
     static void Run()
@@ -78,7 +85,7 @@ struct NpcMcpTests
         };
         NpcAgent::Client client(chat.context,exchange);
         const auto tools=client.Initialize();
-        Check(tools.size()==6,"MCP pagination discovers all tools");
+        Check(tools.size()==9,"MCP pagination discovers all tools");
         auto call=[&](const char* name,Json args=Json::object())
         { return client.Request("tools/call",{{"name",name},{"arguments",args}}); };
         auto result=call("get_player_condition");
@@ -245,6 +252,33 @@ struct NpcMcpTests
             Check(wallet.gold==1000,"equipment is bought one per slot");
             g_npcShopConfig=NpcShopConfig{};
             room.m_npcConversations.erase(buyer.GetSlotIndex()); room.m_playerStates.erase(buyer.GetSlotIndex());
+        }
+        {
+            g_questDefs={{1,"스토커 퇴치","풀숲의 스토커",0,2,100,50,1,0},{2,"후속 의뢰","다음 일",0,1,10,10,1,1}};
+            auto& log=room.m_questLogs[0]; log={};
+            const auto userId=g_userPool.Get(0)->GetId();
+            auto turn=[&](char token,const char* say,bool completed)
+            { return room.CompleteNpcChat(userId,{{"context",std::string(32,token)},{"say",say},{"completed",completed}}); };
+            auto view=[&]() { return Json::parse(chat.Call("get_quests",Json::object(),player,now,&log)["content"][0]["text"].get<std::string>()); };
+            chat.Begin(std::string(32,'q'),"any work?",now);
+            Check(view()["quests"].size()==1 && view()["quests"][0]["status"]=="available","only unlocked quests are offered");
+            Check(chat.Call("get_quests",Json::object(),player,now)["isError"]==true,"quest tools need the room's quest log");
+            Check(chat.Call("accept_quest",{{"quest_id",2}},player,now,&log)["isError"]==true,"locked quest cannot be accepted");
+            Check(chat.Call("accept_quest",{{"quest_id",1}},player,now,&log)["isError"]==false && log.active.empty() &&
+                view()["quests"][0]["status"]=="active","accept is staged until the reply is delivered");
+            Check(turn('q',"ok",true) && log.active.contains(1),"delivered reply commits the accept");
+            Check(!log.OnKill(1) && log.OnKill(0) && log.OnKill(0) && !log.OnKill(0) && log.active[1]==2,"kills of the target count up to the goal");
+            const int gold=player.gold;
+            chat.Begin(std::string(32,'r'),"done",now);
+            Check(chat.Call("complete_quest",{{"quest_id",1}},player,now,&log)["isError"]==false && player.gold==gold,"completion is staged");
+            Check(turn('r',"",false) && log.active.contains(1) && player.gold==gold,"failed reply pays nothing");
+            chat.Begin(std::string(32,'s'),"done",now);
+            chat.Call("complete_quest",{{"quest_id",1}},player,now,&log);
+            Check(turn('s',"thanks",true) && log.done.contains(1) && player.gold==gold+100,"delivered reply pays the reward");
+            Check(view()["quests"][0]["quest_id"]==2 && chat.Call("complete_quest",{{"quest_id",1}},player,now,&log)["isError"]==true,
+                "a finished quest unlocks the next one and cannot pay twice");
+            SC_QuestState packet{};
+            Check(sizeof(packet)<=MAX_SOCKBUF,"quest packet fits a socket frame");
         }
         chat.expiresAt=now;
         Check(chat.Dispatch(repeated,player,now).contains("error"),"expiry precedes replay");

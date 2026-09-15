@@ -68,9 +68,10 @@ bool Room::Leave(uint32_t slotIndex, NpcMcp::Json* progress)
 	{
 		const auto chat = m_npcConversations.find(slotIndex);
 		*progress = PlayerProgress::Capture(state->second,
-			chat != m_npcConversations.end() ? chat->second.relationship.affinity : g_npcShopConfig.affinity.start);
+			chat != m_npcConversations.end() ? chat->second.relationship.affinity : g_npcShopConfig.affinity.start, m_questLogs[slotIndex]);
 	}
 	m_playerStates.erase(slotIndex);
+	m_questLogs.erase(slotIndex);
 	m_npcConversations.erase(slotIndex);
 	m_pendingAttacks.erase(slotIndex);
 	m_movementBudgets.erase(slotIndex);
@@ -126,7 +127,7 @@ void Room::StartGame()
 		User* u = g_userPool.Get(m_userSlots[i]);
 		if (!u) continue;
 		int affinity = g_npcShopConfig.affinity.start;
-		PlayerProgress::Apply(m_playerStates[m_userSlots[i]], affinity, u->GetProgress());
+		PlayerProgress::Apply(m_playerStates[m_userSlots[i]], affinity, m_questLogs[m_userSlots[i]], u->GetProgress());
 		auto& chat = m_npcConversations[m_userSlots[i]];
 		chat.relationship.affinity = chat.proposedRelationship.affinity = affinity;
 		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
@@ -566,6 +567,7 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 		}
 		SendStateLocked(user, state, GetTickCount64());
 		SendShopPricesLocked(user);
+		SendQuestStateLocked(user);
 		SC_MoveNotify me{};
 		me.size = sizeof(me); me.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
 		me.userIndex = user.GetId(); me.x = user.x; me.y = user.y; me.yaw = user.yaw;
@@ -692,6 +694,7 @@ void Room::ApplyAttackHitLocked(User& user, const CS_Attack& request, uint64_t n
 			const MonsterDef fallback;
 			const auto& def = npc.m_type < g_monsterDefs.size() ? g_monsterDefs[npc.m_type] : fallback;
 			GameplayRules::RewardKill(state, def.gold, def.exp);
+			if (m_questLogs[user.GetSlotIndex()].OnKill(npc.m_type)) SendQuestStateLocked(user);
 			DespawnNpcLocked(npc, true);
 		}
 		if (request.skillId == SKILL_ID_BASIC_ATTACK) break;

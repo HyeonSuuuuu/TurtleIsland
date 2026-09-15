@@ -82,6 +82,7 @@ enum class PACKET_ID : uint16_t
 	SC_RESPAWN_NOTIFY = 396,
 	SC_PLAYER_INFO = 397,
 	SC_SHOP_PRICES = 398,
+	SC_QUEST_STATE = 399,   // 진행 중 퀘스트 (본인에게만)
 
 
 	// AI To Server (3000 ~ 3099)
@@ -449,6 +450,27 @@ struct SC_ShopPrices : PacketHeader
 	ShopProduct products[SHOP_MAX_PRODUCTS];
 };
 inline constexpr uint16_t SC_SHOP_PRICES_PACKET_SIZE = sizeof(SC_ShopPrices);
+
+//  --------------- Quest ----------------
+// Village chief hunting quests from Quest.lua. The server counts kills; the client only shows them.
+inline constexpr int32_t QUEST_MAX_ACTIVE = 3;
+inline constexpr int32_t QUEST_TITLE_BYTES = 48;
+inline constexpr int32_t QUEST_OBJECTIVE_BYTES = 40;
+struct QuestProgress
+{
+	uint16_t questId;
+	uint16_t progress;
+	uint16_t goal;
+	char title[QUEST_TITLE_BYTES];         // UTF-8, NUL-terminated
+	char objective[QUEST_OBJECTIVE_BYTES]; // UTF-8 target name, NUL-terminated
+};
+// Owner only. Sent on game ready, accept/complete and kill progress.
+struct SC_QuestState : PacketHeader
+{
+	uint8_t count;
+	QuestProgress quests[QUEST_MAX_ACTIVE];
+};
+inline constexpr uint16_t SC_QUEST_STATE_PACKET_SIZE = sizeof(SC_QuestState);
 
 //  --------------- NPC ----------------
 struct CS_NpcChat : public PacketHeader

@@ -3,6 +3,7 @@
 #include "../../Common/GameplayRules.h"
 #include "NpcShopConfig.h"
 #include "MonsterScript.h"
+#include "Quest.h"
 #include <cmath>
 #include <deque>
 #include <algorithm>
@@ -23,12 +24,14 @@ struct NpcConversation
     NpcMcp::Json replies = NpcMcp::Json::object();
     // quote survives later turns until bought, replaced, or invalidated; previousQuote restores it on failure.
     NpcMcp::Json quote, previousQuote;
+    // Quest accepts (false) and completions (true) proposed this turn; the room applies them only if the reply completes.
+    std::vector<std::pair<bool, uint16_t>> questActions;
 
     void Begin(const std::string& token, const std::string& text, uint64_t now)
     {
         if (!context.empty()) quote = previousQuote; // an unfinished turn never commits its quote
         context = token; message = text; expiresAt = now + NpcMcp::TurnLifetimeMs;
-        initialized = ready = changedAffinity = false; calls = 0;
+        initialized = ready = changedAffinity = false; calls = 0; questActions.clear();
         proposedRelationship = relationship;
         replies = NpcMcp::Json::object(); previousQuote = quote;
     }
@@ -86,7 +89,16 @@ struct NpcConversation
         const double ratio=toWin/toFall;
         return ratio<0.5 ? "easy" : ratio<1. ? "fair" : ratio<2. ? "hard" : "deadly";
     }
-    NpcMcp::Json Call(const std::string& name, const NpcMcp::Json& args, const GameplayRules::PlayerState& player, uint64_t now)
+    // The quest log as it will be if this turn completes.
+    QuestLog StagedQuests(const QuestLog& committed, GameplayRules::PlayerState player) const
+    {
+        QuestLog staged=committed;
+        for (const auto& [complete,id]:questActions)
+            if (const auto* quest=FindQuest(id)) complete ? staged.Complete(*quest,player) : staged.Accept(*quest,player.level);
+        return staged;
+    }
+    NpcMcp::Json Call(const std::string& name, const NpcMcp::Json& args, const GameplayRules::PlayerState& player, uint64_t now,
+        const QuestLog* quests = nullptr)
     {
         using namespace NpcMcp;
         auto& [lastAffinityAt, windowAt, affinity, windowGain, rewardedMessages] = proposedRelationship;
@@ -115,6 +127,42 @@ struct NpcConversation
             for (const auto& [key,text]:{std::pair{"habitat",&monster.habitat},{"looks",&monster.looks},{"lore",&monster.lore}})
                 if (!text->empty()) info[key]=*text;
             return ToolResult(info);
+        }
+        if (name == "get_quests" || name == "accept_quest" || name == "complete_quest")
+        {
+            if (!quests) return ToolError("quests_unavailable");
+            const QuestLog staged=StagedQuests(*quests,player);
+            if (name == "get_quests" && args.empty())
+            {
+                auto list=Json::array();
+                for (const auto& quest:g_questDefs)
+                    if (const auto status=staged.Status(quest,player.level); status!=QuestStatus::Locked && status!=QuestStatus::Done)
+                    {
+                        Json entry={{"quest_id",quest.id},{"title",quest.title},{"status",QuestStatusName(status)}};
+                        if (const auto kills=staged.active.find(quest.id); kills!=staged.active.end()) entry["progress"]=std::to_string(kills->second)+"/"+std::to_string(quest.count);
+                        list.push_back(entry);
+                    }
+                return ToolResult({{"quests",list},{"completed_count",staged.done.size()},{"max_active",QUEST_MAX_ACTIVE}});
+            }
+            const auto* quest=args.size()==1 && Integer(args,"quest_id",1,65535) ? FindQuest(args["quest_id"].get<uint16_t>()) : nullptr;
+            if (!quest) return ToolError("unknown_quest");
+            const auto status=staged.Status(*quest,player.level);
+            if (name == "get_quests")
+            {
+                const auto kills=staged.active.find(quest->id);
+                return ToolResult({{"quest_id",quest->id},{"title",quest->title},{"description",quest->description},{"status",QuestStatusName(status)},
+                    {"target",g_monsterDefs.size()>quest->monsterType ? g_monsterDefs[quest->monsterType].name : ""},
+                    {"progress",kills!=staged.active.end() ? kills->second : 0},{"goal",quest->count},
+                    {"reward_gold",quest->gold},{"reward_exp",quest->exp},{"min_level",quest->minLevel}});
+            }
+            QuestLog trial=staged;
+            GameplayRules::PlayerState rewarded=player;
+            const bool complete=name=="complete_quest";
+            if (complete ? !trial.Complete(*quest,rewarded) : !trial.Accept(*quest,player.level))
+                return ToolError(complete ? "not_ready_to_report" : status==QuestStatus::Available ? "too_many_active_quests" : "not_available");
+            questActions.push_back({complete,quest->id});
+            return complete ? ToolResult({{"completed",true},{"title",quest->title},{"reward_gold",quest->gold},{"reward_exp",quest->exp},{"paid",false}})
+                : ToolResult({{"accepted",true},{"title",quest->title},{"goal",quest->count}});
         }
         if (name == "get_relationship" && args.empty()) return ToolResult({{"affinity",affinity},{"minimum",0},{"maximum",100}});
         if (name == "propose_price")
@@ -154,7 +202,7 @@ struct NpcConversation
         }
         return ToolError("unknown_tool_or_arguments");
     }
-    NpcMcp::Json Dispatch(const NpcMcp::Json& request, const GameplayRules::PlayerState& player, uint64_t now)
+    NpcMcp::Json Dispatch(const NpcMcp::Json& request, const GameplayRules::PlayerState& player, uint64_t now, const QuestLog* quests = nullptr)
     {
         using namespace NpcMcp;
         if (!request.is_object()) return Error(nullptr,-32600,"Invalid request");
@@ -169,7 +217,7 @@ struct NpcConversation
         if (id.is_null()) return nullptr;
         const std::string key = id.dump();
         if (replies.contains(key)) return replies[key];
-        if (replies.size()>=20) return Error(id,-32000,"Request limit");
+        if (replies.size()>=32) return Error(id,-32000,"Request limit"); // initialize + tools/list pages + catalog + tool calls
         Json result;
         if (method=="initialize")
         {
@@ -191,7 +239,7 @@ struct NpcConversation
         else if (method=="tools/call")
         {
             if (++calls>MaxToolCalls) result=ToolError("tool_limit");
-            else result=Call(Text(params,"name",64),params.value("arguments",Json::object()),player,now);
+            else result=Call(Text(params,"name",64),params.value("arguments",Json::object()),player,now,quests);
         }
         else return Error(id,-32601,"Method not found");
         auto reply=Result(id,result);

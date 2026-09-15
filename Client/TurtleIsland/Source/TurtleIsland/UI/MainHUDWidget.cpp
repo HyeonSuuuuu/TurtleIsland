@@ -25,6 +25,7 @@
 #include "Gameplay/HealthComponent.h"
 #include "Gameplay/NpcNameplateComponent.h"
 #include "GameplayRules.h"
+#include "Network/ClientPacketCodec.h"
 #include "Network/NetSubsystem.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -309,6 +310,40 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 		FSlateDrawElement::MakeBox(Elements, TopLayer + 1, Geometry.ToPaintGeometry(FVector2D(70 * Health->GetHPRatio(), 5), FSlateLayoutTransform(Position + FVector2D(1, 1))),
 			White, ESlateDrawEffect::None, FLinearColor(0.8f, 0.12f, 0.12f));
 	}
+	// 진행 중 퀘스트 패널 (docs/ui-hud-spec.md 색상, 선형값). 서버가 보낸 처치 수를 그대로 보여준다.
+	if (const SC_QuestState* Quests = Net->GetQuestState(); Quests && Quests->count > 0)
+	{
+		const FLinearColor PanelColor(0.0033f, 0.0144f, 0.0185f, 0.9f), BorderColor(0.1413f, 0.1f, 0.1095f),
+			AccentColor(0.1022f, 0.3968f, 0.3613f), TextColor(0.7011f, 0.7011f, 0.7011f), BarColor(0.4342f, 0.2542f, 0.0612f);
+		const float PanelWidth = 260.f, RowHeight = 52.f;
+		const FVector2D PanelPosition(Geometry.GetLocalSize().X - PanelWidth - 24.f, QuestPanelTop);
+		const FVector2D PanelSize(PanelWidth, 34.f + RowHeight * Quests->count);
+		const auto Box = [&](const FVector2D& At, const FVector2D& Size, const FLinearColor& Color, int32 BoxLayer)
+		{
+			FSlateDrawElement::MakeBox(Elements, BoxLayer, Geometry.ToPaintGeometry(Size, FSlateLayoutTransform(At)), White, ESlateDrawEffect::None, Color);
+		};
+		Box(PanelPosition, PanelSize, BorderColor, TopLayer);
+		Box(PanelPosition + FVector2D(2, 2), PanelSize - FVector2D(4, 4), PanelColor, TopLayer + 1);
+		const auto Header = PlayerNameplate::FitText(TEXT("진행 중 퀘스트"), PanelWidth - 24.f, 11, 10);
+		DrawShadowedText(Elements, TopLayer + 2, Geometry, Header, PanelPosition + FVector2D(12, 9), TextColor);
+		for (int32 i = 0; i < Quests->count; ++i)
+		{
+			const QuestProgress& Quest = Quests->quests[i];
+			const FVector2D Row = PanelPosition + FVector2D(12, 30 + RowHeight * i);
+			const bool bReady = Quest.goal > 0 && Quest.progress >= Quest.goal;
+			const auto Title = PlayerNameplate::FitText(FClientPacketCodec::DecodeFixedUtf8(Quest.title, QUEST_TITLE_BYTES), PanelWidth - 24.f, 13, 11);
+			const auto Count = PlayerNameplate::FitText(bReady ? TEXT("촌장에게 보고") : *FString::Printf(TEXT("%d / %d"), Quest.progress, Quest.goal), 100.f, 11, 10);
+			const auto Objective = PlayerNameplate::FitText(FClientPacketCodec::DecodeFixedUtf8(Quest.objective, QUEST_OBJECTIVE_BYTES) + TEXT(" 처치"),
+				PanelWidth - 36.f - Count.Size.X, 11, 10);
+			DrawShadowedText(Elements, TopLayer + 2, Geometry, Title, Row, AccentColor);
+			DrawShadowedText(Elements, TopLayer + 2, Geometry, Objective, Row + FVector2D(0, 19), TextColor);
+			DrawShadowedText(Elements, TopLayer + 2, Geometry, Count, Row + FVector2D(PanelWidth - 24.f - Count.Size.X, 19), bReady ? FLinearColor(1.f, 0.85f, 0.4f) : TextColor);
+			const float Ratio = Quest.goal > 0 ? FMath::Clamp(static_cast<float>(Quest.progress) / Quest.goal, 0.f, 1.f) : 0.f;
+			Box(Row + FVector2D(0, 38), FVector2D(PanelWidth - 24.f, 4), FLinearColor(0.02f, 0.05f, 0.06f), TopLayer + 2);
+			Box(Row + FVector2D(0, 38), FVector2D((PanelWidth - 24.f) * Ratio, 4), BarColor, TopLayer + 3);
+		}
+	}
+
 	// NPC 이름표. 상호작용 구체 안이면 그 위에 "F 대화하기" 를 붙이고, 상점 창이 열려 있으면 안내는 숨긴다.
 	bool bShopOpen = false;
 	for (TObjectIterator<UShopWidget> Shop; Shop && !bShopOpen; ++Shop) bShopOpen = Shop->GetWorld() == GetWorld() && Shop->IsInViewport();

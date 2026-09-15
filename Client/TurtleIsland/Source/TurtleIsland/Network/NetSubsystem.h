@@ -189,6 +189,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Shop")
 	void BuyItem(int32 ItemId);
 	const SC_ShopPrices* GetShopPrices() const { return bHasShopPrices ? &ShopPrices : nullptr; }
+	// 진행 중인 촌장 퀘스트. SC_QUEST_STATE 를 받기 전에는 null.
+	const SC_QuestState* GetQuestState() const { return bHasQuestState ? &QuestState : nullptr; }
 	// Server catalog entry (price, quote, equipment stats, name). Null until SC_SHOP_PRICES arrives.
 	const ShopProduct* FindShopProduct(int32 ItemId) const;
 	FString GetShopItemName(int32 ItemId) const;
@@ -333,6 +335,7 @@ protected:
 	void HandleRoomStartNotify(const TArray<uint8>& RecvData);
 	void HandleNpcChat(const TArray<uint8>& RecvData);
 	void HandleShopPrices(const TArray<uint8>& RecvData);
+	void HandleQuestState(const TArray<uint8>& RecvData);
 	void SyncLegacyChatLines();
 
 	// userIndex(=서버 playerId) → 표시 이름. 못 찾으면 "유저 N".
@@ -375,6 +378,8 @@ protected:
 	double PlayerStateTime = 0;
 	SC_ShopPrices ShopPrices{};
 	bool bHasShopPrices = false;
+	SC_QuestState QuestState{};
+	bool bHasQuestState = false;
 	UPROPERTY() TMap<int32, TObjectPtr<class UTexture2D>> ItemIcons; // found icons only; misses are retried
 	TSet<int32> MissingIconWarned;
 };

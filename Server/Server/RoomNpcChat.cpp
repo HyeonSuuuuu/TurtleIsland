@@ -69,6 +69,22 @@ void Room::EndNpcChat(User& user, uint32_t npcId)
     g_aiSession->Send(data);
 }
 
+void Room::SendQuestStateLocked(User& user)
+{
+    SC_QuestState packet{};
+    packet.size=sizeof(packet); packet.id=static_cast<uint16_t>(PACKET_ID::SC_QUEST_STATE);
+    for (const auto& [id,kills]:m_questLogs[user.GetSlotIndex()].active)
+    {
+        const auto* quest=FindQuest(id);
+        if (!quest || packet.count>=QUEST_MAX_ACTIVE) continue;
+        auto& entry=packet.quests[packet.count++];
+        entry.questId=id; entry.progress=kills; entry.goal=quest->count;
+        strncpy_s(entry.title,quest->title.c_str(),_TRUNCATE);
+        if (g_monsterDefs.size()>quest->monsterType) strncpy_s(entry.objective,g_monsterDefs[quest->monsterType].name.c_str(),_TRUNCATE);
+    }
+    user.Send({reinterpret_cast<const uint8_t*>(&packet),sizeof(packet)});
+}
+
 void Room::SendShopPricesLocked(User& user)
 {
     const auto chat=m_npcConversations.find(user.GetSlotIndex());
@@ -130,7 +146,7 @@ bool Room::HandleNpcMcp(const NpcMcp::Json& request, NpcMcp::Json& response)
         if (chat.context!=context) continue;
         const auto player=m_playerStates.find(slot);
         if (!m_inGame || player==m_playerStates.end()) return false;
-        response=chat.Dispatch(request,player->second,GetTickCount64());
+        response=chat.Dispatch(request,player->second,GetTickCount64(),&m_questLogs[slot]);
         return true;
     }
     return false;
@@ -162,6 +178,23 @@ bool Room::CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response)
                 std::to_string(chat.quote["quantity"].get<int>()) + "개까지 개당 " + std::to_string(chat.quote["unit_price"].get<int>()) +
                 "G - 상점 목록에서 구매하세요";
         chat.previousQuote=chat.quote;
+        if (completed && !chat.questActions.empty())
+        {
+            auto& log=m_questLogs[slot];
+            for (const auto& [complete,id]:chat.questActions)
+            {
+                const auto* quest=FindQuest(id);
+                if (!quest) continue;
+                if (complete && log.Complete(*quest,player->second))
+                    text += "\n[퀘스트 완료] " + quest->title + " - 보상 " + std::to_string(quest->gold) + "G, 경험치 " + std::to_string(quest->exp);
+                else if (!complete && log.Accept(*quest,player->second.level))
+                    text += "\n[퀘스트 수락] " + quest->title + " (" + (g_monsterDefs.size()>quest->monsterType ? g_monsterDefs[quest->monsterType].name : std::string{}) +
+                        " 0/" + std::to_string(quest->count) + ")";
+            }
+            SendQuestStateLocked(*user);
+            SendStateLocked(*user,player->second,GetTickCount64());
+        }
+        chat.questActions.clear();
         Say(*user,text);
         SendShopPricesLocked(*user);
         return true;
