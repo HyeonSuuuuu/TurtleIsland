@@ -525,12 +525,14 @@ void UShopWidget::RefreshProducts()
 		{
 			Text->SetText(FText::FromString(!Product ? FString(TEXT("--G"))
 				: Quote ? FString::Printf(TEXT("%dG x%d"), Price, Quote) : FString::Printf(TEXT("%dG"), Price)));
-			Text->SetColorAndOpacity(Quote ? QuotePriceColour : ProductPriceColours[i]);
+			const bool bAffordable = State && State->gold >= Price;
+			Text->SetColorAndOpacity(!bAffordable && Product ? UnaffordablePriceColour : Quote ? QuotePriceColour : ProductPriceColours[i]);
 		}
 		ProductTooltips[i]->SetItem(Net, ItemId, ProductIcons[i], !Product ? FString(TEXT("상점 정보를 받는 중"))
 			: Quote ? FString::Printf(TEXT("흥정 가격 %dG · %d개 남음\n클릭하면 1개 구매"), Price, Quote)
 			: FString::Printf(TEXT("%dG · 클릭하면 1개 구매"), Price));
-		ProductButtons[i]->SetIsEnabled(Product && State && State->hp > 0 && State->gold >= Price);
+		// 비활성 버튼은 아이콘까지 어둡게 그려진다. 살 수 없어도 밝게 두고, 부족하면 서버가 "골드가 부족합니다"로 답한다.
+		ProductButtons[i]->SetIsEnabled(Product != nullptr);
 	}
 }
 
