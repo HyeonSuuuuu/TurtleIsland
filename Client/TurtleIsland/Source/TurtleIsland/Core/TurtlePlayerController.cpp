@@ -12,6 +12,7 @@
 #include "Network/NetSubsystem.h"
 #include "UI/PauseMenuWidget.h"
 #include "UI/ShopWidget.h"
+#include "UI/MinimapWidget.h"
 #include "UI/PlayerUIComponent.h"
 #include "TurtleIsland.h"
 #include "Kismet/GameplayStatics.h"
@@ -86,6 +87,9 @@ void ATurtlePlayerController::SetupInputComponent()
 		}
 
 		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ATurtlePlayerController::TogglePauseMenu);
+		InputComponent->BindKey(EKeys::M, IE_Pressed, this, &ATurtlePlayerController::ToggleWorldMap);
+		for (const FKey& Key : {EKeys::Equals, EKeys::Add}) InputComponent->BindKey(Key, IE_Pressed, this, &ATurtlePlayerController::ZoomMinimapIn);
+		for (const FKey& Key : {EKeys::Hyphen, EKeys::Subtract}) InputComponent->BindKey(Key, IE_Pressed, this, &ATurtlePlayerController::ZoomMinimapOut);
 	}
 }
 
@@ -94,6 +98,13 @@ void ATurtlePlayerController::TogglePauseMenu()
 	if (PauseMenuWidget)
 	{
 		ClosePauseMenu();
+		return;
+	}
+
+	// 전체 지도가 떠 있으면 먼저 닫는다.
+	if (UMinimapWidget* Map = UMinimapWidget::FindFor(this); Map && Map->IsFullMap())
+	{
+		Map->ToggleFullMap();
 		return;
 	}
 
@@ -128,6 +139,21 @@ void ATurtlePlayerController::TogglePauseMenu()
 		if (Net && Net->IsSinglePlay())
 			UGameplayStatics::SetGamePaused(this, true);
 	}
+}
+
+void ATurtlePlayerController::ToggleWorldMap()
+{
+	if (UMinimapWidget* Map = UMinimapWidget::FindFor(this)) Map->ToggleFullMap();
+}
+
+void ATurtlePlayerController::ZoomMinimapIn()
+{
+	if (UMinimapWidget* Map = UMinimapWidget::FindFor(this)) Map->Zoom(1);
+}
+
+void ATurtlePlayerController::ZoomMinimapOut()
+{
+	if (UMinimapWidget* Map = UMinimapWidget::FindFor(this)) Map->Zoom(-1);
 }
 
 void ATurtlePlayerController::ClosePauseMenu()

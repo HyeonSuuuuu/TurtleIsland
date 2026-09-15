@@ -30,6 +30,7 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "UI/ItemTooltipWidget.h"
+#include "UI/MinimapWidget.h"
 #include "UI/ShopWidget.h"
 #include "UObject/UObjectIterator.h"
 
@@ -65,6 +66,11 @@ void UMainHUDWidget::NativeConstruct()
 	}
 	for (int32 i = 0; i < 8; ++i) SetText(*FString::Printf(TEXT("CombatLine%d"), i), TEXT(""));
 	BindNetwork(GetGameInstance() ? GetGameInstance()->GetSubsystem<UNetSubsystem>() : nullptr);
+	if (!Minimap && GetOwningPlayer())
+	{
+		Minimap = CreateWidget<UMinimapWidget>(GetOwningPlayer(), UMinimapWidget::StaticClass());
+		if (Minimap) Minimap->AddToViewport(1);
+	}
 }
 
 void UMainHUDWidget::BindNetwork(UNetSubsystem* InNet)
@@ -92,6 +98,8 @@ void UMainHUDWidget::NativeDestruct()
 {
 	BindNetwork(nullptr);
 	DamagePopups.Reset();
+	if (Minimap) Minimap->RemoveFromParent();
+	Minimap = nullptr;
 	Super::NativeDestruct();
 }
 
