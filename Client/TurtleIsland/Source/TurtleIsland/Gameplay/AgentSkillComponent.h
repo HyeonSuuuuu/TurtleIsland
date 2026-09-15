@@ -84,4 +84,5 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ActiveSkillMontage;
 	bool bWasAirborne = false;
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> AirMontage;
+	UPROPERTY(Transient) TObjectPtr<UAnimMontage> DeathMontage;
 };

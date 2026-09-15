@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Character/TurtleAgent.h"
+#include "Gameplay/TurtleVfxActor.h"
 #include "Gameplay/HealthComponent.h"
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/LocalMoverComponent.h"
@@ -59,6 +60,7 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 
 void ATurtleAgent::EnterDeadState()
 {
+	ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Death, GetActorLocation());
 	if (Skill)
 	{
 		Skill->ResetPlayback();
@@ -87,6 +89,7 @@ void ATurtleAgent::EnterDeadState()
 
 void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 {
+	const bool bWasDead = Health && Health->IsDead();
 	if (Skill) Skill->ResetPlayback();
 	StopJumping();
 	ConsumeMovementInputVector();
@@ -120,5 +123,6 @@ void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 		C->SetIgnoreLookInput(false);
 	}
 	DeathController.Reset();
+	if (bWasDead) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Respawn, At);
 
 }

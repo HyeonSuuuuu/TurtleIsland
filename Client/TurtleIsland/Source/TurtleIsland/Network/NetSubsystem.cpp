@@ -15,6 +15,7 @@
 #include "GameplayRules.h"
 #include "Kismet/GameplayStatics.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Gameplay/TurtleVfxActor.h"
 #include "Engine/Texture2D.h"
 
 const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
@@ -537,6 +538,8 @@ void UNetSubsystem::HandleDamageNotify(const TArray<uint8>& RecvData)
 		AActor* Causer = FindEntity(Pkt->causerKind, Pkt->causerId);
 		Health->MaxHP = Pkt->maxHP;
 		OnDamageNumber.Broadcast(Target->GetActorLocation(), Pkt->damage, Pkt->flags);
+		if (Pkt->damage > 0 && !(Pkt->flags & 2))
+			ATurtleVfxActor::Spawn(GetWorld(), Pkt->targetKind == ENTITY_PLAYER ? ETurtleVfx::HitPlayer : ETurtleVfx::Hit, Target->GetActorLocation());
 		Health->ApplyServerDamage(Pkt->remainHP, Pkt->damage, Causer);
 	}
 }
@@ -594,6 +597,7 @@ void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 		if ((Item.itemId == 0) != (Item.count == 0)) return;
 	// 골드·경험치는 처치 보상으로만 오른다. 직전 상태와의 차이를 시스템 로그에 찍는다.
 	TArray<FString> Rewards;
+	const bool bLevelUp = bHasPlayerState && State.level > PlayerState.level;
 	if (bHasPlayerState)
 	{
 		int32 Exp = State.exp - PlayerState.exp;
@@ -618,6 +622,7 @@ void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 			Stats->ApplyServerStats(State.level, State.exp, State.expToNext, State.gold);
 		}
 		Agent->GetCharacterMovement()->MaxWalkSpeed = State.moveSpeed;
+		if (bLevelUp) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::LevelUp, Agent->GetActorLocation());
 	}
 	OnGameplayStateChanged.Broadcast();
 	for (const FString& Reward : Rewards) OnActionFeedback.Broadcast(Reward);
@@ -633,7 +638,10 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 		const FString Item = GetShopItemName(Result.actionId);
 		switch (Result.result)
 		{
-		case ActionResult::Ok: Message = FString::Printf(TEXT("%s 구매 완료"), *Item); break;
+		case ActionResult::Ok:
+			Message = FString::Printf(TEXT("%s 구매 완료"), *Item);
+			if (const ATurtleAgent* Buyer = FindAgentById(myId)) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Purchase, Buyer->GetActorLocation());
+			break;
 		case ActionResult::NotEnoughGold: Message = TEXT("골드가 부족합니다."); break;
 		case ActionResult::InventoryFull: Message = TEXT("인벤토리에 빈 칸이 없습니다."); break;
 		case ActionResult::PriceChanged: Message = TEXT("가격이 바뀌었습니다. 목록을 확인하고 다시 눌러주세요."); break;
@@ -643,6 +651,14 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 		}
 		OnShopFeedback.Broadcast(Message);
 		return;
+	}
+	if (Result.result == ActionResult::Ok && Result.requestId == static_cast<uint16>(PACKET_ID::CS_USE_ITEM) &&
+		bHasPlayerState && Result.actionId < INVENTORY_SLOT_COUNT)
+	{
+		// The result arrives before the new state, so the slot still holds the used potion.
+		const uint16 Used = PlayerState.items[Result.actionId].itemId;
+		if (const ATurtleAgent* User = FindAgentById(myId); User && (Used == GameplayRules::HealthPotion || Used == GameplayRules::ManaPotion))
+			ATurtleVfxActor::Spawn(GetWorld(), Used == GameplayRules::HealthPotion ? ETurtleVfx::PotionHP : ETurtleVfx::PotionMP, User->GetActorLocation());
 	}
 	switch (Result.result)
 	{
