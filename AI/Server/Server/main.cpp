@@ -1162,6 +1162,16 @@ std::string ResolveModelPath()
 	return {};
 }
 
+// llama.cpp/ggml 로그 필터. DEBUG("CUDA Graph id N reused" 등)는 버리고 INFO 이상만 출력한다.
+// CONT 는 직전 로그의 이어쓰기라 직전 레벨을 따른다.
+static void LlamaLogCallback(ggml_log_level level, const char* text, void* /*user_data*/)
+{
+	static ggml_log_level lastLevel = GGML_LOG_LEVEL_INFO;
+	if (level != GGML_LOG_LEVEL_CONT) lastLevel = level;
+	if (lastLevel == GGML_LOG_LEVEL_DEBUG) return;
+	fputs(text, stderr);
+}
+
 int main(int argc, char** argv)
 {
 	// 콘솔 입출력을 UTF-8로 고정한다.
@@ -1178,6 +1188,7 @@ int main(int argc, char** argv)
 	Log::Info("GGUF model: {}", model_path);
 	if (argc == 2 && std::string(argv[1]) == "--check-model-path") return 0;
 
+	llama_log_set(LlamaLogCallback, nullptr);
 	llama_backend_init();
 	ggml_backend_load_all();
 
