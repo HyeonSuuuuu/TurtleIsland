@@ -43,14 +43,12 @@ private:
 	UFUNCTION() void AddDamage(FVector Location, int32 Damage, uint8 Flags);
 	UFUNCTION() void ShowFeedback(FString Message);
 	void ScrollCombatLogToEnd();
-	UTexture2D* FindItemIcon(int32 ItemId);
 	UPROPERTY() TObjectPtr<UNetSubsystem> Net;
 	UPROPERTY() TArray<TObjectPtr<UQuickSlotButton>> SlotButtons;
 	UPROPERTY() TArray<TObjectPtr<UImage>> SlotIcons;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> SlotCounts;
 	UPROPERTY() TArray<TObjectPtr<class UItemTooltipWidget>> SlotTooltips;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> SkillCooldowns;
-	UPROPERTY() TMap<int32, TObjectPtr<UTexture2D>> ItemIcons;
 	struct FDamagePopup { FVector Location; int32 Damage; uint8 Flags; double Start; };
 	TArray<FDamagePopup> DamagePopups;
 	TArray<FString> CombatLines;

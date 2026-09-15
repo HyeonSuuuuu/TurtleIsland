@@ -14,6 +14,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayRules.h"
 #include "Kismet/GameplayStatics.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Engine/Texture2D.h"
 
 const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
 const FName UNetSubsystem::LoginLevelName(TEXT("Lv0_Login"));
@@ -701,8 +703,37 @@ int32 UNetSubsystem::ItemIdFromIcon(const FString& TextureName)
 	static const FString Prefix = TEXT("T_UI_ShopItem_");
 	if (!TextureName.StartsWith(Prefix)) return 0;
 	FString Id = TextureName.Mid(Prefix.Len());
-	Id.Split(TEXT("_"), &Id, nullptr);
+	int32 Underscore = INDEX_NONE;
+	if (Id.FindChar(TEXT('_'), Underscore)) Id.LeftInline(Underscore);
 	return Id.IsNumeric() ? FCString::Atoi(*Id) : 0;
+}
+
+void UNetSubsystem::RegisterItemIcon(int32 ItemId, UTexture2D* Icon)
+{
+	if (ItemId > 0 && Icon) ItemIcons.Add(ItemId, Icon);
+}
+
+UTexture2D* UNetSubsystem::FindItemIcon(int32 ItemId)
+{
+	if (ItemId <= 0) return nullptr;
+	if (const TObjectPtr<UTexture2D>* Known = ItemIcons.Find(ItemId); Known && *Known) return Known->Get();
+	TArray<FAssetData> Assets;
+	IAssetRegistry::GetChecked().GetAssetsByPath(TEXT("/Game/UI/Textures/Icons"), Assets, true);
+	for (const FAssetData& Asset : Assets)
+	{
+		if (ItemIdFromIcon(Asset.AssetName.ToString()) != ItemId) continue;
+		if (UTexture2D* Icon = Cast<UTexture2D>(Asset.GetAsset()))
+		{
+			ItemIcons.Add(ItemId, Icon);
+			return Icon;
+		}
+	}
+	if (!MissingIconWarned.Contains(ItemId))
+	{
+		MissingIconWarned.Add(ItemId);
+		UE_LOG(LogTemp, Warning, TEXT("[Item] 아이콘을 찾지 못함: item %d (/Game/UI/Textures/Icons/T_UI_ShopItem_%d_*)"), ItemId, ItemId);
+	}
+	return nullptr;
 }
 
 void UNetSubsystem::HandleShopPrices(const TArray<uint8>& Data)
