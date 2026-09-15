@@ -167,7 +167,7 @@ std::vector<std::string> GenerateBatchResponses(
 	llama_model* model,
 	llama_context* ctx,
 	const std::vector<std::string>& formattedPrompts,
-	const std::vector<bool>& agentSteps = {});
+	const std::vector<const char*>& grammars = {});
 
 std::string LoadTextFileOrDefault(
 	const std::filesystem::path& path,
@@ -518,6 +518,7 @@ struct AiRequest
 	std::vector<ChatTurn>* history = nullptr;
 	std::shared_ptr<std::promise<std::string>> result;
 	bool agentStep = false;
+	bool sayOnly = false; // agent step that must end the turn with dialogue
 	const char* systemPromptOverride = nullptr;
 };
 
@@ -581,7 +582,8 @@ public:
 		const std::string& userText,
 		std::vector<ChatTurn>& history,
 		bool agentStep = false,
-		const char* systemPromptOverride = nullptr)
+		const char* systemPromptOverride = nullptr,
+		bool sayOnly = false)
 	{
 		auto request = std::make_shared<AiRequest>();
 		request->clientId = clientId;
@@ -589,6 +591,7 @@ public:
 		request->history = &history;
 		request->agentStep = agentStep;
 		request->systemPromptOverride = systemPromptOverride;
+		request->sayOnly = sayOnly;
 		request->result = std::make_shared<std::promise<std::string>>();
 
 		std::future<std::string> future = request->result->get_future();
@@ -748,9 +751,10 @@ private:
 
 		try
 		{
-			std::vector<bool> agentSteps;
-			for (const auto& request:validRequests) agentSteps.push_back(request->agentStep);
-			responses = GenerateBatchResponses(model_, ctx_, formattedPrompts,agentSteps);
+			std::vector<const char*> grammars;
+			for (const auto& request:validRequests)
+				grammars.push_back(!request->agentStep ? nullptr : request->sayOnly ? NpcAgent::SayGrammar : NpcAgent::Grammar);
+			responses = GenerateBatchResponses(model_, ctx_, formattedPrompts,grammars);
 		}
 		catch (const std::exception& e)
 		{
@@ -972,10 +976,10 @@ void HandleClient(
 								rpc["params"].value("arguments",NpcMcp::Json::object()).dump(), response.value("result",response).dump());
 						return response;
 					});
-					say=NpcAgent::Run(mcp,speech,memory,[&](const std::string& prompt)
+					say=NpcAgent::Run(mcp,speech,memory,[&](const std::string& prompt, bool sayOnly)
 					{
 						std::vector<ChatTurn> scratch;
-						auto output=aiQueue.Submit(clientId,prompt,scratch,true).get();
+						auto output=aiQueue.Submit(clientId,prompt,scratch,true,nullptr,sayOnly).get();
 						Log::Info("[Agent] model: {}", output);
 						return output;
 					},[&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); });
@@ -1412,7 +1416,7 @@ int main(int argc, char** argv)
 		const NpcMcp::Json warmup = {{"available_tools", NpcMcp::Tools()}, {"previous_dialogue", NpcMcp::Json::array()},
 			{"customer_speech", "Hello"}, {"tool_observations", NpcMcp::Json::array()}, {"remaining_tool_calls", NpcMcp::MaxToolCalls - 1}};
 		const std::string prompt = FormatPromptForModel(model.get(), NpcAgent::SystemPrompt, {}, warmup.dump());
-		if (!prompt.empty()) GenerateBatchResponses(model.get(), ctx.get(), {prompt}, {true});
+		if (!prompt.empty()) GenerateBatchResponses(model.get(), ctx.get(), {prompt}, {NpcAgent::Grammar});
 		Log::Info("AI warmup done in {} ms",
 			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
 	}
@@ -1733,7 +1737,7 @@ std::vector<std::string> GenerateBatchResponses(
 	llama_model* model,
 	llama_context* ctx,
 	const std::vector<std::string>& formattedPrompts,
-	const std::vector<bool>& agentSteps)
+	const std::vector<const char*>& grammars)
 {
 	std::vector<std::string> outputs(formattedPrompts.size());
 
@@ -1790,9 +1794,9 @@ std::vector<std::string> GenerateBatchResponses(
 			continue;
 		}
 
-		if (i<static_cast<int>(agentSteps.size()) && agentSteps[i])
+		if (i<static_cast<int>(grammars.size()) && grammars[i])
 		{
-			auto* grammar=llama_sampler_init_grammar(vocab,NpcAgent::Grammar,"root");
+			auto* grammar=llama_sampler_init_grammar(vocab,grammars[i],"root");
 			if (!grammar) { states[i].failed=true; states[i].active=false; continue; }
 			llama_sampler_chain_add(states[i].sampler,grammar);
 		}
