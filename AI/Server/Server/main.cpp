@@ -134,7 +134,7 @@ constexpr int kBatchGatherWaitMs = 15;
 constexpr bool kPrintPromptDebug = false;
 
 // 콘솔 테스트 루프. true 면 main 이 콘솔 입력에서 블로킹돼 네트워크 리슨까지 못 간다
-// (게임서버가 4444 연결에 실패하고 NpcChat 이 비활성된다). 평소에는 false.
+// (게임서버가 34444 연결에 실패하고 NpcChat 이 비활성된다). 평소에는 false.
 constexpr bool kEnableConsoleTestLoop = false;
 
 // 파일 I/O 테스트 모드 — input.txt(줄마다 JSON) → 추론 → output.txt(JSON) append.

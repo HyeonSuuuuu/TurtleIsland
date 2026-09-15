@@ -116,7 +116,7 @@ and inventory slots find them.
   up to 128 conversations per game-server connection. History eviction does not
   grant the model access to any other conversation.
 
-The AI listener binds to `127.0.0.1`, port 4444 by default. Start AI before the
+The AI listener binds to `127.0.0.1`, port 34444 by default. Start AI before the
 game server. `TI_AI_PORT` can override the AI port for tests; the game server's
 configured destination must match. The transport has no remote authentication
 or TLS, so do not expose it directly on an untrusted network. The current design
@@ -146,7 +146,7 @@ and use **Debug x64** or **Release x64** with F5. Both configurations use the
 required C++ language standard and set the debugger working directory to
 `$(ProjectDir)`. The existing model can stay in
 `AI/Server/Server/x64/Release/models`; a Debug build finds it without another copy.
-Stop any previously launched AI server before F5, because the default port 4444
+Stop any previously launched AI server before F5, because the default port 34444
 cannot be bound by two processes. An explicit `TI_AI_MODEL` environment variable
 still takes priority over all automatic paths.
 
