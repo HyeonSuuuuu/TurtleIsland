@@ -4,9 +4,26 @@
 
 The existing NPC chat now runs a local-LLM tool loop. This first stage supports
 condition lookup, catalog lookup, relationship lookup, price proposals and small
-relationship changes. It does **not** purchase items, deduct currency or persist
-relationships in the database. Purchase confirmation/UI and atomic DB-backed
-transactions are follow-up work. Only the existing shop NPC ID `0` is supported.
+relationship changes. The model never purchases. The player buys from the shop
+list (`CS_SHOP_BUY`), paying the base price or the committed quote, which the
+server re-checks. Gold, inventory and relationships are not persisted in the
+database. Only the existing shop NPC ID `0` is supported, with no distance check.
+
+## Purchase
+
+- `SC_SHOP_PRICES` (owner only) carries each potion's current unit price and the
+  remaining quoted quantity. It is sent on ready, respawn, each completed NPC
+  turn and each purchase.
+- `CS_SHOP_BUY {lifeId, itemId, quantity, unitPrice}` must echo that price. A
+  mismatch returns `PriceChanged`. Other results are `NotEnoughGold`,
+  `InventoryFull` (stack limit 99) and `Cooldown`, which means an NPC turn is
+  still pending and could change the quote.
+- A quote applies to up to its quantity, persists across later turns and is
+  consumed by purchases. A failed or expired turn restores the previous quote.
+  Death clears it.
+- The client wraps each `Frame*` cell in `WBP_Shop` that contains exactly one
+  red or blue potion icon in a buy button, and writes the price into the cell's
+  TextBlock.
 
 ## Architecture
 
@@ -64,15 +81,17 @@ grant an item in this implementation.
 
 ## Policy And Configuration
 
-`Server/Server/NpcShop.json` is copied beside the game-server executable by the
+`Server/Server/Shop.lua` is copied beside the game-server executable by the
 build. Run the game server with that directory as its working directory. Missing
-or invalid config disables shop conversation and logs a warning. Restart after
-editing the file. Item IDs 1 and 2 are HP and MP potions respectively.
+or invalid config disables the shop (conversation and purchase) and logs a
+warning. Restart after editing the file. Item IDs 1 and 2 are the health and
+mana potions (`ShopPotions.HealthPotion`, `ShopPotions.ManaPotion`).
 
-- Config price fields are integers: `minimum_price <= base_price <= maximum_price`, all
-  between 1 and 100000. Both ordered product entries are required.
+- `minPrice`, `avgPrice` and `maxPrice` are integers, with
+  `minPrice <= avgPrice <= maxPrice`, all between 1 and 100000. `avgPrice` is
+  the list price. Both potions are required.
 - Affinity starts at 25 and is clamped to 0..100.
-- Current unit-price floor is `basePrice - floor((basePrice-minimumPrice)*affinity/100)`.
+- Current unit-price floor is `avgPrice - floor((avgPrice-minPrice)*affinity/100)`.
   With 100/70/120 and affinity 25, the floor is 93G, never below 70G.
 - Quantity is 1..99. A later affinity decrease invalidates an under-floor quote.
 - At most one nonzero affinity change per turn, a 60-second cooldown between

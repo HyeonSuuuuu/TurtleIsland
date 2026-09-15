@@ -4,15 +4,29 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/Button.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Styling/SlateColor.h"
 #include "ShopWidget.generated.h"
 
-class UButton;
 class UEditableText;
 class UScrollBox;
 class UTextBlock;
 class UVerticalBox;
+
+/** 왼쪽 목록의 포션 칸 하나를 감싸는 투명 버튼. 누르면 1개 구매. */
+UCLASS()
+class TURTLEISLAND_API UShopItemButton : public UButton
+{
+	GENERATED_BODY()
+public:
+	UShopItemButton();
+	void Setup(int32 InItemId);
+	int32 GetItemId() const { return ItemId; }
+private:
+	UFUNCTION() void Buy();
+	int32 ItemId = 0;
+};
 
 /**
  *  상점 NPC 대화창(WBP_Shop 오른쪽 패널).
@@ -56,6 +70,7 @@ public:
 	int32 GetNpcIndex() const { return NpcIndex; }
 
 protected:
+	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -137,6 +152,17 @@ protected:
 	UFUNCTION()
 	void HandleNpcChat(FString Say);
 
+	/** 흥정 가격이 붙은 상품의 가격 글자색. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Products")
+	FSlateColor QuotePriceColour = FSlateColor(FLinearColor(0.35f, 0.95f, 0.45f, 1.f));
+
+	/** 가격·골드가 바뀌면 상품 칸의 가격 표시와 구매 가능 여부를 갱신한다. */
+	UFUNCTION()
+	void RefreshProducts();
+
+	UFUNCTION()
+	void HandleShopFeedback(FString Message);
+
 private:
 	class UNetSubsystem* GetNet() const;
 
@@ -172,4 +198,14 @@ private:
 	/** 지금 떠 있는 "···" 말풍선. 없으면 nullptr. */
 	UPROPERTY()
 	TObjectPtr<UWidget> TypingBubble;
+
+	/** 가운데 정렬 안내 줄(구매 결과 등). */
+	void AddSystemLine(const FString& Text);
+
+	/** 디자이너의 Frame* 칸 중 포션 아이콘이 든 것. 가격 TextBlock 은 없을 수 있다. */
+	UPROPERTY()
+	TArray<TObjectPtr<UShopItemButton>> ProductButtons;
+	UPROPERTY()
+	TArray<TObjectPtr<UTextBlock>> ProductPrices;
+	TArray<FSlateColor> ProductPriceColours;
 };
