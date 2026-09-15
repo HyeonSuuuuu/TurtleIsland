@@ -42,6 +42,13 @@ public:
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> JumpAnimation;
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> FallAnimation;
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> LandAnimation;
+	/** 검 트레일: 칼날 본과 그 본 기준 손잡이·끝 오프셋(Paladin Sword_joint 는 -Z 가 칼날). */
+	UPROPERTY(EditAnywhere, Category="Skill|Trail") FName TrailBone = TEXT("Sword_joint");
+	UPROPERTY(EditAnywhere, Category="Skill|Trail") FVector TrailBaseOffset = FVector(0, 0, -15);
+	UPROPERTY(EditAnywhere, Category="Skill|Trail") FVector TrailTipOffset = FVector(0, 0, -85);
+	/** 평타, Q, E 트레일 색(가산이라 1 이상이면 더 밝다). */
+	UPROPERTY(EditAnywhere, Category="Skill|Trail") TArray<FLinearColor> TrailColours = {
+		FLinearColor(1.6f, 2.6f, 3.2f), FLinearColor(4.f, 2.8f, 1.f), FLinearColor(3.f, 1.4f, 4.f)};
 	/** 사망 시 한 번 재생하고 마지막 자세로 부활까지 유지한다. 비워두면 Paladin 기본 사망 모션. */
 	UPROPERTY(EditAnywhere, Category="Skill|Death") TSoftObjectPtr<UAnimSequenceBase> DeathAnimation =
 		TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/Lv3_Ingame/Characters/Paladin/Anims/Sword_and_Shield_Animation/sword_and_shield_death.sword_and_shield_death")));

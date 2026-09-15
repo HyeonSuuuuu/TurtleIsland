@@ -28,18 +28,7 @@ namespace
 	const FLinearColor Cyan(0.55f * 3, 0.85f * 3, 3.f), Gold(4.f, 2.8f, 1.f), Purple(3.f, 1.4f, 4.f), Orange(5.f, 2.7f, 0.7f),
 		Red(5.f, 1.f, 0.7f), Green(1.2f, 4.f, 1.8f), Blue(1.2f, 2.4f, 4.f), DarkRed(2.f, 0.25f, 0.25f), White(3.f, 3.2f, 3.5f);
 
-	// T_VFX_Slash bulges toward the texture top, which is the plane's local -Y: yaw +90 points it forward.
 	const FLayerDef LayerDefs[] = {
-		{ETurtleVfx::BasicAttack, TEXT("T_VFX_Slash"), Cyan, EFace::Ground, {90, 0, 20}, 0.12f, 0.24f, 170, 250, 1, 0, 0, 90},
-		{ETurtleVfx::BasicAttack, TEXT("T_VFX_Glow"), Cyan * 0.5f, EFace::Billboard, {120, 0, 20}, 0.18f, 0.18f, 60, 150},
-
-		{ETurtleVfx::SkillQ, TEXT("T_VFX_Slash"), Gold, EFace::Ground, {0, 0, 10}, 0.25f, 0.42f, 220, 440, 1, 720, 0, 90},
-		{ETurtleVfx::SkillQ, TEXT("T_VFX_Slash"), Gold, EFace::Ground, {0, 0, 10}, 0.25f, 0.42f, 220, 440, 1, 720, 0, 270},
-		{ETurtleVfx::SkillQ, TEXT("T_VFX_Ring"), Gold * 0.6f, EFace::Ground, {0, 0, -85}, 0.3f, 0.45f, 100, 560},
-
-		{ETurtleVfx::SkillE, TEXT("T_VFX_Slash"), Purple, EFace::Ground, {160, 0, 10}, 0.22f, 0.36f, 260, 640, 1, 0, 0, 90},
-		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple * 0.6f, EFace::Ground, {120, 0, -85}, 0.25f, 0.45f, 120, 520},
-		{ETurtleVfx::SkillE, TEXT("T_VFX_Burst"), Purple * 0.7f, EFace::Billboard, {230, 0, 20}, 0.28f, 0.3f, 80, 260},
 
 		{ETurtleVfx::Hit, TEXT("T_VFX_Burst"), Orange, EFace::Billboard, {0, 0, 20}, 0, 0.22f, 50, 150},
 		{ETurtleVfx::Hit, TEXT("T_VFX_Star"), Orange * 0.8f, EFace::Billboard, {0, 0, 20}, 0, 0.28f, 40, 110, 1, 300},

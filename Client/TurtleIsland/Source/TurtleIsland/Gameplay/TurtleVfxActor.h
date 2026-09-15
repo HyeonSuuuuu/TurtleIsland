@@ -7,7 +7,7 @@
 class UMaterialInstanceDynamic;
 class UStaticMeshComponent;
 
-enum class ETurtleVfx : uint8 { BasicAttack, SkillQ, SkillE, Hit, HitPlayer, LevelUp, PotionHP, PotionMP, Death, Respawn, Purchase };
+enum class ETurtleVfx : uint8 { Hit, HitPlayer, LevelUp, PotionHP, PotionMP, Death, Respawn, Purchase };
 
 /**
  *  에셋 없이 쓰는 간단한 이펙트. /Game/VFX 텍스처를 가산 머티리얼 평면에 띄워

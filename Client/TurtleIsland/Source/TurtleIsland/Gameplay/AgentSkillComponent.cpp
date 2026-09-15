@@ -13,7 +13,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameplayRules.h"
-#include "Gameplay/TurtleVfxActor.h"
+#include "Gameplay/WeaponTrailActor.h"
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
@@ -202,7 +202,10 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 		}
 	}
 
-	ATurtleVfxActor::Spawn(GetWorld(), SkillId == 0 ? ETurtleVfx::BasicAttack : SkillId == 1 ? ETurtleVfx::SkillQ : ETurtleVfx::SkillE,
-		Owner->GetActorLocation(), Yaw);
+	if (const ACharacter* Character = Cast<ACharacter>(Owner); Character && TrailColours.IsValidIndex(SkillId))
+	{
+		// Sample most of the swing; a still blade adds no visible ribbon area.
+		AWeaponTrailActor::Spawn(Character->GetMesh(), TrailBone, TrailBaseOffset, TrailTipOffset, 0.05f, LockDuration * 0.7f, TrailColours[SkillId]);
+	}
 	OnSkillPlayed.Broadcast(SkillId, Yaw);
 }
