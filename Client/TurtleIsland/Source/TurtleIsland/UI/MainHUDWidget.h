@@ -38,6 +38,9 @@ protected:
 	/** 몬스터 이름·체력바를 그리는 최대 거리(cm, 내 캐릭터 기준). 0 이하면 제한 없음. 플레이어 이름표는 항상 그린다. */
 	UPROPERTY(EditDefaultsOnly, Category="HUD", meta=(Units="cm"))
 	float MonsterPlateMaxDistance = 2500.f;
+	/** 진행 중 퀘스트 패널의 화면 위쪽 여백(1080p 기준 px). 미니맵 아래에 오도록 맞춘다. */
+	UPROPERTY(EditDefaultsOnly, Category="HUD")
+	float QuestPanelTop = 300.f;
 private:
 	void SetupSlots();
 	UFUNCTION() void AddDamage(FVector Location, int32 Damage, uint8 Flags);

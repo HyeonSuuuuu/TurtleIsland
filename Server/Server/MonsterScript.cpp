@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "MonsterScript.h"
+#include "Quest.h"
 #include "include/lua.hpp"
 #include "Define.h"
 #include "ObstacleMap.h"
@@ -188,5 +189,58 @@ bool LoadSkillScript(const char* path)
 	if (!valid) Log::Warning("[LUA] '{}' has no Skills table; using built-in skill values", path);
 	else Log::Success("[LUA] skills loaded (Attack/Q/E damage {}/{}/{})",
 		GameplayRules::Skills[0].damage, GameplayRules::Skills[1].damage, GameplayRules::Skills[2].damage);
+	return valid;
+}
+
+bool LoadQuestScript(const char* path)
+{
+	g_questDefs.clear();
+	lua_State* L = luaL_newstate();
+	if (!L) return false;
+	if (luaL_dofile(L, path) != LUA_OK)
+	{
+		Log::Warning("[LUA] '{}' load fail: {}", path, lua_tostring(L, -1));
+		lua_close(L);
+		return false;
+	}
+	lua_getglobal(L, "Quests");
+	bool valid = lua_istable(L, -1);
+	const auto text = [&](const char* field, size_t maxBytes)
+	{
+		lua_getfield(L, -1, field);
+		std::string value = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+		lua_pop(L, 1);
+		return value.size() <= maxBytes ? value : std::string{};
+	};
+	for (int i = 1; valid && i <= static_cast<int>(lua_rawlen(L, -1)); ++i)
+	{
+		lua_rawgeti(L, -1, i);
+		QuestDef quest;
+		int id = 0, monster = -1, count = 0, prerequisite = 0;
+		if (lua_istable(L, -1))
+		{
+			ReadField(L, "id", id, 1, 65535);
+			ReadField(L, "monster", monster, 0, 65535);
+			ReadField(L, "count", count, 1, 999);
+			ReadField(L, "gold", quest.gold, 0, 1000000);
+			ReadField(L, "exp", quest.exp, 0, 1000000);
+			ReadField(L, "minLevel", quest.minLevel, 1, 30);
+			ReadField(L, "prerequisite", prerequisite, 0, 65535);
+			quest.title = text("title", QUEST_TITLE_BYTES - 1);
+			quest.description = text("description", MonsterLoreBytes);
+		}
+		quest.id = static_cast<uint16_t>(id); quest.monsterType = static_cast<uint16_t>(monster);
+		quest.count = static_cast<uint16_t>(count); quest.prerequisite = static_cast<uint16_t>(prerequisite);
+		if (!id || !count || quest.title.empty() || monster < 0 || monster >= static_cast<int>(g_monsterDefs.size()) || FindQuest(quest.id))
+		{
+			Log::Warning("[LUA] Quests[{}] is invalid (unique id, title under {} bytes, monster index, count); quests disabled", i, QUEST_TITLE_BYTES);
+			valid = false;
+		}
+		else g_questDefs.push_back(std::move(quest));
+		lua_pop(L, 1);
+	}
+	lua_close(L);
+	if (!valid) g_questDefs.clear();
+	Log::Info("[LUA] quests loaded: {}", g_questDefs.size());
 	return valid;
 }

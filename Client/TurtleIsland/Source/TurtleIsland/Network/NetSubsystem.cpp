@@ -208,6 +208,7 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	case PACKET_ID::SC_ROOM_START_NOTIFY: HandleRoomStartNotify(RecvData); break;
 	case PACKET_ID::SC_NPC_CHAT: HandleNpcChat(RecvData); break;
 	case PACKET_ID::SC_SHOP_PRICES: HandleShopPrices(RecvData); break;
+	case PACKET_ID::SC_QUEST_STATE: HandleQuestState(RecvData); break;
 	case PACKET_ID::SC_NPC_SPAWN:
 	case PACKET_ID::SC_NPC_MOVE:
 	case PACKET_ID::SC_NPC_DESPAWN:
@@ -764,6 +765,26 @@ void UNetSubsystem::HandleShopPrices(const TArray<uint8>& Data)
 	OnShopPricesChanged.Broadcast();
 }
 
+void UNetSubsystem::HandleQuestState(const TArray<uint8>& Data)
+{
+	if (Data.Num() != SC_QUEST_STATE_PACKET_SIZE) return;
+	const auto& State = *reinterpret_cast<const SC_QuestState*>(Data.GetData());
+	if (State.count > QUEST_MAX_ACTIVE) return;
+	// 방금 목표를 채운 퀘스트는 채팅으로도 알린다. 입장 직후 첫 스냅샷은 알리지 않는다.
+	for (int32 i = 0; bHasQuestState && i < State.count; ++i)
+	{
+		const QuestProgress& Quest = State.quests[i];
+		if (Quest.goal == 0 || Quest.progress < Quest.goal) continue;
+		bool bWasReady = false;
+		for (int32 j = 0; j < QuestState.count; ++j)
+			bWasReady |= QuestState.quests[j].questId == Quest.questId && QuestState.quests[j].progress >= Quest.goal;
+		if (!bWasReady)
+			EmitChat(FString::Printf(TEXT("[퀘스트] %s 목표 달성 - 촌장에게 보고하세요"), *FClientPacketCodec::DecodeFixedUtf8(Quest.title, QUEST_TITLE_BYTES)));
+	}
+	QuestState = State;
+	bHasQuestState = true;
+}
+
 void UNetSubsystem::HandleRoomLeaveNotify(const TArray<uint8>& RecvData)
 {
 	if (!FClientPacketCodec::HasExactSize(RecvData, SC_ROOM_LEAVE_NOTIFY_PACKET_SIZE))
@@ -944,6 +965,8 @@ void UNetSubsystem::ResetNpcWorld()
 	bHasPlayerState = false;
 	PlayerState = {};
 	bHasShopPrices = false;
+	bHasQuestState = false;
+	QuestState = {};
 	PlayerLifeId = 0;
 	PlayerLives.Reset();
 	PlayerDisplayInfos.Reset();
