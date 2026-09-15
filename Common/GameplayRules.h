@@ -72,6 +72,27 @@ namespace GameplayRules
 		state.itemReadyAt = now + ItemCooldownMs;
 		return ActionResult::Ok;
 	}
+	inline constexpr uint16_t MaxItemStack = 99;
+	// Price is decided by the caller (base or negotiated quote); this only moves gold and items.
+	inline ActionResult BuyItem(PlayerState& state, uint16_t itemId, uint16_t quantity, int32_t unitPrice)
+	{
+		if (!state.ready || (itemId != HealthPotion && itemId != ManaPotion) || quantity == 0 || quantity > MaxItemStack || unitPrice <= 0)
+			return ActionResult::Invalid;
+		if (state.hp <= 0) return ActionResult::Dead;
+		const int64_t cost = static_cast<int64_t>(unitPrice) * quantity;
+		if (state.gold < cost) return ActionResult::NotEnoughGold;
+		ItemSlot* target = nullptr;
+		for (auto& slot : state.items)
+			if (slot.itemId == itemId && slot.count + quantity <= MaxItemStack) { target = &slot; break; }
+		for (auto& slot : state.items)
+			if (!target && slot.itemId == 0) target = &slot;
+		if (!target) return ActionResult::InventoryFull;
+		target->itemId = itemId;
+		target->count += quantity;
+		state.gold -= static_cast<int32_t>(cost);
+		++state.inventoryRevision;
+		return ActionResult::Ok;
+	}
 	inline void RewardKill(PlayerState& state, int32_t gold = 10, int32_t exp = 25)
 	{
 		gold = std::max(gold, 0); exp = std::max(exp, 0);

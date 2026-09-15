@@ -3,6 +3,8 @@
 #include "Globals.h"
 #include "../../../AI/Server/Server/NpcAgent.h"
 #include <stdexcept>
+#include <filesystem>
+#include <fstream>
 
 static void Check(bool value, const char* message)
 {
@@ -15,6 +17,14 @@ struct NpcMcpTests
         using namespace NpcMcp;
         Check(!Integer(Json::parse(R"({"delta":18446744073709551615})"),"delta",-2,2),"unsigned overflow rejected");
         Check(Integer({{"delta",-2}},"delta",-2,2) && Integer({{"delta",uint64_t{2}}},"delta",-2,2),"valid signed and unsigned arguments");
+        Check(g_npcShopConfig.Load("Shop.lua"),"Shop.lua loads");
+        {
+            const auto fixture=std::filesystem::temp_directory_path()/"TurtleShopInvalid.lua";
+            std::ofstream(fixture)<<"ShopPotions={HealthPotion={minPrice=90,avgPrice=80,maxPrice=120},ManaPotion={minPrice=1,avgPrice=2,maxPrice=3}}";
+            Check(!g_npcShopConfig.Load(fixture.string().c_str()) && !g_npcShopConfig.enabled,"min above average disables shop");
+            std::filesystem::remove(fixture);
+        }
+        g_npcShopConfig=NpcShopConfig{}; // fixed prices below
         Room room;
         room.m_inGame=true; room.m_userCount=1; room.m_userSlots[0]=0;
         auto& player=room.m_playerStates[0]; player.ready=true; player.hp=37; player.gold=987654;
@@ -78,6 +88,38 @@ struct NpcMcpTests
         Check(chat.Call("propose_price",{{"item_id",1},{"quantity",1},{"unit_price",92}},player,now+60001)["isError"]==false,"affinity discount quote");
         chat.Call("propose_affinity_change",{{"delta",-2}},player,now+60001);
         Check(chat.quote.is_null(),"quote invalidated when new floor exceeds price");
+
+        {
+            // Pool users have no slot index in tests, so the buyer's state lives under that key.
+            User buyer;
+            auto& deal=room.m_npcConversations[buyer.GetSlotIndex()];
+            auto& wallet=room.m_playerStates[buyer.GetSlotIndex()]; wallet=player;
+            deal.relationship=chat.relationship;
+            deal.Begin(std::string(32,'e'),"bulk deal",GetTickCount64());
+            Check(deal.Call("propose_price",{{"item_id",1},{"quantity",2},{"unit_price",95}},wallet,now+60001)["isError"]==false,"bulk quote");
+            CS_ShopBuy buy{}; buy.lifeId=wallet.lifeId; buy.itemId=1; buy.quantity=1; buy.unitPrice=95;
+            const int gold=wallet.gold;
+            room.BuyItem(buyer,buy);
+            Check(wallet.gold==gold,"no purchase while the reply may still change the quote");
+            deal.context.clear(); deal.previousQuote=deal.quote; // committed turn
+            room.BuyItem(buyer,buy);
+            Check(wallet.gold==gold-95 && wallet.items[0].count==4 && deal.quote["quantity"]==1,"negotiated purchase consumes quote");
+            deal.Begin(std::string(32,'f'),"thanks",0);
+            deal.Call("propose_price",{{"item_id",1},{"quantity",9},{"unit_price",110}},wallet,now+60001);
+            Check(!deal.Busy(deal.expiresAt) && deal.quote["quantity"]==1,"unfinished turn keeps the committed quote");
+            buy.quantity=2; room.BuyItem(buyer,buy);
+            Check(wallet.gold==gold-95,"quote price limited to quoted quantity");
+            buy.quantity=1; room.BuyItem(buyer,buy);
+            Check(wallet.gold==gold-190 && deal.quote.is_null(),"quote used up");
+            room.BuyItem(buyer,buy);
+            Check(wallet.gold==gold-190,"stale quote price rejected");
+            buy.unitPrice=100; wallet.gold=99; room.BuyItem(buyer,buy);
+            Check(wallet.gold==99 && wallet.items[0].count==5,"not enough gold");
+            wallet.gold=100000; buy.itemId=2; buy.quantity=99; wallet.items={{{1,99},{2,99},{1,99},{2,99},{1,99},{2,99}}};
+            room.BuyItem(buyer,buy);
+            Check(wallet.gold==100000,"full inventory rejected");
+            room.m_npcConversations.erase(buyer.GetSlotIndex()); room.m_playerStates.erase(buyer.GetSlotIndex());
+        }
         chat.expiresAt=now;
         Check(chat.Dispatch(repeated,player,now).contains("error"),"expiry precedes replay");
         room.Leave(0);

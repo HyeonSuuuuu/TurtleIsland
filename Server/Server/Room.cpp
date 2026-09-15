@@ -324,7 +324,7 @@ void Room::TickPlayerRespawnLocked(uint32_t slot, uint64_t now)
 		if (auto chat = m_npcConversations.find(slot); chat != m_npcConversations.end())
 		{
 			chat->second.context.clear();
-			chat->second.quote = nullptr;
+			chat->second.quote = chat->second.previousQuote = nullptr;
 		}
 		return;
 	}
@@ -349,6 +349,7 @@ void Room::TickPlayerRespawnLocked(uint32_t slot, uint64_t now)
 	packet.hp = state.hp; packet.maxHP = state.maxHP;
 	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&packet), sizeof(packet)});
 	SendStateLocked(user, state, now);
+	SendShopPricesLocked(user);
 }
 
 void Room::BroadcastNpcSpawns(uint32_t toSlot)
@@ -554,6 +555,7 @@ void Room::PlayerReady(User& user, const CS_IngameReady& request)
 			m_movementBudgets[user.GetSlotIndex()] = {GetTickCount64(), state.moveSpeed * MovementBurstSeconds};
 		}
 		SendStateLocked(user, state, GetTickCount64());
+		SendShopPricesLocked(user);
 		SC_MoveNotify me{};
 		me.size = sizeof(me); me.id = static_cast<uint16_t>(PACKET_ID::SC_MOVE_NOTIFY);
 		me.userIndex = user.GetId(); me.x = user.x; me.y = user.y; me.yaw = user.yaw;

@@ -92,6 +92,7 @@
     <ClCompile Include="RoomNpcChat.cpp" />
     <ClCompile Include="NpcTick.cpp" />
     <ClCompile Include="MonsterScript.cpp" />
+    <ClCompile Include="NpcShopConfig.cpp" />
     <ClCompile Include="ObstacleMap.cpp" />
     <ClCompile Include="ShapeCollisionMap.cpp" />
     <ClCompile Include="Database.cpp" />
@@ -141,7 +142,7 @@
     </None>
     <None Include="CollisionSettings.json"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
     <None Include="CollisionMap.json" Condition="Exists('CollisionMap.json')"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
-    <None Include="NpcShop.json">
+    <None Include="Shop.lua">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

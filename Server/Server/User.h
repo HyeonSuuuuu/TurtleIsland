@@ -47,6 +47,7 @@ private:
 	void OnNpcChat(const Packet& packet);
 	void OnAttack(const Packet& packet);
 	void OnUseItem(const Packet& packet);
+	void OnShopBuy(const Packet& packet);
 
 	// ---------- Helpers ----------
 	template<typename T>

@@ -110,6 +110,7 @@ void User::RegisterHandlers()
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_NPC_CHAT)]           = &User::OnNpcChat;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ATTACK)] = &User::OnAttack;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_USE_ITEM)] = &User::OnUseItem;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_SHOP_BUY)] = &User::OnShopBuy;
 }
 
 void User::Dispatch(const Packet& packet)
@@ -469,6 +470,12 @@ void User::OnUseItem(const Packet& packet)
 {
 	if (m_userState != UserState::Room || !m_roomIndex || packet.dataSpan.size() != CS_USE_ITEM_PACKET_SIZE) return;
 	g_rooms[*m_roomIndex].UseItem(*this, *reinterpret_cast<const CS_UseItem*>(packet.dataSpan.data()));
+}
+
+void User::OnShopBuy(const Packet& packet)
+{
+	if (m_userState != UserState::Room || !m_roomIndex || packet.dataSpan.size() != CS_SHOP_BUY_PACKET_SIZE) return;
+	g_rooms[*m_roomIndex].BuyItem(*this, *reinterpret_cast<const CS_ShopBuy*>(packet.dataSpan.data()));
 }
 
 void User::OnNpcChat(const Packet& packet)

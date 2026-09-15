@@ -181,6 +181,17 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Gameplay")
 	FOnActionFeedback OnActionFeedback;
 
+	// ---- 상점 ----
+	// 1개 구매. 가격은 서버가 보낸 SC_SHOP_PRICES 값을 그대로 되돌려 보내고, 다르면 서버가 거절한다.
+	UFUNCTION(BlueprintCallable, Category="Shop")
+	void BuyItem(int32 ItemId);
+	const SC_ShopPrices* GetShopPrices() const { return bHasShopPrices ? &ShopPrices : nullptr; }
+	UPROPERTY(BlueprintAssignable, Category="Shop")
+	FOnGameplayStateChanged OnShopPricesChanged;
+	// 구매 결과 문구. 상점 창에 찍는다.
+	UPROPERTY(BlueprintAssignable, Category="Shop")
+	FOnActionFeedback OnShopFeedback;
+
 	// 서버가 쓰는 id 로 Agent 를 찾는다. 내 id 면 로컬 폰, 아니면 원격 목록에서.
 	// NPC ids overlap player ids; NPC lifecycle uses UNpcSubsystem instead.
 	ATurtleAgent* FindAgentById(uint32 Id) const;
@@ -310,6 +321,7 @@ protected:
 	void HandleRoomLeaveNotify(const TArray<uint8>& RecvData);
 	void HandleRoomStartNotify(const TArray<uint8>& RecvData);
 	void HandleNpcChat(const TArray<uint8>& RecvData);
+	void HandleShopPrices(const TArray<uint8>& RecvData);
 	void SyncLegacyChatLines();
 
 	// userIndex(=서버 playerId) → 표시 이름. 못 찾으면 "유저 N".
@@ -350,4 +362,6 @@ protected:
 	SC_PlayerState PlayerState{};
 	bool bHasPlayerState = false;
 	double PlayerStateTime = 0;
+	SC_ShopPrices ShopPrices{};
+	bool bHasShopPrices = false;
 };

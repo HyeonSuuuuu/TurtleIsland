@@ -1,4 +1,4 @@
-#include "Network/NetSubsystem.h"
+﻿#include "Network/NetSubsystem.h"
 #include <cstring>
 
 #include "Network/ChatSubsystem.h"
@@ -204,6 +204,7 @@ void UNetSubsystem::DispatchPacket(const TArray<uint8>& RecvData)
 	case PACKET_ID::SC_ROOM_LEAVE_NOTIFY: HandleRoomLeaveNotify(RecvData); break;
 	case PACKET_ID::SC_ROOM_START_NOTIFY: HandleRoomStartNotify(RecvData); break;
 	case PACKET_ID::SC_NPC_CHAT: HandleNpcChat(RecvData); break;
+	case PACKET_ID::SC_SHOP_PRICES: HandleShopPrices(RecvData); break;
 	case PACKET_ID::SC_NPC_SPAWN:
 	case PACKET_ID::SC_NPC_MOVE:
 	case PACKET_ID::SC_NPC_DESPAWN:
@@ -611,6 +612,22 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 	if (Data.Num() != SC_ACTION_RESULT_PACKET_SIZE) return;
 	const auto& Result = *reinterpret_cast<const SC_ActionResult*>(Data.GetData());
 	FString Message;
+	if (Result.requestId == static_cast<uint16>(PACKET_ID::CS_SHOP_BUY))
+	{
+		const TCHAR* Item = Result.actionId == GameplayRules::HealthPotion ? TEXT("회복 포션") : TEXT("마나 포션");
+		switch (Result.result)
+		{
+		case ActionResult::Ok: Message = FString::Printf(TEXT("%s을 구매했습니다."), Item); break;
+		case ActionResult::NotEnoughGold: Message = TEXT("골드가 부족합니다."); break;
+		case ActionResult::InventoryFull: Message = TEXT("인벤토리에 빈 칸이 없습니다."); break;
+		case ActionResult::PriceChanged: Message = TEXT("가격이 바뀌었습니다. 목록을 확인하고 다시 눌러주세요."); break;
+		case ActionResult::Cooldown: Message = TEXT("상인의 답변을 기다려주세요."); break;
+		case ActionResult::Dead: Message = TEXT("사망 상태에서는 구매할 수 없습니다."); break;
+		default: Message = TEXT("지금은 구매할 수 없습니다."); break;
+		}
+		OnShopFeedback.Broadcast(Message);
+		return;
+	}
 	switch (Result.result)
 	{
 	case ActionResult::Ok: return;
@@ -633,6 +650,27 @@ void UNetSubsystem::UseItem(int32 Slot)
 	Packet.slot = static_cast<uint8>(Slot); Packet.expectedItemId = PlayerState.items[Slot].itemId;
 	Packet.inventoryRevision = PlayerState.inventoryRevision;
 	SendPacket(Packet);
+}
+
+void UNetSubsystem::BuyItem(int32 ItemId)
+{
+	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || !bHasShopPrices || ItemId < 1 || ItemId > SHOP_PRODUCT_COUNT) return;
+	CS_ShopBuy Packet{};
+	Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(PACKET_ID::CS_SHOP_BUY);
+	Packet.lifeId = PlayerLifeId; Packet.itemId = static_cast<uint16>(ItemId); Packet.quantity = 1;
+	Packet.unitPrice = ShopPrices.unitPrice[ItemId - 1];
+	SendPacket(Packet);
+}
+
+void UNetSubsystem::HandleShopPrices(const TArray<uint8>& Data)
+{
+	if (Data.Num() != SC_SHOP_PRICES_PACKET_SIZE) return;
+	const auto& Prices = *reinterpret_cast<const SC_ShopPrices*>(Data.GetData());
+	for (int32 i = 0; i < SHOP_PRODUCT_COUNT; ++i)
+		if (Prices.unitPrice[i] <= 0) return;
+	ShopPrices = Prices;
+	bHasShopPrices = true;
+	OnShopPricesChanged.Broadcast();
 }
 
 void UNetSubsystem::HandleRoomLeaveNotify(const TArray<uint8>& RecvData)
@@ -814,6 +852,7 @@ void UNetSubsystem::ResetNpcWorld()
 	const bool bHadState = bHasPlayerState || !players.IsEmpty();
 	bHasPlayerState = false;
 	PlayerState = {};
+	bHasShopPrices = false;
 	PlayerLifeId = 0;
 	PlayerLives.Reset();
 	PlayerDisplayInfos.Reset();

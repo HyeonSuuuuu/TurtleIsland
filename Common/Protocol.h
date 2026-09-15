@@ -48,6 +48,7 @@ enum class PACKET_ID : uint16_t
 
 	CS_ATTACK = 291,         // 공격/스킬 시전 요청 (의도만. 판정은 전적으로 서버)
 	CS_USE_ITEM = 292,
+	CS_SHOP_BUY = 293,
 
 	// Server To Client (300 ~ 399)
 	SC_LOGIN_RESPONSE = 301,
@@ -79,6 +80,7 @@ enum class PACKET_ID : uint16_t
 	SC_HEALTH_STATE = 395,
 	SC_RESPAWN_NOTIFY = 396,
 	SC_PLAYER_INFO = 397,
+	SC_SHOP_PRICES = 398,
 
 
 	// AI To Server (3000 ~ 3099)
@@ -243,7 +245,7 @@ inline constexpr uint16_t INPUT_FLAG_W      = 1 << 0;
 inline constexpr uint16_t INPUT_FLAG_A      = 1 << 1;
 inline constexpr uint16_t INPUT_FLAG_S      = 1 << 2;
 inline constexpr uint16_t INPUT_FLAG_D      = 1 << 3;
-inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 3;
+inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 4;
 inline constexpr uint8_t ENTITY_NONE = 0;
 inline constexpr uint8_t ENTITY_PLAYER = 1;
 inline constexpr uint8_t ENTITY_NPC = 2;
@@ -403,7 +405,7 @@ struct SC_PlayerState : PacketHeader
 };
 inline constexpr uint16_t SC_PLAYER_STATE_PACKET_SIZE = sizeof(SC_PlayerState);
 
-enum class ActionResult : uint8_t { Ok, Invalid, Dead, Cooldown, NotEnoughMP, NoEffect, StaleInventory };
+enum class ActionResult : uint8_t { Ok, Invalid, Dead, Cooldown, NotEnoughMP, NoEffect, StaleInventory, NotEnoughGold, InventoryFull, PriceChanged };
 struct SC_ActionResult : PacketHeader
 {
 	uint16_t requestId;
@@ -411,6 +413,26 @@ struct SC_ActionResult : PacketHeader
 	ActionResult result;
 };
 inline constexpr uint16_t SC_ACTION_RESULT_PACKET_SIZE = sizeof(SC_ActionResult);
+
+//  --------------- Shop ----------------
+// Item ids 1..SHOP_PRODUCT_COUNT. unitPrice is what the client must echo; a mismatch is PriceChanged.
+inline constexpr int32_t SHOP_PRODUCT_COUNT = 2;
+struct CS_ShopBuy : PacketHeader
+{
+	uint32_t lifeId;
+	uint16_t itemId;
+	uint16_t quantity;
+	int32_t unitPrice;
+};
+inline constexpr uint16_t CS_SHOP_BUY_PACKET_SIZE = sizeof(CS_ShopBuy);
+
+// Owner only. quoteQuantity > 0 means unitPrice is a negotiated quote valid for up to that many.
+struct SC_ShopPrices : PacketHeader
+{
+	int32_t unitPrice[SHOP_PRODUCT_COUNT];
+	uint16_t quoteQuantity[SHOP_PRODUCT_COUNT];
+};
+inline constexpr uint16_t SC_SHOP_PRICES_PACKET_SIZE = sizeof(SC_ShopPrices);
 
 //  --------------- NPC ----------------
 struct CS_NpcChat : public PacketHeader

@@ -47,7 +47,7 @@ inline Json Tools()
         {{"name", "get_player_condition"}, {"description", "Read this customer's HP, maximum HP and level. Wealth is unknown."}, {"inputSchema", empty}},
         {{"name", "get_shop_catalog"}, {"description", "Read products and currently allowed unit prices."}, {"inputSchema", empty}},
         {{"name", "get_relationship"}, {"description", "Read this customer's relationship with this NPC."}, {"inputSchema", empty}},
-        {{"name", "propose_price"}, {"description", "Propose a personal quote. Does not purchase or grant items."},
+        {{"name", "propose_price"}, {"description", "Propose a personal quote. Does not purchase; the customer buys from the shop list."},
             {"inputSchema", {{"type", "object"}, {"properties", {{"item_id", number(1,2)}, {"quantity", number(1,99)}, {"unit_price", number(1,100000)}}},
                 {"required", {"item_id", "quantity", "unit_price"}}, {"additionalProperties", false}}}},
         {{"name", "propose_affinity_change"}, {"description", "Suggest a small relationship change. Server may refuse repetition or cooldown."},
