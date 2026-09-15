@@ -30,6 +30,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ClosePauseMenu();
 
+	/** M: 전체 지도 토글, +/-: 미니맵 확대·축소 */
+	void ToggleWorldMap();
+	void ZoomMinimapIn();
+	void ZoomMinimapOut();
+
 protected:
 
 	/** Input Mapping Contexts */

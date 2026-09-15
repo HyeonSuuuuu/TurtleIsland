@@ -40,13 +40,14 @@ protected:
 	float MonsterPlateMaxDistance = 2500.f;
 	/** 진행 중 퀘스트 패널의 화면 위쪽 여백(1080p 기준 px). 미니맵 아래에 오도록 맞춘다. */
 	UPROPERTY(EditDefaultsOnly, Category="HUD")
-	float QuestPanelTop = 300.f;
+	float QuestPanelTop = 312.f;
 private:
 	void SetupSlots();
 	UFUNCTION() void AddDamage(FVector Location, int32 Damage, uint8 Flags);
 	UFUNCTION() void ShowFeedback(FString Message);
 	void ScrollCombatLogToEnd();
 	UPROPERTY() TObjectPtr<UNetSubsystem> Net;
+	UPROPERTY() TObjectPtr<class UMinimapWidget> Minimap;
 	UPROPERTY() TArray<TObjectPtr<UQuickSlotButton>> SlotButtons;
 	UPROPERTY() TArray<TObjectPtr<UImage>> SlotIcons;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> SlotCounts;
