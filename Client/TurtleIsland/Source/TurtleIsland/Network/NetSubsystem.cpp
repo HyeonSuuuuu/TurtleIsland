@@ -628,10 +628,10 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 	FString Message;
 	if (Result.requestId == static_cast<uint16>(PACKET_ID::CS_SHOP_BUY))
 	{
-		const TCHAR* Item = Result.actionId == GameplayRules::HealthPotion ? TEXT("회복 포션") : TEXT("마나 포션");
+		const FString Item = GetShopItemName(Result.actionId);
 		switch (Result.result)
 		{
-		case ActionResult::Ok: Message = FString::Printf(TEXT("%s을 구매했습니다."), Item); break;
+		case ActionResult::Ok: Message = FString::Printf(TEXT("%s 구매 완료"), *Item); break;
 		case ActionResult::NotEnoughGold: Message = TEXT("골드가 부족합니다."); break;
 		case ActionResult::InventoryFull: Message = TEXT("인벤토리에 빈 칸이 없습니다."); break;
 		case ActionResult::PriceChanged: Message = TEXT("가격이 바뀌었습니다. 목록을 확인하고 다시 눌러주세요."); break;
@@ -658,6 +658,9 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 void UNetSubsystem::UseItem(int32 Slot)
 {
 	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || Slot < 0 || Slot >= INVENTORY_SLOT_COUNT) return;
+	// Equipment works while held; only potions are used from a slot.
+	const uint16 SlotItem = PlayerState.items[Slot].itemId;
+	if (SlotItem != GameplayRules::HealthPotion && SlotItem != GameplayRules::ManaPotion) return;
 	CS_UseItem Packet{};
 	Packet.lifeId = PlayerLifeId;
 	Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(PACKET_ID::CS_USE_ITEM);
@@ -668,21 +671,66 @@ void UNetSubsystem::UseItem(int32 Slot)
 
 void UNetSubsystem::BuyItem(int32 ItemId)
 {
-	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || !bHasShopPrices || ItemId < 1 || ItemId > SHOP_PRODUCT_COUNT) return;
+	const ShopProduct* Product = FindShopProduct(ItemId);
+	if (IsSinglePlay() || !IsConnected() || !bHasPlayerState || !Product) return;
 	CS_ShopBuy Packet{};
 	Packet.size = sizeof(Packet); Packet.id = static_cast<uint16>(PACKET_ID::CS_SHOP_BUY);
-	Packet.lifeId = PlayerLifeId; Packet.itemId = static_cast<uint16>(ItemId); Packet.quantity = 1;
-	Packet.unitPrice = ShopPrices.unitPrice[ItemId - 1];
+	Packet.lifeId = PlayerLifeId; Packet.itemId = Product->itemId; Packet.quantity = 1;
+	Packet.unitPrice = Product->unitPrice;
 	SendPacket(Packet);
+}
+
+const ShopProduct* UNetSubsystem::FindShopProduct(int32 ItemId) const
+{
+	if (!bHasShopPrices || ItemId <= 0) return nullptr;
+	for (int32 i = 0; i < ShopPrices.count; ++i)
+		if (ShopPrices.products[i].itemId == ItemId) return &ShopPrices.products[i];
+	return nullptr;
+}
+
+FString UNetSubsystem::GetShopItemName(int32 ItemId) const
+{
+	const ShopProduct* Product = FindShopProduct(ItemId);
+	return Product ? FClientPacketCodec::DecodeFixedUtf8(Product->name, sizeof(Product->name)) : FString::Printf(TEXT("아이템 %d"), ItemId);
+}
+
+FString UNetSubsystem::DescribeShopItem(int32 ItemId) const
+{
+	FString Info = GetShopItemName(ItemId);
+	if (ItemId == GameplayRules::HealthPotion) return Info + TEXT("\nHP +50");
+	if (ItemId == GameplayRules::ManaPotion) return Info + TEXT("\nMP +50");
+	const ShopProduct* Product = FindShopProduct(ItemId);
+	if (!Product) return Info;
+	Info += TEXT("\n장비 (들고 있으면 적용)");
+	const auto AddStat = [&Info](const TCHAR* Label, int32 Value)
+	{
+		if (Value) Info += FString::Printf(TEXT("\n%s %s%d"), Label, Value > 0 ? TEXT("+") : TEXT(""), Value);
+	};
+	AddStat(TEXT("체력"), Product->hp);
+	AddStat(TEXT("공격력"), Product->attack);
+	AddStat(TEXT("방어력"), Product->defense);
+	AddStat(TEXT("이동속도"), Product->moveSpeed);
+	return Info;
+}
+
+int32 UNetSubsystem::ItemIdFromIcon(const FString& TextureName)
+{
+	if (TextureName.Contains(TEXT("PotionRed"))) return GameplayRules::HealthPotion;
+	if (TextureName.Contains(TEXT("PotionBlue"))) return GameplayRules::ManaPotion;
+	static const FString Prefix = TEXT("T_UI_ShopItem_");
+	if (!TextureName.StartsWith(Prefix)) return 0;
+	FString Id = TextureName.Mid(Prefix.Len());
+	Id.Split(TEXT("_"), &Id, nullptr);
+	return Id.IsNumeric() ? FCString::Atoi(*Id) : 0;
 }
 
 void UNetSubsystem::HandleShopPrices(const TArray<uint8>& Data)
 {
 	if (Data.Num() != SC_SHOP_PRICES_PACKET_SIZE) return;
 	const auto& Prices = *reinterpret_cast<const SC_ShopPrices*>(Data.GetData());
-	if (Prices.affinity > 100) return;
-	for (int32 i = 0; i < SHOP_PRODUCT_COUNT; ++i)
-		if (Prices.unitPrice[i] <= 0) return;
+	if (Prices.affinity > 100 || Prices.count > SHOP_MAX_PRODUCTS) return;
+	for (int32 i = 0; i < Prices.count; ++i)
+		if (Prices.products[i].itemId == 0 || Prices.products[i].unitPrice <= 0) return;
 	ShopPrices = Prices;
 	bHasShopPrices = true;
 	OnShopPricesChanged.Broadcast();

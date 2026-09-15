@@ -186,6 +186,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Shop")
 	void BuyItem(int32 ItemId);
 	const SC_ShopPrices* GetShopPrices() const { return bHasShopPrices ? &ShopPrices : nullptr; }
+	// Server catalog entry (price, quote, equipment stats, name). Null until SC_SHOP_PRICES arrives.
+	const ShopProduct* FindShopProduct(int32 ItemId) const;
+	FString GetShopItemName(int32 ItemId) const;
+	// "이름\n효과" for tooltips.
+	FString DescribeShopItem(int32 ItemId) const;
+	// Potion icons (PotionRed/PotionBlue) and T_UI_ShopItem_<id>_* map to item ids; 0 otherwise.
+	static int32 ItemIdFromIcon(const FString& TextureName);
 	UPROPERTY(BlueprintAssignable, Category="Shop")
 	FOnGameplayStateChanged OnShopPricesChanged;
 	// 구매 결과 문구. 상점 창에 찍는다.

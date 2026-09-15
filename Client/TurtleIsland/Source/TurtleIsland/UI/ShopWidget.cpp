@@ -104,21 +104,17 @@ void UShopWidget::NativeOnInitialized()
 		// Frame 이 배경 이미지 한 장이면 그 부모 칸을 상품으로 본다.
 		UWidget* Product = Cast<UPanelWidget>(Frame) ? Frame : Frame->GetParent();
 		if (!Product || Wrapped.Contains(Product)) continue;
-		int32 ItemId = 0, PotionIcons = 0;
+		int32 ItemId = 0, ItemIcons = 0;
 		UTextBlock* Price = nullptr;
 		UWidgetTree::ForWidgetAndChildren(Product, [&](UWidget* Child)
 		{
 			if (const UImage* Icon = Cast<UImage>(Child))
 				if (const UObject* Texture = Icon->GetBrush().GetResourceObject())
-				{
-					const FString Name = Texture->GetName();
-					if (Name.Contains(TEXT("PotionRed"))) { ItemId = GameplayRules::HealthPotion; ++PotionIcons; }
-					else if (Name.Contains(TEXT("PotionBlue"))) { ItemId = GameplayRules::ManaPotion; ++PotionIcons; }
-				}
+					if (const int32 Id = UNetSubsystem::ItemIdFromIcon(Texture->GetName())) { ItemId = Id; ++ItemIcons; }
 			if (UTextBlock* Text = Cast<UTextBlock>(Child)) Price = Text;
 		});
 		UPanelWidget* Parent = Product->GetParent();
-		if (PotionIcons != 1 || !Parent) continue;
+		if (ItemIcons != 1 || !Parent) continue;
 		UShopItemButton* Button = WidgetTree->ConstructWidget<UShopItemButton>();
 		Button->Setup(ItemId);
 		Parent->ReplaceChildAt(Parent->GetChildIndex(Product), Button);
@@ -493,19 +489,20 @@ void UShopWidget::RefreshProducts()
 	for (int32 i = 0; i < ProductButtons.Num(); ++i)
 	{
 		const int32 ItemId = ProductButtons[i]->GetItemId();
-		const int32 Price = Prices ? Prices->unitPrice[ItemId - 1] : 0;
-		const int32 Quote = Prices ? Prices->quoteQuantity[ItemId - 1] : 0;
+		const ShopProduct* Product = Net ? Net->FindShopProduct(ItemId) : nullptr;
+		const int32 Price = Product ? Product->unitPrice : 0;
+		const int32 Quote = Product ? Product->quoteQuantity : 0;
 		if (UTextBlock* Text = ProductPrices[i])
 		{
-			Text->SetText(FText::FromString(!Prices ? FString(TEXT("--G"))
+			Text->SetText(FText::FromString(!Product ? FString(TEXT("--G"))
 				: Quote ? FString::Printf(TEXT("%dG x%d"), Price, Quote) : FString::Printf(TEXT("%dG"), Price)));
 			Text->SetColorAndOpacity(Quote ? QuotePriceColour : ProductPriceColours[i]);
 		}
-		const FString Name = ItemId == GameplayRules::HealthPotion ? TEXT("회복 포션 (HP +50)") : TEXT("마나 포션 (MP +50)");
+		const FString Info = Net ? Net->DescribeShopItem(ItemId) : FString();
 		ProductButtons[i]->SetToolTipText(FText::FromString(Quote
-			? FString::Printf(TEXT("%s\n흥정 가격 %dG, %d개 남음\n클릭하면 1개 구매"), *Name, Price, Quote)
-			: FString::Printf(TEXT("%s\n클릭하면 1개 구매"), *Name)));
-		ProductButtons[i]->SetIsEnabled(Prices && State && State->hp > 0 && State->gold >= Price);
+			? FString::Printf(TEXT("%s\n흥정 가격 %dG, %d개 남음\n클릭하면 1개 구매"), *Info, Price, Quote)
+			: FString::Printf(TEXT("%s\n클릭하면 1개 구매"), *Info)));
+		ProductButtons[i]->SetIsEnabled(Product && State && State->hp > 0 && State->gold >= Price);
 	}
 }
 

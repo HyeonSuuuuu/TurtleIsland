@@ -118,6 +118,25 @@ struct NpcMcpTests
             wallet.gold=100000; buy.itemId=2; buy.quantity=99; wallet.items={{{1,99},{2,99},{1,99},{2,99},{1,99},{2,99}}};
             room.BuyItem(buyer,buy);
             Check(wallet.gold==100000,"full inventory rejected");
+
+            Check(g_npcShopConfig.Load("Shop.lua") && g_npcShopConfig.Find(1008) && g_npcShopConfig.Find(1008)->equipment,"Shop.lua equipment loads");
+            deal.Begin(std::string(32,'g'),"catalog",0);
+            const Json list={{"jsonrpc","2.0"},{"id",1},{"method","tools/call"},{"params",{{"name","get_shop_catalog"},{"arguments",Json::object()}}}};
+            deal.ready=true;
+            Check(deal.Dispatch(list,wallet,1).dump().size()<=MaxMessageBytes,"full catalog fits one MCP frame");
+            Check(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1).dump().find("minimum_price")!=std::string::npos,"per-item offer");
+            Check(deal.Call("get_shop_catalog",{{"item_id",999}},wallet,1)["isError"]==true,"unknown item rejected");
+            deal.context.clear(); deal.quote=deal.previousQuote=nullptr;
+            wallet.items={{{1,3}}}; wallet.gold=1000;
+            const auto before=wallet;
+            CS_ShopBuy gear{}; gear.lifeId=wallet.lifeId; gear.itemId=1003; gear.quantity=1; gear.unitPrice=850;
+            room.BuyItem(buyer,gear);
+            Check(wallet.gold==150 && wallet.items[1].itemId==1003 && wallet.items[1].count==1 && wallet.maxHP==before.maxHP+100 &&
+                wallet.hp==before.hp+100 && wallet.attack==before.attack+40 && wallet.moveSpeed==before.moveSpeed+100,"equipment adds stats while held");
+            gear.itemId=1002; gear.unitPrice=200; gear.quantity=2; wallet.gold=1000;
+            room.BuyItem(buyer,gear);
+            Check(wallet.gold==1000,"equipment is bought one per slot");
+            g_npcShopConfig=NpcShopConfig{};
             room.m_npcConversations.erase(buyer.GetSlotIndex()); room.m_playerStates.erase(buyer.GetSlotIndex());
         }
         chat.expiresAt=now;

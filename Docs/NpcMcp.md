@@ -12,9 +12,14 @@ sends) is accepted, with no distance check.
 
 ## Purchase
 
-- `SC_SHOP_PRICES` (owner only) carries each potion's current unit price and the
-  remaining quoted quantity. It is sent on ready, respawn, each completed NPC
-  turn and each purchase.
+- `SC_SHOP_PRICES` (owner only) carries affinity and up to 12 products: id, name,
+  current unit price, remaining quoted quantity and equipment stats. It is sent on
+  ready, respawn, each completed NPC turn and each purchase.
+- Equipment (`ShopEquipment` in Shop.lua) takes one of the 6 inventory slots per
+  item and permanently adds hp/attack/defense/moveSpeed to the player state when
+  bought (items cannot be removed yet). Only potions are used from a slot.
+- `get_shop_catalog` without arguments lists id/name/base price (fits one MCP
+  frame); with `item_id` it returns that item's allowed price range.
 - `CS_SHOP_BUY {lifeId, itemId, quantity, unitPrice}` must echo that price. A
   mismatch returns `PriceChanged`. Other results are `NotEnoughGold`,
   `InventoryFull` (stack limit 99) and `Cooldown`, which means an NPC turn is
@@ -86,7 +91,9 @@ grant an item in this implementation.
 build. Run the game server with that directory as its working directory. Missing
 or invalid config disables the shop (conversation and purchase) and logs a
 warning. Restart after editing the file. Item IDs 1 and 2 are the health and
-mana potions (`ShopPotions.HealthPotion`, `ShopPotions.ManaPotion`).
+mana potions (`ShopPotions.HealthPotion`, `ShopPotions.ManaPotion`); equipment
+ids match their icon textures `T_UI_ShopItem_<id>_*`, which is how shop cells
+and inventory slots find them.
 
 - `minPrice`, `avgPrice` and `maxPrice` are integers, with
   `minPrice <= avgPrice <= maxPrice`, all between 1 and 100000. `avgPrice` is

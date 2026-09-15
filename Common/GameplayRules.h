@@ -73,23 +73,35 @@ namespace GameplayRules
 		return ActionResult::Ok;
 	}
 	inline constexpr uint16_t MaxItemStack = 99;
-	// Price is decided by the caller (base or negotiated quote); this only moves gold and items.
-	inline ActionResult BuyItem(PlayerState& state, uint16_t itemId, uint16_t quantity, int32_t unitPrice)
+	inline constexpr float MinMoveSpeed = 100.f;
+	// Equipment takes one inventory slot each and adds its stats while held (items are never removed).
+	struct EquipmentStats { int32_t hp = 0, attack = 0, defense = 0, moveSpeed = 0; };
+	// Price is decided by the caller (base or negotiated quote); this only moves gold, items and stats.
+	inline ActionResult BuyItem(PlayerState& state, uint16_t itemId, uint16_t quantity, int32_t unitPrice, const EquipmentStats* equipment = nullptr)
 	{
-		if (!state.ready || (itemId != HealthPotion && itemId != ManaPotion) || quantity == 0 || quantity > MaxItemStack || unitPrice <= 0)
+		const bool potion = itemId == HealthPotion || itemId == ManaPotion;
+		if (!state.ready || potion == (equipment != nullptr) || quantity == 0 || quantity > (equipment ? 1 : MaxItemStack) || unitPrice <= 0)
 			return ActionResult::Invalid;
 		if (state.hp <= 0) return ActionResult::Dead;
 		const int64_t cost = static_cast<int64_t>(unitPrice) * quantity;
 		if (state.gold < cost) return ActionResult::NotEnoughGold;
 		ItemSlot* target = nullptr;
 		for (auto& slot : state.items)
-			if (slot.itemId == itemId && slot.count + quantity <= MaxItemStack) { target = &slot; break; }
+			if (!equipment && slot.itemId == itemId && slot.count + quantity <= MaxItemStack) { target = &slot; break; }
 		for (auto& slot : state.items)
 			if (!target && slot.itemId == 0) target = &slot;
 		if (!target) return ActionResult::InventoryFull;
 		target->itemId = itemId;
 		target->count += quantity;
 		state.gold -= static_cast<int32_t>(cost);
+		if (equipment)
+		{
+			state.maxHP = std::max(1, state.maxHP + equipment->hp);
+			state.hp = std::clamp(state.hp + std::max(0, equipment->hp), 1, state.maxHP);
+			state.attack += equipment->attack;
+			state.defense += equipment->defense;
+			state.moveSpeed = std::max(MinMoveSpeed, state.moveSpeed + equipment->moveSpeed);
+		}
 		++state.inventoryRevision;
 		return ActionResult::Ok;
 	}

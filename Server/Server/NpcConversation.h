@@ -45,7 +45,8 @@ struct NpcConversation
         const auto& q = CommittedQuote();
         if (!q.is_null() && q["item_id"] == itemId && quantity <= q["quantity"].get<int>())
             return q["unit_price"].get<int>();
-        return g_npcShopConfig.products[itemId-1].basePrice;
+        const auto* product = g_npcShopConfig.Find(itemId);
+        return product ? product->basePrice : 0;
     }
     void ConsumeQuote(int itemId, int quantity)
     {
@@ -54,17 +55,19 @@ struct NpcConversation
         if (left > 0) quote["quantity"] = left; else quote = nullptr;
         previousQuote = quote;
     }
+    // The full list stays short so it fits one MCP frame; prices per item come from Offer.
     NpcMcp::Json Catalog() const
     {
         auto products=NpcMcp::Json::array();
-        for (int i=0;i<2;++i)
-        {
-            const auto& p=g_npcShopConfig.products[i];
-            const int minimum=p.basePrice-(p.basePrice-p.minimumPrice)*proposedRelationship.affinity/100;
-            products.push_back({{"item_id",i+1},{"name",i==0?"HP potion":"MP potion"},{"base_price",p.basePrice},
-                {"absolute_floor",p.minimumPrice},{"minimum_price",minimum},{"maximum_price",p.maximumPrice}});
-        }
+        for (const auto& p:g_npcShopConfig.products)
+            products.push_back({{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice}});
         return products;
+    }
+    NpcMcp::Json Offer(const NpcShopConfig::Product& p) const
+    {
+        const int minimum=p.basePrice-(p.basePrice-p.minimumPrice)*proposedRelationship.affinity/100;
+        return {{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice},{"absolute_floor",p.minimumPrice},
+            {"minimum_price",minimum},{"maximum_price",p.maximumPrice}};
     }
     NpcMcp::Json Call(const std::string& name, const NpcMcp::Json& args, const GameplayRules::PlayerState& player, uint64_t now)
     {
@@ -74,12 +77,19 @@ struct NpcConversation
         if (name == "get_player_condition" && args.empty())
             return ToolResult({{"hp",player.hp},{"max_hp",player.maxHP},{"level",player.level}});
         if (name == "get_shop_catalog" && args.empty()) return ToolResult({{"products",Catalog()}});
+        if (name == "get_shop_catalog")
+        {
+            const auto* product = args.size()==1 && Integer(args,"item_id",1,65535) ? g_npcShopConfig.Find(args["item_id"].get<int>()) : nullptr;
+            return product ? ToolResult(Offer(*product)) : ToolError("unknown_item");
+        }
         if (name == "get_relationship" && args.empty()) return ToolResult({{"affinity",affinity},{"minimum",0},{"maximum",100}});
         if (name == "propose_price")
         {
-            if (args.size()!=3 || !Integer(args,"item_id",1,2) || !Integer(args,"quantity",1,99) || !Integer(args,"unit_price",1,100000))
+            if (args.size()!=3 || !Integer(args,"item_id",1,65535) || !Integer(args,"quantity",1,99) || !Integer(args,"unit_price",1,1000000))
                 return ToolError("invalid_arguments");
-            const auto product = Catalog().at(args["item_id"].get<int>()-1);
+            const auto* item = g_npcShopConfig.Find(args["item_id"].get<int>());
+            if (!item) return ToolError("unknown_item");
+            const auto product = Offer(*item);
             if (args["unit_price"].get<int>() < product["minimum_price"].get<int>()) return ToolError("below_allowed_price");
             if (args["unit_price"].get<int>() > product["maximum_price"].get<int>()) return ToolError("above_allowed_price");
             quote = args;
@@ -102,8 +112,9 @@ struct NpcConversation
                 if (rewardedMessages.size()>32) rewardedMessages.pop_front();
             }
             lastAffinityAt=now; changedAffinity=true;
-            if (!quote.is_null() && quote["unit_price"].get<int>() < Catalog().at(quote["item_id"].get<int>()-1)["minimum_price"].get<int>())
-                quote=nullptr;
+            if (!quote.is_null())
+                if (const auto* item = g_npcShopConfig.Find(quote["item_id"].get<int>());
+                    !item || quote["unit_price"].get<int>() < Offer(*item)["minimum_price"].get<int>()) quote=nullptr;
             return ToolResult({{"affinity",affinity},{"applied_delta",affinity-before}});
         }
         return ToolError("unknown_tool_or_arguments");
