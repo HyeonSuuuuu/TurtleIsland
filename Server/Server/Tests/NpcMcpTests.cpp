@@ -66,7 +66,7 @@ struct NpcMcpTests
         chat.Begin(std::string(32,'c'),"second turn",now);
         NpcAgent::Client agentClient(chat.context,exchange);
         int step=0;
-        const auto reply=NpcAgent::Run(agentClient,"I have no money",NpcAgent::Memory{},[&](const std::string& prompt)
+        const auto reply=NpcAgent::Run(agentClient,"I have no money",NpcAgent::Memory{},[&](const std::string& prompt, bool)
         {
             Check(prompt.find("987654")==std::string::npos && prompt.find(chat.context)==std::string::npos,"no balance or capability in model context");
             if (step==0) Check(prompt.find("get_shop_catalog")!=std::string::npos && prompt.find("base_price")!=std::string::npos,"shop list preloaded before first inference");
@@ -75,11 +75,26 @@ struct NpcMcpTests
             return std::string(R"({"say":"Have a rest."})");
         });
         Check(step==2 && reply=="Have a rest.","inference-tool-reinference loop");
+        {
+            int serverCalls=0, inferences=0, sayOnlySteps=0;
+            std::string lastPrompt;
+            NpcAgent::Client loopClient(chat.context,[&](const Json& request)
+            { if (request.value("method",std::string{})=="tools/call") ++serverCalls; return exchange(request); });
+            const auto looped=NpcAgent::Run(loopClient,"price?",NpcAgent::Memory{},[&](const std::string& prompt, bool sayOnly)
+            {
+                ++inferences; lastPrompt=prompt;
+                if (sayOnly) { ++sayOnlySteps; return std::string(R"({"say":"Here you go."})"); }
+                return std::string(R"({"tool":"get_player_condition","arguments":{}})");
+            });
+            Check(looped=="Here you go." && inferences==NpcMcp::MaxToolCalls && sayOnlySteps==1,"tool budget ends with a forced reply instead of failing");
+            Check(serverCalls==2 && lastPrompt.find("Already called")!=std::string::npos,"repeated identical tool call is not sent to the server again");
+            Check(lastPrompt.find(R"("arguments":{})")!=std::string::npos,"observations show the arguments used");
+        }
         NpcAgent::Memory memory;
         memory.turns=Json::array({{{"customer","oldest-turn"},{"npc","a"}},{{"customer","middle-turn"},{"npc","b"}},{{"customer","newest-turn"},{"npc","c"}}});
         memory.notes="- likes-blue";
         std::string trimmed;
-        NpcAgent::Run(agentClient,"remember me",memory,[&](const std::string& prompt) { trimmed=prompt; return std::string(R"({"say":"ok"})"); },
+        NpcAgent::Run(agentClient,"remember me",memory,[&](const std::string& prompt, bool) { trimmed=prompt; return std::string(R"({"say":"ok"})"); },
             [](const std::string& prompt) { return prompt.find("oldest-turn")==std::string::npos; });
         Check(trimmed.find("oldest-turn")==std::string::npos && trimmed.find("middle-turn")!=std::string::npos &&
             trimmed.find("newest-turn")!=std::string::npos,"over-budget prompt drops only the oldest dialogue");
