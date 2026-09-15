@@ -164,6 +164,9 @@ public:
 
 	bool TrySendNpcChat(int32 NpcIndex, const FString& Message);
 
+	// 상점 창을 닫았다. 플레이어가 자리를 비운 사이 AI 가 대화 기억을 압축한다.
+	void SendNpcChatEnd(int32 NpcIndex);
+
 	// ---- 전투 ----
 	// 클라는 판정하지 않는다. 의도만 보내고 모션조차 SC_ATTACK_NOTIFY 를 받은 뒤에 재생한다.
 

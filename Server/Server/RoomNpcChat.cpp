@@ -54,6 +54,21 @@ void Room::BeginNpcChat(User& user, uint32_t npcId, const std::string& message)
     catch (const std::exception&) { chat.context.clear(); Say(user,"대화를 시작할 수 없습니다."); }
 }
 
+void Room::EndNpcChat(User& user, uint32_t npcId)
+{
+    std::lock_guard lock(m_mutex);
+    const auto chat=m_npcConversations.find(user.GetSlotIndex());
+    if (npcId!=SHOP_NPC_INDEX || !g_aiSession || chat==m_npcConversations.end() || chat->second.conversation.empty()) return;
+    // The AI handles this after any in-flight turn, since both travel on the same ordered link.
+    const auto payload=NpcMcp::Json{{"conversation",chat->second.conversation}}.dump();
+    std::vector<uint8_t> data(sizeof(SA_AI)+payload.size());
+    auto* packet=reinterpret_cast<SA_AI*>(data.data());
+    packet->size=static_cast<uint16_t>(data.size()); packet->id=static_cast<uint16_t>(PACKET_ID::SA_AI_SUMMARIZE);
+    packet->userIndex=user.GetId(); packet->npcIndex=npcId;
+    std::memcpy(data.data()+sizeof(SA_AI),payload.data(),payload.size());
+    g_aiSession->Send(data);
+}
+
 void Room::SendShopPricesLocked(User& user)
 {
     const auto chat=m_npcConversations.find(user.GetSlotIndex());

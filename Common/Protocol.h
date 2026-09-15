@@ -43,6 +43,7 @@ enum class PACKET_ID : uint16_t
 	CS_MOVE = 261,
 
 	CS_NPC_CHAT = 271,
+	CS_NPC_CHAT_END = 272,   // 상점 창을 닫음 → 서버가 AI 에 대화 기억 압축을 맡긴다
 
 	CS_INGAME_READY = 281,   // 인게임 레벨 로딩 완료 → 현재 상태 요청
 
@@ -92,6 +93,7 @@ enum class PACKET_ID : uint16_t
 	SA_AI = 3101,
 	SA_AI_AGENT = 3102, // SA_AI header + {context,conversation,say} JSON
 	SA_MCP = 3103,      // PacketHeader + one MCP JSON-RPC message
+	SA_AI_SUMMARIZE = 3104, // SA_AI header + {conversation} JSON; compress that dialogue while the player is away, no reply
 
 };
 
@@ -456,6 +458,12 @@ struct CS_NpcChat : public PacketHeader
 	// 가변 AI 텍스트
 };
 inline constexpr uint16_t CS_NPC_CHAT_PACKET_SIZE = sizeof(CS_NpcChat);
+
+struct CS_NpcChatEnd : public PacketHeader
+{
+	uint32_t npcIndex;
+};
+inline constexpr uint16_t CS_NPC_CHAT_END_PACKET_SIZE = sizeof(CS_NpcChatEnd);
 
 struct SA_AI: public PacketHeader
 {

@@ -518,6 +518,7 @@ struct AiRequest
 	std::vector<ChatTurn>* history = nullptr;
 	std::shared_ptr<std::promise<std::string>> result;
 	bool agentStep = false;
+	const char* systemPromptOverride = nullptr;
 };
 
 class AiBatchWorkerQueue
@@ -567,17 +568,27 @@ public:
 			workerThread_.join();
 	}
 
+	// Whether an agent step fits the per-sequence prompt budget. The chat template adds only a few tokens.
+	bool FitsAgentPrompt(const std::string& userText) const
+	{
+		constexpr int kTemplateTokens = 32;
+		const auto tokens = TokenizeText(model_, std::string(NpcAgent::SystemPrompt) + userText, false, false);
+		return static_cast<int>(tokens.size()) + kTemplateTokens <= kPromptBudgetPerSeq;
+	}
+
 	std::future<std::string> Submit(
 		int clientId,
 		const std::string& userText,
 		std::vector<ChatTurn>& history,
-		bool agentStep = false)
+		bool agentStep = false,
+		const char* systemPromptOverride = nullptr)
 	{
 		auto request = std::make_shared<AiRequest>();
 		request->clientId = clientId;
 		request->userText = userText;
 		request->history = &history;
 		request->agentStep = agentStep;
+		request->systemPromptOverride = systemPromptOverride;
 		request->result = std::make_shared<std::promise<std::string>>();
 
 		std::future<std::string> future = request->result->get_future();
@@ -690,7 +701,8 @@ private:
 				std::string formattedPrompt =
 					FormatPromptForModel(
 						model_,
-						request->agentStep ? std::string(NpcAgent::SystemPrompt) : *systemPrompt_,
+						request->systemPromptOverride ? std::string(request->systemPromptOverride) :
+							request->agentStep ? std::string(NpcAgent::SystemPrompt) : *systemPrompt_,
 						*request->history,
 						request->userText
 					);
@@ -884,7 +896,7 @@ void HandleClient(
 	// 게임서버는 모든 플레이어의 대화를 이 소켓 하나로 보낸다.
 	// history 를 연결 단위로 두면 손님끼리 대화가 섞이므로 userIndex 로 나눈다.
 	ConversationStore conversations;
-	std::map<std::string,NpcMcp::Json> agentHistory;
+	std::map<std::string,NpcAgent::Memory> agentHistory;
 
 	// TCP 는 메시지 경계가 없다. 받은 바이트를 여기 쌓아 두고
 	// PacketHeader.size 만큼씩 떼어 한 패킷으로 처리한다.
@@ -949,8 +961,8 @@ void HandleClient(
 					const auto speech=NpcMcp::Text(envelope,"say",600);
 					if (context.size()!=32 || conversation.size()!=32 || speech.empty()) throw std::runtime_error("Invalid NPC envelope");
 					if (!agentHistory.contains(conversation) && agentHistory.size()>=128) agentHistory.erase(agentHistory.begin());
-					auto& history=agentHistory[conversation];
-					if (!history.is_array() || speech=="/reset") history=NpcMcp::Json::array();
+					auto& memory=agentHistory[conversation];
+					if (speech=="/reset") memory={};
 					Log::Info("[Agent] customer: {}", speech);
 					NpcAgent::Client mcp(context,[&](const auto& rpc)
 					{
@@ -960,15 +972,16 @@ void HandleClient(
 								rpc["params"].value("arguments",NpcMcp::Json::object()).dump(), response.value("result",response).dump());
 						return response;
 					});
-					say=NpcAgent::Run(mcp,speech,history,[&](const std::string& prompt)
+					say=NpcAgent::Run(mcp,speech,memory,[&](const std::string& prompt)
 					{
 						std::vector<ChatTurn> scratch;
 						auto output=aiQueue.Submit(clientId,prompt,scratch,true).get();
 						Log::Info("[Agent] model: {}", output);
 						return output;
-					});
-					history.push_back({{"customer",speech},{"npc",say}});
-					while (history.size()>4 || history.dump().size()>4000) history.erase(history.begin());
+					},[&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); });
+					memory.turns.push_back({{"customer",speech},{"npc",say}});
+					// Keep plenty; each prompt includes as many recent turns as its token budget allows.
+					if (memory.turns.size()>200) memory.turns.erase(memory.turns.begin());
 					completed=true;
 				}
 				catch (const std::exception& e)
@@ -977,6 +990,26 @@ void HandleClient(
 					say="지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?";
 				}
 				if (!SendAgentResponse(clientSocket,request.userIndex,context,say,completed)) keepRunning=false;
+				continue;
+			}
+
+			if (header.id == static_cast<uint16_t>(PACKET_ID::SA_AI_SUMMARIZE))
+			{
+				// The shop window closed, so nobody is waiting on this link for the player's reply.
+				const auto envelope=NpcMcp::Json::parse(userText,nullptr,false);
+				const auto found=agentHistory.find(NpcMcp::Text(envelope,"conversation",32));
+				if (found==agentHistory.end()) continue;
+				const auto started=std::chrono::steady_clock::now();
+				const bool compressed=NpcAgent::Compress(found->second,[&](const std::string& input)
+				{
+					std::vector<ChatTurn> scratch;
+					auto notes=TrimString(aiQueue.Submit(clientId,input,scratch,false,NpcAgent::SummaryPrompt).get());
+					return notes.starts_with("-") ? notes : std::string{}; // failures come back as "(...)"
+				});
+				if (compressed)
+					Log::Info("[Agent] memory compressed in {} ms, {} recent turns kept:\n{}",
+						std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count(),
+						found->second.turns.size(),found->second.notes);
 				continue;
 			}
 
@@ -1371,6 +1404,17 @@ int main(int argc, char** argv)
 				consoleHistory.push_back({ "assistant", output });
 			}
 		}
+	}
+
+	// Warm up GPU kernels, weight paging and the agent grammar so the first customer does not wait for them.
+	{
+		const auto started = std::chrono::steady_clock::now();
+		const NpcMcp::Json warmup = {{"available_tools", NpcMcp::Tools()}, {"previous_dialogue", NpcMcp::Json::array()},
+			{"customer_speech", "Hello"}, {"tool_observations", NpcMcp::Json::array()}, {"remaining_tool_calls", NpcMcp::MaxToolCalls - 1}};
+		const std::string prompt = FormatPromptForModel(model.get(), NpcAgent::SystemPrompt, {}, warmup.dump());
+		if (!prompt.empty()) GenerateBatchResponses(model.get(), ctx.get(), {prompt}, {true});
+		Log::Info("AI warmup done in {} ms",
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
 	}
 
 	// ==================== network server loop ====================

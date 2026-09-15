@@ -44,6 +44,7 @@ public:
 	void UseItem(User& user, const CS_UseItem& request);
 	void BuyItem(User& user, const CS_ShopBuy& request);
 	void BeginNpcChat(User& user, uint32_t npcId, const std::string& message);
+	void EndNpcChat(User& user, uint32_t npcId); // shop closed: ask the AI to compress this dialogue
 	bool HandleNpcMcp(const NpcMcp::Json& request, NpcMcp::Json& response);
 	bool CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response);
 

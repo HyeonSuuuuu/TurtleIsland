@@ -217,6 +217,8 @@ void UShopWidget::NativeDestruct()
 		Net->OnShopPricesChanged.RemoveDynamic(this, &UShopWidget::RefreshProducts);
 		Net->OnGameplayStateChanged.RemoveDynamic(this, &UShopWidget::RefreshProducts);
 		Net->OnShopFeedback.RemoveDynamic(this, &UShopWidget::HandleShopFeedback);
+		// BP CloseShop 이 RemoveFromParent 로 닫으므로 여기가 창을 닫는 시점이다.
+		Net->SendNpcChatEnd(NpcIndex);
 	}
 
 	Super::NativeDestruct();
