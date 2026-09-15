@@ -39,7 +39,7 @@ inline bool Integer(const Json& args, const char* key, int minimum, int maximum)
     const auto value = args[key].get<int64_t>();
     return value >= minimum && value <= maximum;
 }
-inline Json Tools()
+inline Json Tools(int maxAffinityStep = 2)
 {
     const Json empty = {{"type", "object"}, {"properties", Json::object()}, {"additionalProperties", false}};
     const auto number = [](int low, int high) -> Json { return {{"type", "integer"}, {"minimum", low}, {"maximum", high}}; };
@@ -51,8 +51,8 @@ inline Json Tools()
         {{"name", "propose_price"}, {"description", "Propose a personal quote. Does not purchase; the customer buys from the shop list."},
             {"inputSchema", {{"type", "object"}, {"properties", {{"item_id", number(1,65535)}, {"quantity", number(1,99)}, {"unit_price", number(1,1000000)}}},
                 {"required", {"item_id", "quantity", "unit_price"}}, {"additionalProperties", false}}}},
-        {{"name", "propose_affinity_change"}, {"description", "Suggest a small relationship change. Server may refuse repetition or cooldown."},
-            {"inputSchema", {{"type", "object"}, {"properties", {{"delta", number(-2,2)}}}, {"required", {"delta"}}, {"additionalProperties", false}}}}
+        {{"name", "propose_affinity_change"}, {"description", "Change this customer's affinity (0..100) by delta. Higher affinity lowers minimum prices. Server may refuse repetition or cooldown."},
+            {"inputSchema", {{"type", "object"}, {"properties", {{"delta", number(-maxAffinityStep,maxAffinityStep)}}}, {"required", {"delta"}}, {"additionalProperties", false}}}}
     });
 }
 inline std::string Text(const Json& value, const char* key, size_t maxBytes)

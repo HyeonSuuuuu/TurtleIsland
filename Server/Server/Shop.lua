@@ -8,6 +8,14 @@ ShopPotions = {
   ManaPotion   = { minPrice = 70, avgPrice = 100, maxPrice = 120 }, -- 마나 포션 (MP +50)
 }
 
+-- 호감도 (상인에게 친절하게 말하면 AI 가 올려준다). 시연용으로 잘 오르게 설정.
+--   start            : 방 입장 시 호감도 (0 ~ 100)
+--   maxStep          : 한 번 대화로 오르내릴 수 있는 최대치
+--   cooldownSeconds  : 한 번 바뀐 뒤 다시 바뀔 수 있을 때까지
+--   maxGainPerWindow : windowSeconds 동안 오를 수 있는 총량
+-- 없으면 기본값(25 / 2 / 60초 / 5분에 +10).
+ShopAffinity = { start = 30, maxStep = 10, cooldownSeconds = 5, maxGainPerWindow = 100, windowSeconds = 300 }
+
 -- 장비: 인벤토리 6칸에 들고 있으면 능력치가 오른다(한 칸에 1개, 같은 장비 중복 가능).
 --   id        : 3 ~ 65535, 아이콘 T_UI_ShopItem_<id>_* 와 같은 번호 (상점 칸 아이콘으로 상품이 연결됨)
 --   name      : 표시 이름 (UTF-8 39바이트 이하)

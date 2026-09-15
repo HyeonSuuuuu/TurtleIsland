@@ -121,6 +121,19 @@ struct NpcMcpTests
             Check(wallet.gold==100000,"full inventory rejected");
 
             Check(g_npcShopConfig.Load("Shop.lua") && g_npcShopConfig.Find(1008) && g_npcShopConfig.Find(1008)->equipment,"Shop.lua equipment loads");
+            {
+                const auto& rules=g_npcShopConfig.affinity;
+                NpcConversation friendly;
+                Check(friendly.relationship.affinity==rules.start,"Shop.lua sets starting affinity");
+                friendly.Begin(std::string(32,'h'),"hello",1000);
+                Check(friendly.Call("propose_affinity_change",{{"delta",rules.maxStep}},wallet,1000)["isError"]==false &&
+                    friendly.proposedRelationship.affinity==std::min(100,rules.start+rules.maxStep),"Shop.lua allows the full step");
+                friendly.relationship=friendly.proposedRelationship; friendly.context.clear();
+                friendly.Begin(std::string(32,'i'),"thank you",1000+rules.cooldownMs);
+                Check(friendly.Call("propose_affinity_change",{{"delta",rules.maxStep}},wallet,1000+rules.cooldownMs)["isError"]==false,
+                    "Shop.lua cooldown allows the next friendly turn");
+                Check(Tools(rules.maxStep)[4].dump().find(std::to_string(rules.maxStep))!=std::string::npos,"tool schema advertises the step");
+            }
             deal.Begin(std::string(32,'g'),"catalog",0);
             const Json list={{"jsonrpc","2.0"},{"id",1},{"method","tools/call"},{"params",{{"name","get_shop_catalog"},{"arguments",Json::object()}}}};
             deal.ready=true;

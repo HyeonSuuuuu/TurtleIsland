@@ -11,7 +11,7 @@ struct NpcConversation
     struct Relationship
     {
         uint64_t lastAffinityAt = 0, windowAt = 0;
-        int affinity = 25, windowGain = 0;
+        int affinity = g_npcShopConfig.affinity.start, windowGain = 0;
         std::deque<std::string> rewardedMessages;
     } relationship, proposedRelationship;
     std::string conversation, context, message;
@@ -102,12 +102,13 @@ struct NpcConversation
         }
         if (name == "propose_affinity_change")
         {
-            if (args.size()!=1 || !Integer(args,"delta",-2,2)) return ToolError("invalid_arguments");
+            const auto& rules = g_npcShopConfig.affinity;
+            if (args.size()!=1 || !Integer(args,"delta",-rules.maxStep,rules.maxStep)) return ToolError("invalid_arguments");
             const int delta = args["delta"].get<int>();
             if (delta == 0) return ToolResult({{"affinity",affinity},{"applied_delta",0}});
-            if (changedAffinity || (lastAffinityAt && now-lastAffinityAt < 60000)) return ToolError("relationship_cooldown");
-            if (now-windowAt >= 300000) { windowAt=now; windowGain=0; }
-            if (delta > 0 && (windowGain+delta > 10 || std::find(rewardedMessages.begin(),rewardedMessages.end(),message)!=rewardedMessages.end()))
+            if (changedAffinity || (lastAffinityAt && now-lastAffinityAt < static_cast<uint64_t>(rules.cooldownMs))) return ToolError("relationship_cooldown");
+            if (now-windowAt >= static_cast<uint64_t>(rules.windowMs)) { windowAt=now; windowGain=0; }
+            if (delta > 0 && (windowGain+delta > rules.windowGain || std::find(rewardedMessages.begin(),rewardedMessages.end(),message)!=rewardedMessages.end()))
                 return ToolError("relationship_repeat_limit");
             const int before = affinity;
             affinity = std::clamp(affinity+delta,0,100);
@@ -154,8 +155,9 @@ struct NpcConversation
             if ((!cursor.empty() && (cursor[0]<'0' || cursor[0]>'4')) || (params.contains("cursor") && cursor.empty()))
                 return Error(id,-32602,"Invalid cursor");
             const size_t index=cursor.empty()?0:cursor[0]-'0';
-            result={{"tools",Json::array({Tools()[index]})}};
-            if (index+1<Tools().size()) result["nextCursor"]=std::to_string(index+1);
+            const auto tools=Tools(g_npcShopConfig.affinity.maxStep);
+            result={{"tools",Json::array({tools[index]})}};
+            if (index+1<tools.size()) result["nextCursor"]=std::to_string(index+1);
         }
         else if (method=="tools/call")
         {

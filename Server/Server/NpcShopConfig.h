@@ -18,6 +18,8 @@ struct NpcShopConfig
     std::vector<Product> products{
         {GameplayRules::HealthPotion,"회복 포션"},
         {GameplayRules::ManaPotion,"마나 포션"}};
+    // Shop.lua ShopAffinity. Defaults are the strict rules; the booth config relaxes them.
+    struct AffinityRules { int start=25, maxStep=2, cooldownMs=60000, windowGain=10, windowMs=300000; } affinity;
     bool enabled=true;
     bool Load(const char* path); // 실패하면 상점을 끈다
     const Product* Find(int itemId) const
