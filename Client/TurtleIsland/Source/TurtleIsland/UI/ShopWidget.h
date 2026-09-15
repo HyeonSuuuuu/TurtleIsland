@@ -156,6 +156,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Shop|Products")
 	FSlateColor QuotePriceColour = FSlateColor(FLinearColor(0.35f, 0.95f, 0.45f, 1.f));
 
+	/** 골드가 부족한 상품의 가격 글자색. */
+	UPROPERTY(EditDefaultsOnly, Category = "Shop|Products")
+	FSlateColor UnaffordablePriceColour = FSlateColor(FLinearColor(0.95f, 0.38f, 0.38f, 1.f));
+
 	/** 가격·골드가 바뀌면 상품 칸의 가격 표시와 구매 가능 여부를 갱신한다. */
 	UFUNCTION()
 	void RefreshProducts();
