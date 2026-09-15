@@ -64,6 +64,9 @@ void User::Clear()
 	m_userState = UserState::Login;
 	m_userId    = "";
 	m_roomIndex = std::nullopt;
+	m_accountId = 0;
+	m_progressLoaded = false;
+	{ std::lock_guard lock(m_progressMutex); m_progress = nullptr; }
 	Session::Clear();
 }
 
@@ -134,7 +137,9 @@ void User::LeaveCurrentRoom()
 	uint32_t roomIdx = m_roomIndex.value();
 	Room& room = g_rooms[roomIdx];
 
-	bool empty = room.Leave(GetSlotIndex());
+	NpcMcp::Json progress;
+	bool empty = room.Leave(GetSlotIndex(), &progress);
+	if (!progress.is_null()) SaveProgress(std::move(progress));
 	m_roomIndex = std::nullopt;
 	m_userState = UserState::Lobby;
 
@@ -152,6 +157,14 @@ void User::LeaveCurrentRoom()
 
 	// 방 인원 변화/방 소멸이 로비 목록에 반영되도록 푸시
 	BroadcastRoomListToLobby();
+}
+
+void User::SaveProgress(NpcMcp::Json progress)
+{
+	{ std::lock_guard lock(m_progressMutex); m_progress = progress; }
+	if (!m_accountId || !m_progressLoaded) return;
+	if (g_db.SaveCharacter(m_accountId, progress.dump()))
+		Log::Info("[DB] 캐릭터 저장 userId={} level={} gold={}", m_userId, progress.value("level", 0), progress.value("gold", 0));
 }
 
 // -------------------------------------------------------
@@ -176,9 +189,9 @@ void User::OnLoginRequest(const Packet& packet)
 	std::string password(pLogin->userPW, strnlen(pLogin->userPW, MAX_USER_PW_LEN));
 
 	uint8_t isNewAccount = 0;
+	uint64_t accountId = 0;
 	if (g_db.IsConnected())
 	{
-		uint64_t accountId = 0;
 		AuthResult r = g_db.LoginOrRegister(loginId, password, accountId);
 		// Ok = 기존 계정 로그인, Registered = 신규 가입 — 둘 다 성공
 		if (r != AuthResult::Ok && r != AuthResult::Registered)
@@ -209,6 +222,13 @@ void User::OnLoginRequest(const Packet& packet)
 	}
 
 	Login(loginId);
+	m_accountId = accountId;
+	if (std::string saved; accountId && g_db.LoadCharacter(accountId, saved))
+	{
+		std::lock_guard lock(m_progressMutex);
+		m_progress = saved.empty() ? NpcMcp::Json() : NpcMcp::Json::parse(saved, nullptr, false);
+		m_progressLoaded = true;
+	}
 	Log::Info("[Login] userId={} slot={} id={} new={}", m_userId, GetSlotIndex(), GetId(), isNewAccount);
 
 	SC_Login response{};

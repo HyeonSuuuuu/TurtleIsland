@@ -200,3 +200,51 @@ AuthResult Database::LoginOrRegister(const std::string& loginId, const std::stri
 	SQLFreeHandle(SQL_HANDLE_STMT, ins);
 	return result;
 }
+
+bool Database::LoadCharacter(uint64_t accountId, std::string& outJson)
+{
+	std::lock_guard lock(m_mutex);
+	outJson.clear();
+	if (!m_connected) return false;
+	SQLHSTMT stmt = nullptr;
+	if (SQLAllocHandle(SQL_HANDLE_STMT, (SQLHDBC)m_dbc, &stmt) != SQL_SUCCESS) return false;
+	SQLBIGINT id = static_cast<SQLBIGINT>(accountId);
+	SQLBindParameter(stmt, 1, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, &id, 0, nullptr);
+	if (SQLExecDirectW(stmt, (SQLWCHAR*)L"{CALL dbo.usp_Character_Load(?)}", SQL_NTS) == SQL_ERROR)
+	{
+		LogOdbcError("LoadCharacter", SQL_HANDLE_STMT, stmt);
+		SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+		return false;
+	}
+	const SQLRETURN fetched = SQLFetch(stmt);
+	if (fetched == SQL_SUCCESS || fetched == SQL_SUCCESS_WITH_INFO)
+	{
+		// VARCHAR(MAX) arrives in pieces; each call returns the next chunk until SQL_NO_DATA.
+		char chunk[4096];
+		SQLLEN length = 0;
+		for (SQLRETURN r; (r = SQLGetData(stmt, 1, SQL_C_CHAR, chunk, sizeof(chunk), &length)) != SQL_NO_DATA;)
+		{
+			if (r == SQL_ERROR || length == SQL_NULL_DATA) break;
+			outJson.append(chunk, length == SQL_NO_TOTAL || length >= (SQLLEN)sizeof(chunk) ? sizeof(chunk) - 1 : (size_t)length);
+		}
+	}
+	SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+	return true;
+}
+
+bool Database::SaveCharacter(uint64_t accountId, const std::string& json)
+{
+	std::lock_guard lock(m_mutex);
+	if (!m_connected) return false;
+	SQLHSTMT stmt = nullptr;
+	if (SQLAllocHandle(SQL_HANDLE_STMT, (SQLHDBC)m_dbc, &stmt) != SQL_SUCCESS) return false;
+	SQLBIGINT id = static_cast<SQLBIGINT>(accountId);
+	SQLLEN jsonLength = static_cast<SQLLEN>(json.size());
+	SQLBindParameter(stmt, 1, SQL_PARAM_INPUT, SQL_C_SBIGINT, SQL_BIGINT, 0, 0, &id, 0, nullptr);
+	SQLBindParameter(stmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, json.size() > 8000 ? SQL_LONGVARCHAR : SQL_VARCHAR, json.size(), 0,
+		(SQLPOINTER)json.data(), jsonLength, &jsonLength);
+	const bool saved = SQLExecDirectW(stmt, (SQLWCHAR*)L"{CALL dbo.usp_Character_Save(?, ?)}", SQL_NTS) != SQL_ERROR;
+	if (!saved) LogOdbcError("SaveCharacter", SQL_HANDLE_STMT, stmt);
+	SQLFreeHandle(SQL_HANDLE_STMT, stmt);
+	return saved;
+}

@@ -27,7 +27,8 @@ public:
 	RoomEnterResult Enter(uint16_t roomId, uint32_t slotIndex, std::string_view userName, std::string_view title = {});
 
 	// Leave: removes user. Returns true if room is now empty.
-	bool Leave(uint32_t slotIndex);
+	// progress, when given, receives the leaving player's saveable progress if they were in a game.
+	bool Leave(uint32_t slotIndex, NpcMcp::Json* progress = nullptr);
 
 	// Send data to all users except excludeSlot.
 	void Broadcast(const std::span<const uint8_t> data, uint32_t excludeSlot = INVALID_SESSION_INDEX);
