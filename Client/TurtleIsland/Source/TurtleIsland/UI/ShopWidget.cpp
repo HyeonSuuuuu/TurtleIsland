@@ -97,7 +97,9 @@ void UShopWidget::CacheLineStyle()
 void UShopWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	// Slate 트리가 만들어지기 전에 칸을 버튼으로 감싼다. WrapBox 순서·슬롯 여백은 ReplaceChildAt 이 유지한다.
+	// Slate 트리가 만들어지기 전에 칸을 버튼으로 감싼다. ReplaceChildAt 은 에디터 전용이라
+	// 부모의 자식을 순서대로 다시 붙이고 슬롯 레이아웃(여백·정렬 등)을 복사한다.
+	TMap<UPanelWidget*, TMap<UWidget*, UShopItemButton*>> WrapsByParent;
 	TArray<UWidget*> Frames;
 	WidgetTree->ForEachWidget([&Frames](UWidget* Widget) { if (Widget->GetName().StartsWith(TEXT("Frame"))) Frames.Add(Widget); });
 	TSet<UWidget*> Wrapped;
@@ -123,8 +125,7 @@ void UShopWidget::NativeOnInitialized()
 		if (ItemIcons != 1 || !Parent) continue;
 		UShopItemButton* Button = WidgetTree->ConstructWidget<UShopItemButton>();
 		Button->Setup(ItemId);
-		Parent->ReplaceChildAt(Parent->GetChildIndex(Product), Button);
-		Button->AddChild(Product);
+		WrapsByParent.FindOrAdd(Parent).Add(Product, Button);
 		Product->SetVisibility(ESlateVisibility::HitTestInvisible);
 		Wrapped.Add(Product);
 		ProductButtons.Add(Button);
@@ -134,6 +135,23 @@ void UShopWidget::NativeOnInitialized()
 		Button->SetToolTip(Tooltip);
 		ProductTooltips.Add(Tooltip);
 		ProductIcons.Add(IconTexture);
+	}
+	for (const auto& [Parent, Wraps] : WrapsByParent)
+	{
+		const TArray<UPanelSlot*> OldSlots = Parent->GetSlots();
+		TArray<UWidget*> Children;
+		for (const UPanelSlot* OldSlot : OldSlots) Children.Add(OldSlot->Content);
+		Parent->ClearChildren(); // old slot objects stay alive for the copy below
+		for (int32 i = 0; i < OldSlots.Num(); ++i)
+		{
+			UShopItemButton* const* Button = Wraps.Find(Children[i]);
+			UPanelSlot* NewSlot = Parent->AddChild(Button ? *Button : Children[i]);
+			if (Button) (*Button)->AddChild(Children[i]);
+			if (!NewSlot || NewSlot->GetClass() != OldSlots[i]->GetClass()) continue;
+			for (TFieldIterator<FProperty> It(NewSlot->GetClass()); It; ++It)
+				if (It->GetOwnerClass() != UPanelSlot::StaticClass() && !It->HasAnyPropertyFlags(CPF_Transient))
+					It->CopyCompleteValue_InContainer(NewSlot, OldSlots[i]);
+		}
 	}
 	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 상품 칸 %d개를 구매 버튼으로 연결"), ProductButtons.Num());
 }
