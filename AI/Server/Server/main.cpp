@@ -1439,7 +1439,7 @@ int main(int argc, char** argv)
 	sockaddr_in serverAddr = {};
 	serverAddr.sin_family = AF_INET;
 	// The trusted game/AI link carries scoped tool capabilities, never expose it publicly.
-	serverAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serverAddr.sin_port = htons(NetConfig::AI_SERVER_PORT);
 	char portText[16]{}; size_t portLength=0;
 	getenv_s(&portLength,portText,sizeof(portText),"TI_AI_PORT");
