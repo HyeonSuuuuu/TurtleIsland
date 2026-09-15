@@ -9,6 +9,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimSingleNodeInstance.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameplayRules.h"
@@ -134,6 +135,19 @@ void UAgentSkillComponent::ResetPlayback()
 	if (UAnimInstance* Anim = GetAnimInstance()) Anim->StopAllMontages(0.f);
 	AirMontage = nullptr;
 	bWasAirborne = false;
+}
+
+void UAgentSkillComponent::PlayDeath()
+{
+	UAnimInstance* Anim = GetAnimInstance();
+	// 몬스터는 단일 노드 재생으로 자기 사망 클립을 튼다.
+	if (!Anim || Anim->IsA<UAnimSingleNodeInstance>()) return;
+	UAnimSequenceBase* Sequence = DeathAnimation.LoadSynchronous();
+	if (!Sequence) return;
+	Anim->StopAllMontages(0.1f);
+	// 끝 자세를 부활(ResetPlayback)까지 유지한다.
+	if (UAnimMontage* Montage = Anim->PlaySlotAnimationAsDynamicMontage(Sequence, TEXT("DefaultSlot"), 0.15f, 0.f))
+		Montage->bEnableAutoBlendOut = false;
 }
 
 void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)

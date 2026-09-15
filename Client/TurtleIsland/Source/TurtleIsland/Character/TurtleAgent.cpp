@@ -59,7 +59,11 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 
 void ATurtleAgent::EnterDeadState()
 {
-	if (Skill) Skill->ResetPlayback();
+	if (Skill)
+	{
+		Skill->ResetPlayback();
+		Skill->PlayDeath();
+	}
 	StopJumping();
 	ConsumeMovementInputVector();
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())

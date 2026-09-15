@@ -42,6 +42,9 @@ public:
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> JumpAnimation;
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> FallAnimation;
 	UPROPERTY(EditAnywhere, Category="Skill|Jump") TObjectPtr<UAnimSequenceBase> LandAnimation;
+	/** 사망 시 한 번 재생하고 마지막 자세로 부활까지 유지한다. 비워두면 Paladin 기본 사망 모션. */
+	UPROPERTY(EditAnywhere, Category="Skill|Death") TSoftObjectPtr<UAnimSequenceBase> DeathAnimation =
+		TSoftObjectPtr<UAnimSequenceBase>(FSoftObjectPath(TEXT("/Game/Lv3_Ingame/Characters/Paladin/Anims/Sword_and_Shield_Animation/sword_and_shield_death.sword_and_shield_death")));
 
 	/** 스킬 ID → 몽타주. 블루프린트에서 캐릭터별로 채운다 (0 = 기본공격) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Skill")
@@ -74,6 +77,7 @@ public:
 	bool CanRotateWhileCasting() const;
 	void ResetCast();
 	void ResetPlayback();
+	void PlayDeath();
 private:
 	double MovementReadyAt = 0.;
 	int32 ActiveSkillId = INDEX_NONE;
