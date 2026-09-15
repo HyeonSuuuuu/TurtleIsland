@@ -1096,7 +1096,7 @@ void HandleClient(
 std::string ResolveModelPath()
 {
 	namespace fs = std::filesystem;
-	constexpr auto filename = "gemma-4-E4B-it-Q4_K_M.gguf";
+	constexpr auto filename = "gemma-4-31B-it-Q8_0.gguf";
 	std::vector<fs::path> candidates;
 	auto add = [&](const fs::path& path)
 	{
