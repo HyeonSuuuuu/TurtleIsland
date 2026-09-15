@@ -3,6 +3,8 @@
 #include "include/lua.hpp"
 #include "Define.h"
 #include "ObstacleMap.h"
+#include "../../Common/GameplayRules.h"
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 
@@ -38,7 +40,7 @@ namespace
 			(!std::is_integral_v<T> || std::floor(value) == value))
 			out = static_cast<T>(value);
 		else
-			Log::Warning("[LUA] invalid monster {}; using {}", field, out);
+			Log::Warning("[LUA] invalid {}; using {}", field, out);
 	}
 
 	bool LoadSpawnAreas(lua_State* L)
@@ -135,4 +137,42 @@ bool LoadMonsterScript(const char* path)
 	Log::Success("[LUA] monsters loaded: {}", g_monsterDefs.size());
 	Log::Info("[LUA] spawn areas loaded: {}", g_monsterSpawnAreas.size());
 	return validDefinitions && validAreas;
+}
+
+bool LoadSkillScript(const char* path)
+{
+	lua_State* L = luaL_newstate();
+	if (!L) return false;
+	if (luaL_dofile(L, path) != LUA_OK)
+	{
+		Log::Warning("[LUA] '{}' load fail: {}", path, lua_tostring(L, -1));
+		lua_close(L);
+		return false;
+	}
+	lua_getglobal(L, "Skills");
+	const bool valid = lua_istable(L, -1);
+	const char* names[PLAYER_SKILL_COUNT] = {"Attack", "Q", "E"};
+	for (int i = 0; valid && i < PLAYER_SKILL_COUNT; ++i)
+	{
+		lua_getfield(L, -1, names[i]);
+		if (lua_istable(L, -1))
+		{
+			auto& skill = GameplayRules::Skills[i];
+			// 360도 = 전방위. 판정은 전방 벡터와의 cos(각도/2) 비교다.
+			double angle = std::acos(std::clamp(static_cast<double>(skill.facingDot), -1., 1.)) * 360. / 3.14159265358979;
+			ReadField(L, "damage", skill.damage, 0, 100000);
+			ReadField(L, "mana", skill.mana, 0, 100000);
+			ReadField(L, "cooldownMs", skill.cooldownMs, 0, 600000);
+			ReadField(L, "range", skill.range, 1, 10000);
+			ReadField(L, "angle", angle, 1, 360);
+			ReadField(L, "hitDelayMs", skill.impactDelayMs, 0, 5000);
+			skill.facingDot = static_cast<float>(std::cos(angle * 3.14159265358979 / 360.));
+		}
+		lua_pop(L, 1);
+	}
+	lua_close(L);
+	if (!valid) Log::Warning("[LUA] '{}' has no Skills table; using built-in skill values", path);
+	else Log::Success("[LUA] skills loaded (Attack/Q/E damage {}/{}/{})",
+		GameplayRules::Skills[0].damage, GameplayRules::Skills[1].damage, GameplayRules::Skills[2].damage);
+	return valid;
 }

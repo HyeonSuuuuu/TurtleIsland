@@ -30,3 +30,4 @@ inline std::vector<MonsterSpawnArea> g_monsterSpawnAreas;
 
 // Returns false on load/validation failure; runtime fallback behavior is preserved.
 bool LoadMonsterScript(const char* path);   // 서버 시작 시 1회 (Monster.lua -> g_monsterDefs)
+bool LoadSkillScript(const char* path);     // Skill.lua -> GameplayRules::Skills (이동 잠금 시간 제외)

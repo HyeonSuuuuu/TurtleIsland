@@ -14,7 +14,7 @@ constexpr uint32_t AI_ID                 = UINT32_MAX - 2;
 constexpr uint32_t MAX_NPCS              = 200000;
 constexpr uint32_t MAX_ROOMS            = 5000;
 constexpr uint32_t MAX_ROOM_USERS       = 4;
-constexpr uint32_t MAX_ROOM_NPCS        = 8;
+constexpr uint32_t MAX_ROOM_NPCS        = 100;
 
 // GameDev 와이어 헤더(PacketHeader): [0..1]=size(2바이트), [2..3]=id(2바이트), [4]=type
 constexpr uint32_t PACKET_LEN_FIELD_SIZE = 2;          // size 필드(2바이트)

@@ -410,8 +410,11 @@ struct RoomSpawnTests
 		Room room;
 		room.m_isActive = true;
 		room.StartGame();
+		// Expected slots follow the live Monster.lua areas in order.
+		std::vector<uint16_t> expectedTypes;
+		for (const auto& spawn : g_monsterSpawnAreas) expectedTypes.insert(expectedTypes.end(), spawn.count, spawn.type);
 		Check(std::count_if(room.m_npcs.begin(), room.m_npcs.end(),
-			[](const NPC& npc) { return npc.IsActive(); }) == 5, "five initial area monsters");
+			[](const NPC& npc) { return npc.IsActive(); }) == static_cast<long long>(expectedTypes.size()), "initial area monsters match Lua counts");
 
 		const auto& area = g_monsterSpawnAreas[0];
 		float firstX = room.m_npcs[0].x, firstY = room.m_npcs[0].y;
@@ -435,11 +438,13 @@ struct RoomSpawnTests
 			room.SpawnAreaNpcsLocked(due, true);
 		}
 		Check(moved, "random locations vary");
-		Check(room.m_npcs[1].m_type == 0 && room.m_npcs[2].m_type == 1 &&
-			room.m_npcs[3].m_type == 1 && room.m_npcs[4].m_type == 2, "per-area count and type");
+		for (size_t slot = 1; slot < expectedTypes.size(); ++slot)
+			Check(room.m_npcs[slot].m_type == expectedTypes[slot], "per-area count and type");
 		Check(!room.SpawnNpc(0, 0, firstX, firstY, 10, 1.f), "occupied slot rejected");
 
 		// Exercise the actual combat death path, without sockets or database access.
+		// Reward values are pinned so balance edits in Monster.lua do not change this fixture.
+		g_monsterDefs[0].gold = 10; g_monsterDefs[0].exp = 25;
 		User user;
 		user.x = room.m_npcs[0].x;
 		user.y = room.m_npcs[0].y;
@@ -558,11 +563,20 @@ int main(int argc, char** argv)
 		RoomSpawnTests::TestNpcImpacts();
 		RoomSpawnTests::TestPlayerRespawn();
 		RoomSpawnTests::TestPlayerInfo();
+		{
+			const auto builtIn = GameplayRules::Skills;
+			Check(LoadSkillScript("Skill.lua"), "Skill.lua loads");
+			Check(GameplayRules::Skills[1].facingDot == -1.f && std::abs(GameplayRules::Skills[0].facingDot - 0.2f) < 0.01f &&
+				GameplayRules::Skills[2].impactDelayMs == 400 && GameplayRules::Skills[0].movementLockMs == builtIn[0].movementLockMs,
+				"Skill.lua angle/hit delay map to server rules; movement lock stays in code");
+			GameplayRules::Skills = builtIn;
+			std::println("PASS: Skill.lua player skill values");
+		}
 		const auto fixture = std::filesystem::temp_directory_path() /
 			("TurtleIslandSpawnTest-" + std::to_string(GetCurrentProcessId()) + ".lua");
 		const std::string monsters = "Monsters = {{name='Test',hp=50,speed=4}}\n";
 		const std::array<const char*, 6> invalid = {
-			"{type=0,count=9,x=0,y=0,radius=1,respawnSeconds=10}",
+			"{type=0,count=101,x=0,y=0,radius=1,respawnSeconds=10}",
 			"{type=1,count=1,x=0,y=0,radius=1,respawnSeconds=10}",
 			"{type=0,count=1,x=0,y=0,radius=-1,respawnSeconds=10}",
 			"{type=0,count=1,x=0/0,y=0,radius=1,respawnSeconds=10}",
@@ -575,10 +589,10 @@ int main(int argc, char** argv)
 			Check(!LoadMonsterScript(fixture.string().c_str()), "invalid Lua returns failure to the editor validator");
 			Check(g_monsterSpawnAreas.empty(), "invalid config rejected");
 		}
-		const std::string area = "{type=0,count=4,x=-24750,y=-23150,radius=150,respawnSeconds=10}";
+		const std::string area = "{type=0,count=" + std::to_string(MAX_ROOM_NPCS / 2) + ",x=-24750,y=-23150,radius=150,respawnSeconds=10}";
 		{ std::ofstream file(fixture); file << monsters << "SpawnAreas = {" << area << "," << area << "}"; }
 		Check(LoadMonsterScript(fixture.string().c_str()), "valid Lua returns success to the editor validator");
-		Check(g_monsterSpawnAreas.size() == 2, "exactly eight slots accepted");
+		Check(g_monsterSpawnAreas.size() == 2, "exactly MAX_ROOM_NPCS slots accepted");
 		{ std::ofstream file(fixture); file << monsters << "SpawnAreas = {" << area << "," << area << "," << area << "}"; }
 		LoadMonsterScript(fixture.string().c_str());
 		Check(g_monsterSpawnAreas.empty(), "combined count above capacity rejected atomically");

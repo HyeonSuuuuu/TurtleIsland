@@ -7,10 +7,10 @@
 
 namespace GameplayRules
 {
-	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; uint32_t movementLockMs; };
-	// Full cast recovery, matching AM_Attack / AM_SkillQ / AM_SkillE at their default play rates.
-	inline constexpr std::array<SkillDef, PLAYER_SKILL_COUNT> Skills = {{
-		{20, 0, 500, 180.f, 0.2f, 1500}, {40, 20, 4000, 260.f, -1.f, 1667}, {60, 30, 6000, 350.f, 0.2f, 1300}
+	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; uint32_t movementLockMs, impactDelayMs; };
+	// movementLockMs matches AM_Attack / AM_SkillQ / AM_SkillE at default play rates; the server overrides the rest from Skill.lua.
+	inline std::array<SkillDef, PLAYER_SKILL_COUNT> Skills = {{
+		{20, 0, 500, 180.f, 0.2f, 1500, 300}, {40, 20, 4000, 260.f, -1.f, 1667, 500}, {60, 30, 6000, 350.f, 0.2f, 1300, 400}
 	}};
 	inline constexpr uint16_t HealthPotion = 1, ManaPotion = 2;
 	inline constexpr uint32_t ItemCooldownMs = 1000;

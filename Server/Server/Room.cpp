@@ -8,9 +8,6 @@
 
 namespace
 {
-	// Seconds from montage start at play rate 1: basic 0.30, Q 0.50, E 0.40.
-	// Authoritative hit timing; clients never decide damage or report a trusted hit.
-	constexpr std::array<uint32_t, PLAYER_SKILL_COUNT> AttackImpactDelayMs = {300, 500, 400};
 	constexpr float PlayerRadius = 42.f; // APlayerAgent capsule XY radius.
 	constexpr double MovementBurstSeconds = 0.25; // Bounded allowance for batched TCP arrivals.
 }
@@ -644,7 +641,7 @@ void Room::Attack(User& user, const CS_Attack& request)
 	attack.casterId = user.GetId(); attack.casterKind = ENTITY_PLAYER; attack.skillId = request.skillId;
 	attack.yaw = request.yaw; attack.targetKind = request.targetKind; attack.targetId = request.targetId;
 	BroadcastGameplayLocked({reinterpret_cast<const uint8_t*>(&attack), sizeof(attack)});
-	m_pendingAttacks[user.GetSlotIndex()] = {request, now + AttackImpactDelayMs[request.skillId]};
+	m_pendingAttacks[user.GetSlotIndex()] = {request, now + GameplayRules::Skills[request.skillId].impactDelayMs}; // server-authoritative hit timing
 	SendStateLocked(user, state, now);
 }
 
