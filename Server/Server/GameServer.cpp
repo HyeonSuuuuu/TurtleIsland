@@ -122,7 +122,14 @@ void GameServer::Run()
 	g_db.Connect(connLen > 0 ? connBuf : DbConfig::DEFAULT_CONN);
 	StartServer();                    // IOCP 생성 + 워커 스레드
 	g_iocpHandle = GetIocpHandle();
-	ConnectToAIServer("127.0.0.1", 4444);   // AI 서버(NetConfig::AI_SERVER_PORT) — 없으면 경고 후 진행
+
+	std::string ai_ip;
+	uint16_t ai_port;
+	std::cout << "AI 서버 주소: ";
+	std::cin >> ai_ip;
+	std::cout << "AI 서버 포트: ";
+	std::cin >> ai_port;
+	ConnectToAIServer(ai_ip.c_str(), ai_port);   // AI 서버(NetConfig::AI_SERVER_PORT) — 없으면 경고 후 진행
 	StartNpcTick();                   // NPC 틱 스레드
 }
 
