@@ -434,7 +434,7 @@ void UShopWidget::AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping)
 		Body->SetFont(CachedFont);
 	}
 	Body->SetColorAndOpacity(bFromNpc ? NpcTextColour : SelfTextColour);
-	Body->SetAutoWrapText(true);
+	Body->SetAutoWrapText(!bIsTyping); // "• • •" 가 줄바꿈되면 점 하나가 아래로 떨어진다
 
 	// DrawAs=Box 는 ResourceObject 가 없으면 아무것도 안 그린다. 단색 채움은 RoundedBox.
 	// 꼬리 쪽 모서리 하나만 작게 줘서 어느 쪽 말인지 보이게 한다.
