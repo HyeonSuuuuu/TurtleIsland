@@ -225,8 +225,13 @@ void UMainHUDWidget::ShowFeedback(FString Message)
 
 void UMainHUDWidget::ScrollCombatLogToEnd()
 {
+	// 빈 CombatLine 도 높이를 차지하므로, 8줄이 다 차기 전에 끝으로 내리면 첫 줄이 위로 잘린다.
 	for (UWidget* Widget = GetWidgetFromName(TEXT("CombatLine0")); Widget; Widget = Widget->GetParent())
-		if (UScrollBox* Scroll = Cast<UScrollBox>(Widget)) { Scroll->ScrollToEnd(); return; }
+		if (UScrollBox* Scroll = Cast<UScrollBox>(Widget))
+		{
+			if (CombatLines.Num() >= 8) Scroll->ScrollToEnd(); else Scroll->ScrollToStart();
+			return;
+		}
 }
 
 int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
