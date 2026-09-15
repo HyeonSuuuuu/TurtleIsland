@@ -2,9 +2,11 @@
 
 #include "UI/ShopWidget.h"
 
+#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableText.h"
+#include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/SizeBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -18,7 +20,37 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "Network/NetSubsystem.h"
+#include "GameplayRules.h"
+#include "Styling/CoreStyle.h"
 #include "TurtleIsland.h"
+
+UShopItemButton::UShopItemButton() { InitIsFocusable(false); }
+
+void UShopItemButton::Setup(int32 InItemId)
+{
+	ItemId = InItemId;
+	OnClicked.AddUniqueDynamic(this, &UShopItemButton::Buy);
+	const auto Tint = [](float Alpha)
+	{
+		FSlateBrush Brush;
+		Brush.DrawAs = Alpha > 0.f ? ESlateBrushDrawType::RoundedBox : ESlateBrushDrawType::NoDrawType;
+		Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		Brush.OutlineSettings.CornerRadii = FVector4(6.f, 6.f, 6.f, 6.f);
+		Brush.TintColor = FSlateColor(FLinearColor(1.f, 1.f, 1.f, Alpha));
+		return Brush;
+	};
+	FButtonStyle Style;
+	Style.Normal = Tint(0.f); Style.Disabled = Tint(0.f);
+	Style.Hovered = Tint(0.08f); Style.Pressed = Tint(0.16f);
+	Style.NormalPadding = FMargin(0); Style.PressedPadding = FMargin(0);
+	SetStyle(Style);
+}
+
+void UShopItemButton::Buy()
+{
+	if (UGameInstance* GI = GetGameInstance())
+		if (UNetSubsystem* Net = GI->GetSubsystem<UNetSubsystem>()) Net->BuyItem(ItemId);
+}
 
 UNetSubsystem* UShopWidget::GetNet() const
 {
@@ -60,6 +92,46 @@ void UShopWidget::CacheLineStyle()
 			 "위젯 기본값의 Line Font 를 지정해야 한글이 안 깨진다."));
 }
 
+void UShopWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	// Slate 트리가 만들어지기 전에 칸을 버튼으로 감싼다. WrapBox 순서·슬롯 여백은 ReplaceChildAt 이 유지한다.
+	TArray<UWidget*> Frames;
+	WidgetTree->ForEachWidget([&Frames](UWidget* Widget) { if (Widget->GetName().StartsWith(TEXT("Frame"))) Frames.Add(Widget); });
+	TSet<UWidget*> Wrapped;
+	for (UWidget* Frame : Frames)
+	{
+		// Frame 이 배경 이미지 한 장이면 그 부모 칸을 상품으로 본다.
+		UWidget* Product = Cast<UPanelWidget>(Frame) ? Frame : Frame->GetParent();
+		if (!Product || Wrapped.Contains(Product)) continue;
+		int32 ItemId = 0, PotionIcons = 0;
+		UTextBlock* Price = nullptr;
+		UWidgetTree::ForWidgetAndChildren(Product, [&](UWidget* Child)
+		{
+			if (const UImage* Icon = Cast<UImage>(Child))
+				if (const UObject* Texture = Icon->GetBrush().GetResourceObject())
+				{
+					const FString Name = Texture->GetName();
+					if (Name.Contains(TEXT("PotionRed"))) { ItemId = GameplayRules::HealthPotion; ++PotionIcons; }
+					else if (Name.Contains(TEXT("PotionBlue"))) { ItemId = GameplayRules::ManaPotion; ++PotionIcons; }
+				}
+			if (UTextBlock* Text = Cast<UTextBlock>(Child)) Price = Text;
+		});
+		UPanelWidget* Parent = Product->GetParent();
+		if (PotionIcons != 1 || !Parent) continue;
+		UShopItemButton* Button = WidgetTree->ConstructWidget<UShopItemButton>();
+		Button->Setup(ItemId);
+		Parent->ReplaceChildAt(Parent->GetChildIndex(Product), Button);
+		Button->AddChild(Product);
+		Product->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Wrapped.Add(Product);
+		ProductButtons.Add(Button);
+		ProductPrices.Add(Price);
+		ProductPriceColours.Add(Price ? Price->GetColorAndOpacity() : FSlateColor());
+	}
+	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 상품 칸 %d개를 구매 버튼으로 연결"), ProductButtons.Num());
+}
+
 void UShopWidget::NativeConstruct()
 {
 	// 스타일 견본을 먼저 챙기고 컨테이너를 비운다. Super 안에서 블루프린트의
@@ -89,7 +161,11 @@ void UShopWidget::NativeConstruct()
 	{
 		Net->OnNpcChatReceived.RemoveDynamic(this, &UShopWidget::HandleNpcChat);
 		Net->OnNpcChatReceived.AddDynamic(this, &UShopWidget::HandleNpcChat);
+		Net->OnShopPricesChanged.AddUniqueDynamic(this, &UShopWidget::RefreshProducts);
+		Net->OnGameplayStateChanged.AddUniqueDynamic(this, &UShopWidget::RefreshProducts);
+		Net->OnShopFeedback.AddUniqueDynamic(this, &UShopWidget::HandleShopFeedback);
 	}
+	RefreshProducts();
 
 	UE_LOG(LogTurtleIsland, Log,
 		TEXT("[Shop] 위젯 준비 - Input=%s, Container=%s, ScrollBox=%s, Net=%s, 스타일견본=%s"),
@@ -113,6 +189,9 @@ void UShopWidget::NativeDestruct()
 	if (UNetSubsystem* Net = GetNet())
 	{
 		Net->OnNpcChatReceived.RemoveDynamic(this, &UShopWidget::HandleNpcChat);
+		Net->OnShopPricesChanged.RemoveDynamic(this, &UShopWidget::RefreshProducts);
+		Net->OnGameplayStateChanged.RemoveDynamic(this, &UShopWidget::RefreshProducts);
+		Net->OnShopFeedback.RemoveDynamic(this, &UShopWidget::HandleShopFeedback);
 	}
 
 	Super::NativeDestruct();
@@ -377,4 +456,75 @@ void UShopWidget::HideTyping()
 	}
 	TypingBubble->RemoveFromParent();
 	TypingBubble = nullptr;
+}
+
+void UShopWidget::RefreshProducts()
+{
+	UNetSubsystem* Net = GetNet();
+	const SC_ShopPrices* Prices = Net ? Net->GetShopPrices() : nullptr;
+	const SC_PlayerState* State = Net ? Net->GetPlayerState() : nullptr;
+	for (int32 i = 0; i < ProductButtons.Num(); ++i)
+	{
+		const int32 ItemId = ProductButtons[i]->GetItemId();
+		const int32 Price = Prices ? Prices->unitPrice[ItemId - 1] : 0;
+		const int32 Quote = Prices ? Prices->quoteQuantity[ItemId - 1] : 0;
+		if (UTextBlock* Text = ProductPrices[i])
+		{
+			Text->SetText(FText::FromString(!Prices ? FString(TEXT("--G"))
+				: Quote ? FString::Printf(TEXT("%dG x%d"), Price, Quote) : FString::Printf(TEXT("%dG"), Price)));
+			Text->SetColorAndOpacity(Quote ? QuotePriceColour : ProductPriceColours[i]);
+		}
+		const FString Name = ItemId == GameplayRules::HealthPotion ? TEXT("회복 포션 (HP +50)") : TEXT("마나 포션 (MP +50)");
+		ProductButtons[i]->SetToolTipText(FText::FromString(Quote
+			? FString::Printf(TEXT("%s\n흥정 가격 %dG, %d개 남음\n클릭하면 1개 구매"), *Name, Price, Quote)
+			: FString::Printf(TEXT("%s\n클릭하면 1개 구매"), *Name)));
+		ProductButtons[i]->SetIsEnabled(Prices && State && State->hp > 0 && State->gold >= Price);
+	}
+}
+
+void UShopWidget::HandleShopFeedback(FString Message)
+{
+	AddSystemLine(Message);
+}
+
+void UShopWidget::AddSystemLine(const FString& Text)
+{
+	UPanelWidget* Target = MessageContainer
+		? static_cast<UPanelWidget*>(MessageContainer.Get())
+		: static_cast<UPanelWidget*>(DialogueScrollBox.Get());
+	UTextBlock* Line = Target ? NewObject<UTextBlock>(this) : nullptr;
+	if (!Line)
+	{
+		return;
+	}
+	const bool bWasAtBottom = WasScrolledToBottom();
+	Line->SetText(FText::FromString(Text));
+	if (bStyleCached)
+	{
+		FSlateFontInfo Font = CachedFont;
+		Font.Size = FMath::Max(10.f, CachedFont.Size * 0.85f);
+		Line->SetFont(Font);
+	}
+	Line->SetColorAndOpacity(SpeakerNameColour);
+	Line->SetAutoWrapText(true);
+	UPanelSlot* LineSlot = Target->AddChild(Line);
+	if (UVerticalBoxSlot* AsVBox = Cast<UVerticalBoxSlot>(LineSlot))
+	{
+		AsVBox->SetHorizontalAlignment(HAlign_Center);
+		AsVBox->SetPadding(FMargin(4.f, 4.f, 4.f, 8.f));
+	}
+	else if (UScrollBoxSlot* AsScroll = Cast<UScrollBoxSlot>(LineSlot))
+	{
+		AsScroll->SetHorizontalAlignment(HAlign_Center);
+		AsScroll->SetPadding(FMargin(4.f, 4.f, 4.f, 8.f));
+	}
+	// 안내 줄 다음 말풍선엔 이름표를 다시 붙인다.
+	bHasLastSpeaker = false;
+	if (DialogueScrollBox && bWasAtBottom)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimerForNextTick(this, &UShopWidget::ScrollToBottomNow);
+		}
+	}
 }

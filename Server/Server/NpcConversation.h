@@ -19,14 +19,40 @@ struct NpcConversation
     bool initialized = false, ready = false, changedAffinity = false;
     size_t calls = 0;
     NpcMcp::Json replies = NpcMcp::Json::object();
-    NpcMcp::Json quote;
+    // quote survives later turns until bought, replaced, or invalidated; previousQuote restores it on failure.
+    NpcMcp::Json quote, previousQuote;
 
     void Begin(const std::string& token, const std::string& text, uint64_t now)
     {
+        if (!context.empty()) quote = previousQuote; // an unfinished turn never commits its quote
         context = token; message = text; expiresAt = now + NpcMcp::TurnLifetimeMs;
         initialized = ready = changedAffinity = false; calls = 0;
         proposedRelationship = relationship;
-        replies = NpcMcp::Json::object(); quote = nullptr;
+        replies = NpcMcp::Json::object(); previousQuote = quote;
+    }
+    // True while a turn may still commit. An expired turn's staged quote is dropped here.
+    bool Busy(uint64_t now)
+    {
+        if (context.empty()) return false;
+        if (now < expiresAt) return true;
+        context.clear(); quote = previousQuote;
+        return false;
+    }
+    const NpcMcp::Json& CommittedQuote() const { return context.empty() ? quote : previousQuote; }
+    // Quote price applies to up to its remaining quantity; otherwise the base price.
+    int UnitPrice(int itemId, int quantity) const
+    {
+        const auto& q = CommittedQuote();
+        if (!q.is_null() && q["item_id"] == itemId && quantity <= q["quantity"].get<int>())
+            return q["unit_price"].get<int>();
+        return g_npcShopConfig.products[itemId-1].basePrice;
+    }
+    void ConsumeQuote(int itemId, int quantity)
+    {
+        if (quote.is_null() || quote["item_id"] != itemId) return;
+        const int left = quote["quantity"].get<int>() - quantity;
+        if (left > 0) quote["quantity"] = left; else quote = nullptr;
+        previousQuote = quote;
     }
     NpcMcp::Json Catalog() const
     {

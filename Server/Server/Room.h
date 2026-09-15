@@ -42,6 +42,7 @@ public:
 	void MovePlayer(User& user, const CS_Move& request);
 	void Attack(User& user, const CS_Attack& request);
 	void UseItem(User& user, const CS_UseItem& request);
+	void BuyItem(User& user, const CS_ShopBuy& request);
 	void BeginNpcChat(User& user, uint32_t npcId, const std::string& message);
 	bool HandleNpcMcp(const NpcMcp::Json& request, NpcMcp::Json& response);
 	bool CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response);
@@ -87,6 +88,7 @@ private:
 	void TickPlayerRespawnLocked(uint32_t slot, uint64_t now);
 	bool ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t now);
 	void SendStateLocked(User& user, const GameplayRules::PlayerState& state, uint64_t now);
+	void SendShopPricesLocked(User& user);
 	static SC_PlayerInfo MakePlayerInfo(const User& user, const GameplayRules::PlayerState& state);
 	void BroadcastGameplayLocked(std::span<const uint8_t> data, uint32_t exclude = INVALID_SESSION_INDEX);
 	std::unordered_map<uint32_t, GameplayRules::PlayerState> m_playerStates;

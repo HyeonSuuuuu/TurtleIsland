@@ -113,7 +113,7 @@ void GameServer::Run()
 	User::RegisterHandlers();
 	g_obstacleMap.LoadConfigured("CollisionSettings.json");
 	LoadMonsterScript("Monster.lua"); // 몬스터 정의 로드 (없으면 폴백 스폰)
-	if (!g_npcShopConfig.Load("NpcShop.json")) Log::Warning("[NPC] Missing/invalid NpcShop.json; shop conversation disabled");
+	if (!g_npcShopConfig.Load("Shop.lua")) Log::Warning("[NPC] Missing/invalid Shop.lua; shop disabled");
 
 	// DB 연결: 환경변수 TI_DB_CONN 우선, 없으면 기본값. 실패해도 서버는 계속(로그인 폴백).
 	char connBuf[512] = {}; size_t connLen = 0;
