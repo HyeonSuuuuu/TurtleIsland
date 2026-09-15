@@ -113,6 +113,7 @@ void GameServer::Run()
 	User::RegisterHandlers();
 	g_obstacleMap.LoadConfigured("CollisionSettings.json");
 	LoadMonsterScript("Monster.lua"); // 몬스터 정의 로드 (없으면 폴백 스폰)
+	LoadSkillScript("Skill.lua");     // 플레이어 스킬 판정값 (없으면 코드 기본값)
 	if (!g_npcShopConfig.Load("Shop.lua")) Log::Warning("[NPC] Missing/invalid Shop.lua; shop disabled");
 
 	// DB 연결: 환경변수 TI_DB_CONN 우선, 없으면 기본값. 실패해도 서버는 계속(로그인 폴백).
