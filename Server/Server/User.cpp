@@ -108,6 +108,7 @@ void User::RegisterHandlers()
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_MOVE)]               = &User::OnMove;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_INGAME_READY)]       = &User::OnIngameReady;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_NPC_CHAT)]           = &User::OnNpcChat;
+	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_NPC_CHAT_END)]       = &User::OnNpcChatEnd;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_ATTACK)] = &User::OnAttack;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_USE_ITEM)] = &User::OnUseItem;
 	s_handlers[static_cast<uint16_t>(PACKET_ID::CS_SHOP_BUY)] = &User::OnShopBuy;
@@ -492,4 +493,12 @@ void User::OnNpcChat(const Packet& packet)
 	if (!m_roomIndex || *m_roomIndex>=g_rooms.size()) return;
 	g_rooms[*m_roomIndex].BeginNpcChat(*this,pNpcChat->npcIndex,
 		std::string(reinterpret_cast<const char*>(textPtr),textLen));
+}
+
+void User::OnNpcChatEnd(const Packet& packet)
+{
+	if (m_userState != UserState::Room || packet.dataSpan.size() != CS_NPC_CHAT_END_PACKET_SIZE) return;
+	if (!m_roomIndex || *m_roomIndex>=g_rooms.size()) return;
+	const auto* end = reinterpret_cast<const CS_NpcChatEnd*>(packet.dataSpan.data());
+	g_rooms[*m_roomIndex].EndNpcChat(*this, end->npcIndex);
 }

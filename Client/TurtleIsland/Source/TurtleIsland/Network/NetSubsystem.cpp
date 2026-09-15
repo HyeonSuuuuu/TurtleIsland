@@ -1090,6 +1090,16 @@ bool UNetSubsystem::TrySendNpcChat(int32 NpcIndex, const FString& Message)
 	return true;
 }
 
+void UNetSubsystem::SendNpcChatEnd(int32 NpcIndex)
+{
+	if (IsSinglePlay() || !IsConnected()) return;
+	CS_NpcChatEnd Pkt{};
+	Pkt.size = CS_NPC_CHAT_END_PACKET_SIZE;
+	Pkt.id = static_cast<uint16>(PACKET_ID::CS_NPC_CHAT_END);
+	Pkt.npcIndex = static_cast<uint32>(NpcIndex);
+	SendPacket(Pkt);
+}
+
 void UNetSubsystem::EmitChat(const FString& Line)
 {
 	if (!ChatSubsystem && GetGameInstance())

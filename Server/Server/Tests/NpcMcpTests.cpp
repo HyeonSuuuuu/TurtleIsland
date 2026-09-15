@@ -66,7 +66,7 @@ struct NpcMcpTests
         chat.Begin(std::string(32,'c'),"second turn",now);
         NpcAgent::Client agentClient(chat.context,exchange);
         int step=0;
-        const auto reply=NpcAgent::Run(agentClient,"I have no money",Json::array(),[&](const std::string& prompt)
+        const auto reply=NpcAgent::Run(agentClient,"I have no money",NpcAgent::Memory{},[&](const std::string& prompt)
         {
             Check(prompt.find("987654")==std::string::npos && prompt.find(chat.context)==std::string::npos,"no balance or capability in model context");
             if (step==0) Check(prompt.find("get_shop_catalog")!=std::string::npos && prompt.find("base_price")!=std::string::npos,"shop list preloaded before first inference");
@@ -75,6 +75,25 @@ struct NpcMcpTests
             return std::string(R"({"say":"Have a rest."})");
         });
         Check(step==2 && reply=="Have a rest.","inference-tool-reinference loop");
+        NpcAgent::Memory memory;
+        memory.turns=Json::array({{{"customer","oldest-turn"},{"npc","a"}},{{"customer","middle-turn"},{"npc","b"}},{{"customer","newest-turn"},{"npc","c"}}});
+        memory.notes="- likes-blue";
+        std::string trimmed;
+        NpcAgent::Run(agentClient,"remember me",memory,[&](const std::string& prompt) { trimmed=prompt; return std::string(R"({"say":"ok"})"); },
+            [](const std::string& prompt) { return prompt.find("oldest-turn")==std::string::npos; });
+        Check(trimmed.find("oldest-turn")==std::string::npos && trimmed.find("middle-turn")!=std::string::npos &&
+            trimmed.find("newest-turn")!=std::string::npos,"over-budget prompt drops only the oldest dialogue");
+        Check(trimmed.find("memory_notes")!=std::string::npos && trimmed.find("likes-blue")!=std::string::npos,"memory notes reach the model");
+
+        Check(!NpcAgent::Compress(memory,[](const std::string&) { return std::string("- x"); }),"short dialogue is not compressed");
+        for (int i=0;i<5;++i) memory.turns.push_back({{"customer","turn-"+std::to_string(i)},{"npc","n"}});
+        std::string summaryInput;
+        Check(!NpcAgent::Compress(memory,[](const std::string&) { return std::string{}; }) && memory.turns.size()==8,"failed summary keeps every turn");
+        Check(NpcAgent::Compress(memory,[&](const std::string& input) { summaryInput=input; return std::string("- likes-blue, bought potion"); }),"close compresses");
+        Check(summaryInput.find("likes-blue")!=std::string::npos && summaryInput.find("oldest-turn")!=std::string::npos &&
+            summaryInput.find("middle-turn")!=std::string::npos && summaryInput.find("newest-turn")==std::string::npos,"summary folds previous notes and only the oldest turns");
+        Check(memory.turns.size()==NpcAgent::RecentTurnsKept && memory.turns[0]["customer"]=="newest-turn" &&
+            memory.notes=="- likes-blue, bought potion","recent turns stay verbatim beside the new notes");
         const Json repeated={{"jsonrpc","2.0"},{"id",17},{"method","tools/call"},{"params",{{"name","propose_affinity_change"},{"arguments",{{"delta",2}}}}}};
         auto first=chat.Dispatch(repeated,player,now);
         auto again=chat.Dispatch(repeated,player,now);
