@@ -69,6 +69,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGameplayStateChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnDamageNumber, FVector, Location, int32, Damage, uint8, Flags);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnActionFeedback, FString, Message);
 
+/** 퀘스트 알림 종류 (화면 배너·이펙트). */
+UENUM()
+enum class EQuestBanner : uint8 { Accepted, Ready, Completed };
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnQuestBanner, EQuestBanner, Kind, FString, Title, FString, Detail);
+
 UCLASS()
 class TURTLEISLAND_API UNetSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
 {
@@ -183,6 +188,9 @@ public:
 	FOnDamageNumber OnDamageNumber;
 	UPROPERTY(BlueprintAssignable, Category="Gameplay")
 	FOnActionFeedback OnActionFeedback;
+	// 퀘스트 수락·목표 달성·완료. 서버가 촌장 대사에 붙인 줄과 SC_QUEST_STATE 로 판단한다.
+	UPROPERTY(BlueprintAssignable, Category="Gameplay")
+	FOnQuestBanner OnQuestBanner;
 
 	// ---- 상점 ----
 	// 1개 구매. 가격은 서버가 보낸 SC_SHOP_PRICES 값을 그대로 되돌려 보내고, 다르면 서버가 거절한다.

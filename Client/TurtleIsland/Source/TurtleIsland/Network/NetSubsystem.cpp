@@ -791,9 +791,12 @@ void UNetSubsystem::HandleQuestState(const TArray<uint8>& Data)
 		bool bWasReady = false;
 		for (int32 j = 0; j < QuestState.count; ++j)
 			bWasReady |= QuestState.quests[j].questId == Quest.questId && QuestState.quests[j].progress >= Quest.goal;
-		if (!bWasReady) UTurtleAudioSubsystem::Play(this, ETurtleSound::QuestReady);
-		if (!bWasReady)
-			EmitChat(FString::Printf(TEXT("[퀘스트] %s 목표 달성 - 촌장에게 보고하세요"), *FClientPacketCodec::DecodeFixedUtf8(Quest.title, QUEST_TITLE_BYTES)));
+		if (bWasReady) continue;
+		const FString Title = FClientPacketCodec::DecodeFixedUtf8(Quest.title, QUEST_TITLE_BYTES);
+		UTurtleAudioSubsystem::Play(this, ETurtleSound::QuestReady);
+		EmitChat(FString::Printf(TEXT("[퀘스트] %s 목표 달성 - 촌장에게 보고하세요"), *Title));
+		OnQuestBanner.Broadcast(EQuestBanner::Ready, Title, TEXT("촌장에게 보고하세요"));
+		if (const ATurtleAgent* Me = FindAgentById(myId)) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::QuestReady, Me->GetActorLocation());
 	}
 	QuestState = State;
 	bHasQuestState = true;
@@ -856,6 +859,20 @@ void UNetSubsystem::HandleNpcChat(const TArray<uint8>& RecvData)
 	// 서버가 대사 끝에 붙이는 퀘스트 표시로 소리를 고른다.
 	UTurtleAudioSubsystem::Play(this, Say.Contains(TEXT("[퀘스트 완료]")) ? ETurtleSound::QuestComplete :
 		Say.Contains(TEXT("[퀘스트 수락]")) ? ETurtleSound::QuestAccept : ETurtleSound::NpcReply);
+	// "[퀘스트 수락] 제목 (스토커 0/5)" / "[퀘스트 완료] 제목 - 보상 150G, 경험치 60" (RoomNpcChat.cpp)
+	TArray<FString> Lines;
+	Say.ParseIntoArrayLines(Lines);
+	for (const FString& Line : Lines)
+	{
+		const bool bAccepted = Line.StartsWith(TEXT("[퀘스트 수락] ")), bCompleted = Line.StartsWith(TEXT("[퀘스트 완료] "));
+		FString Rest, Title, Detail;
+		if ((!bAccepted && !bCompleted) || !Line.Split(TEXT("] "), nullptr, &Rest)) continue;
+		if (!Rest.Split(bAccepted ? TEXT(" (") : TEXT(" - "), &Title, &Detail, ESearchCase::CaseSensitive, ESearchDir::FromEnd)) Title = Rest;
+		if (bAccepted) Detail = Detail.LeftChop(1) + TEXT(" 처치");
+		OnQuestBanner.Broadcast(bAccepted ? EQuestBanner::Accepted : EQuestBanner::Completed, Title, Detail);
+		if (const ATurtleAgent* Me = FindAgentById(myId))
+			ATurtleVfxActor::Spawn(GetWorld(), bAccepted ? ETurtleVfx::QuestAccept : ETurtleVfx::QuestComplete, Me->GetActorLocation());
+	}
 	OnNpcChatReceived.Broadcast(Say);
 }
 

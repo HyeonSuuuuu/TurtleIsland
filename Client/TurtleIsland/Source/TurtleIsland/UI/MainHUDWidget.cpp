@@ -31,6 +31,7 @@
 #include "Styling/CoreStyle.h"
 #include "UI/ItemTooltipWidget.h"
 #include "UI/MinimapWidget.h"
+#include "UI/QuestBannerWidget.h"
 #include "UI/ShopWidget.h"
 #include "UObject/UObjectIterator.h"
 
@@ -71,6 +72,12 @@ void UMainHUDWidget::NativeConstruct()
 		Minimap = CreateWidget<UMinimapWidget>(GetOwningPlayer(), UMinimapWidget::StaticClass());
 		if (Minimap) Minimap->AddToViewport(1);
 	}
+	if (!QuestBanner && GetOwningPlayer())
+	{
+		// Above the shop window (ZOrder 10), where quests are accepted and reported.
+		QuestBanner = CreateWidget<UQuestBannerWidget>(GetOwningPlayer(), UQuestBannerWidget::StaticClass());
+		if (QuestBanner) QuestBanner->AddToViewport(60);
+	}
 }
 
 void UMainHUDWidget::BindNetwork(UNetSubsystem* InNet)
@@ -100,6 +107,8 @@ void UMainHUDWidget::NativeDestruct()
 	DamagePopups.Reset();
 	if (Minimap) Minimap->RemoveFromParent();
 	Minimap = nullptr;
+	if (QuestBanner) QuestBanner->RemoveFromParent();
+	QuestBanner = nullptr;
 	Super::NativeDestruct();
 }
 

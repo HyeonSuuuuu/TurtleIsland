@@ -48,6 +48,7 @@ private:
 	void ScrollCombatLogToEnd();
 	UPROPERTY() TObjectPtr<UNetSubsystem> Net;
 	UPROPERTY() TObjectPtr<class UMinimapWidget> Minimap;
+	UPROPERTY() TObjectPtr<class UQuestBannerWidget> QuestBanner;
 	UPROPERTY() TArray<TObjectPtr<UQuickSlotButton>> SlotButtons;
 	UPROPERTY() TArray<TObjectPtr<UImage>> SlotIcons;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> SlotCounts;
