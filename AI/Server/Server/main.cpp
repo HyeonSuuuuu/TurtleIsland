@@ -47,6 +47,7 @@
 #include <fstream>
 #include <future>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -1731,7 +1732,34 @@ struct BatchGenerationState
 	bool failed = false;
 	int32_t lastLogitIndex = -1;
 	llama_sampler* sampler = nullptr;
+	llama_sampler* grammar = nullptr; // kept out of the chain, see SampleToken
 };
+
+// Sample without the grammar first and only mask the whole vocabulary when that token breaks it
+// (same approach as llama.cpp common_sampler). The chosen token follows the grammar either way.
+llama_token SampleToken(llama_context* ctx, const llama_vocab* vocab, BatchGenerationState& state)
+{
+	llama_token token = llama_sampler_sample(state.sampler, ctx, state.lastLogitIndex);
+	if (state.grammar == nullptr)
+		return token;
+
+	llama_token_data single{ token, 1.0f, 0.0f };
+	llama_token_data_array check{ &single, 1, -1, false };
+	llama_sampler_apply(state.grammar, &check);
+	if (single.logit == -std::numeric_limits<float>::infinity())
+	{
+		const float* logits = llama_get_logits_ith(ctx, state.lastLogitIndex);
+		std::vector<llama_token_data> candidates(static_cast<size_t>(llama_vocab_n_tokens(vocab)));
+		for (llama_token id = 0; id < static_cast<llama_token>(candidates.size()); ++id)
+			candidates[id] = { id, logits[id], 0.0f };
+		llama_token_data_array all{ candidates.data(), candidates.size(), -1, false };
+		llama_sampler_apply(state.grammar, &all);
+		llama_sampler_apply(state.sampler, &all);
+		token = all.data[all.selected].id;
+	}
+	llama_sampler_accept(state.grammar, token);
+	return token;
+}
 
 std::vector<std::string> GenerateBatchResponses(
 	llama_model* model,
@@ -1796,9 +1824,8 @@ std::vector<std::string> GenerateBatchResponses(
 
 		if (i<static_cast<int>(grammars.size()) && grammars[i])
 		{
-			auto* grammar=llama_sampler_init_grammar(vocab,grammars[i],"root");
-			if (!grammar) { states[i].failed=true; states[i].active=false; continue; }
-			llama_sampler_chain_add(states[i].sampler,grammar);
+			states[i].grammar=llama_sampler_init_grammar(vocab,grammars[i],"root");
+			if (!states[i].grammar) { states[i].failed=true; states[i].active=false; continue; }
 		}
 		llama_sampler_chain_add(states[i].sampler, llama_sampler_init_top_k(64));
 		llama_sampler_chain_add(states[i].sampler, llama_sampler_init_top_p(0.95f, 1));
@@ -1814,6 +1841,7 @@ std::vector<std::string> GenerateBatchResponses(
 			{
 				llama_sampler_free(state.sampler);
 				state.sampler = nullptr;
+				if (state.grammar != nullptr) { llama_sampler_free(state.grammar); state.grammar = nullptr; }
 			}
 		}
 
@@ -1832,6 +1860,7 @@ std::vector<std::string> GenerateBatchResponses(
 			{
 				llama_sampler_free(state.sampler);
 				state.sampler = nullptr;
+				if (state.grammar != nullptr) { llama_sampler_free(state.grammar); state.grammar = nullptr; }
 			}
 		}
 
@@ -1891,6 +1920,7 @@ std::vector<std::string> GenerateBatchResponses(
 			{
 				llama_sampler_free(state.sampler);
 				state.sampler = nullptr;
+				if (state.grammar != nullptr) { llama_sampler_free(state.grammar); state.grammar = nullptr; }
 			}
 		}
 
@@ -1915,7 +1945,7 @@ std::vector<std::string> GenerateBatchResponses(
 		}
 
 		llama_token newToken =
-			llama_sampler_sample(state.sampler, ctx, state.lastLogitIndex);
+			SampleToken(ctx, vocab, state);
 
 		if (llama_vocab_is_eog(vocab, newToken))
 		{
@@ -1988,7 +2018,7 @@ std::vector<std::string> GenerateBatchResponses(
 				continue;
 
 			llama_token newToken =
-				llama_sampler_sample(state.sampler, ctx, state.lastLogitIndex);
+				SampleToken(ctx, vocab, state);
 
 			if (llama_vocab_is_eog(vocab, newToken))
 			{
@@ -2028,6 +2058,7 @@ std::vector<std::string> GenerateBatchResponses(
 		{
 			llama_sampler_free(state.sampler);
 			state.sampler = nullptr;
+			if (state.grammar != nullptr) { llama_sampler_free(state.grammar); state.grammar = nullptr; }
 		}
 
 		if (!state.failed)
