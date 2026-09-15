@@ -14,8 +14,10 @@ Monsters = {
 -- BEGIN UNREAL SPAWN AREAS
 -- Generated from Lv3_Ingame MonsterSpawnRegion actors. World XY, centimeters.
 SpawnAreas = {
-    { type = 0, count = 4, x = -581, y = 3221, radius = 1000, respawnSeconds = 10 },
-    { type = 1, count = 4, x = 7966, y = 5144, radius = 3000, respawnSeconds = 10 },
+    { type = 0, count = 5, x = -581, y = 3221, radius = 1000, respawnSeconds = 10 },
+    { type = 3, count = 5, x = 17300, y = 9077, radius = 5000, respawnSeconds = 10 },
+    { type = 4, count = 5, x = 17300, y = 9077, radius = 5000, respawnSeconds = 10 },
+    { type = 1, count = 5, x = 7966, y = 5144, radius = 3000, respawnSeconds = 10 },
     { type = 2, count = 4, x = 7966, y = 5144, radius = 3000, respawnSeconds = 10 },
 }
 -- END UNREAL SPAWN AREAS
