@@ -25,7 +25,7 @@ bool FMonsterMovementAnimationTest::RunTest(const FString& Parameters)
 	World->GetWorldSettings()->DefaultGameMode = AGameModeBase::StaticClass();
 	if (!TestWorld.BeginPlayInTestWorld()) return false;
 
-	for (int32 Type = 0; Type < 3; ++Type)
+	for (int32 Type = 0; Type < UNetSettings::Get()->NpcClasses.Num(); ++Type)
 	{
 		const auto* ConfiguredClass = UNetSettings::Get()->NpcClasses.Find(Type);
 		UClass* Class = ConfiguredClass ? ConfiguredClass->LoadSynchronous() : nullptr;
@@ -99,7 +99,8 @@ bool FMonsterMovementAnimationTest::RunTest(const FString& Parameters)
 		Monster->SetActorTickEnabled(true);
 		Mover->SetComponentTickEnabled(true);
 		TestWorld.TickTestWorld(1.f / 60.f);
-		const float StepDistances[] = {4.f, 7.f, 5.f};
+		const float StepDistances[] = {4.f, 7.f, 5.f, 5.f, 3.f}; // Monster.lua speed per type
+		if (!TestTrue(TEXT("Step distance for every configured type"), Type < UE_ARRAY_COUNT(StepDistances))) return false;
 		float TargetX = 0.f, MinRate = MAX_flt, MaxRate = 0.f, MinSpeed = MAX_flt, MaxSpeed = 0.f, RateSum = 0.f;
 		int32 Samples = 0;
 		for (int32 Frame = 0; Frame < 240; ++Frame)
