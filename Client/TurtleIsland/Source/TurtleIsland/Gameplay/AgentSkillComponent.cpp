@@ -13,7 +13,6 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameplayRules.h"
-#include "Gameplay/WeaponTrailActor.h"
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
@@ -73,6 +72,10 @@ void UAgentSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	const UHealthComponent* Health = Character->FindComponentByClass<UHealthComponent>();
 	if (Health && Health->IsDead())
 	{
+		// Freeze the death clip just before it ends so the body stays down until respawn.
+		if (DeathMontage && Anim->Montage_IsPlaying(DeathMontage) &&
+			Anim->Montage_GetPosition(DeathMontage) >= DeathMontage->GetPlayLength() - 0.1f)
+			Anim->Montage_Pause(DeathMontage);
 		if (AirMontage) Anim->Montage_Stop(0.1f, AirMontage);
 		AirMontage = nullptr; bWasAirborne = false; return;
 	}
@@ -135,6 +138,7 @@ void UAgentSkillComponent::ResetPlayback()
 	ResetCast();
 	if (UAnimInstance* Anim = GetAnimInstance()) Anim->StopAllMontages(0.f);
 	AirMontage = nullptr;
+	DeathMontage = nullptr;
 	bWasAirborne = false;
 }
 
@@ -146,9 +150,9 @@ void UAgentSkillComponent::PlayDeath()
 	UAnimSequenceBase* Sequence = DeathAnimation.LoadSynchronous();
 	if (!Sequence) return;
 	Anim->StopAllMontages(0.1f);
-	// 끝 자세를 부활(ResetPlayback)까지 유지한다.
-	if (UAnimMontage* Montage = Anim->PlaySlotAnimationAsDynamicMontage(Sequence, TEXT("DefaultSlot"), 0.15f, 0.f))
-		Montage->bEnableAutoBlendOut = false;
+	// 끝 자세는 TickComponent 가 끝 직전에 멈춰 부활(ResetPlayback)까지 유지한다.
+	DeathMontage = Anim->PlaySlotAnimationAsDynamicMontage(Sequence, TEXT("DefaultSlot"), 0.15f, 0.f);
+	if (DeathMontage) DeathMontage->bEnableAutoBlendOut = false;
 }
 
 void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
@@ -202,10 +206,5 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 		}
 	}
 
-	if (const ACharacter* Character = Cast<ACharacter>(Owner); Character && TrailColours.IsValidIndex(SkillId))
-	{
-		// Sample most of the swing; a still blade adds no visible ribbon area.
-		AWeaponTrailActor::Spawn(Character->GetMesh(), TrailBone, TrailBaseOffset, TrailTipOffset, 0.05f, LockDuration * 0.7f, TrailColours[SkillId]);
-	}
 	OnSkillPlayed.Broadcast(SkillId, Yaw);
 }
