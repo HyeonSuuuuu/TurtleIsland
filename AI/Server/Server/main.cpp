@@ -951,17 +951,31 @@ void HandleClient(
 					if (!agentHistory.contains(conversation) && agentHistory.size()>=128) agentHistory.erase(agentHistory.begin());
 					auto& history=agentHistory[conversation];
 					if (!history.is_array() || speech=="/reset") history=NpcMcp::Json::array();
-					NpcAgent::Client mcp(context,[&](const auto& rpc){return ExchangeMcp(clientSocket,recvStream,rpc);});
+					Log::Info("[Agent] customer: {}", speech);
+					NpcAgent::Client mcp(context,[&](const auto& rpc)
+					{
+						auto response=ExchangeMcp(clientSocket,recvStream,rpc);
+						if (rpc.value("method",std::string{})=="tools/call")
+							Log::Info("[Agent] tool {} {} -> {}", NpcMcp::Text(rpc["params"],"name",64),
+								rpc["params"].value("arguments",NpcMcp::Json::object()).dump(), response.value("result",response).dump());
+						return response;
+					});
 					say=NpcAgent::Run(mcp,speech,history,[&](const std::string& prompt)
 					{
 						std::vector<ChatTurn> scratch;
-						return aiQueue.Submit(clientId,prompt,scratch,true).get();
+						auto output=aiQueue.Submit(clientId,prompt,scratch,true).get();
+						Log::Info("[Agent] model: {}", output);
+						return output;
 					});
 					history.push_back({{"customer",speech},{"npc",say}});
 					while (history.size()>4 || history.dump().size()>4000) history.erase(history.begin());
 					completed=true;
 				}
-				catch (const std::exception&) { say="지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?"; }
+				catch (const std::exception& e)
+				{
+					Log::Warning("[Agent] turn failed: {}", e.what());
+					say="지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?";
+				}
 				if (!SendAgentResponse(clientSocket,request.userIndex,context,say,completed)) keepRunning=false;
 				continue;
 			}
