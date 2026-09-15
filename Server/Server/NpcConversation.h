@@ -66,8 +66,13 @@ struct NpcConversation
     NpcMcp::Json Offer(const NpcShopConfig::Product& p) const
     {
         const int minimum=p.basePrice-(p.basePrice-p.minimumPrice)*proposedRelationship.affinity/100;
-        return {{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice},{"absolute_floor",p.minimumPrice},
+        NpcMcp::Json offer={{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice},{"absolute_floor",p.minimumPrice},
             {"minimum_price",minimum},{"maximum_price",p.maximumPrice}};
+        if (p.equipment)
+            offer["stats"]={{"hp",p.stats.hp},{"attack",p.stats.attack},{"defense",p.stats.defense},{"move_speed",p.stats.moveSpeed}};
+        else
+            offer["effect"]=p.itemId==GameplayRules::HealthPotion ? "restores 50 HP" : "restores 50 MP";
+        return offer;
     }
     NpcMcp::Json Call(const std::string& name, const NpcMcp::Json& args, const GameplayRules::PlayerState& player, uint64_t now)
     {

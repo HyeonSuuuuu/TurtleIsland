@@ -69,6 +69,7 @@ struct NpcMcpTests
         const auto reply=NpcAgent::Run(agentClient,"I have no money",Json::array(),[&](const std::string& prompt)
         {
             Check(prompt.find("987654")==std::string::npos && prompt.find(chat.context)==std::string::npos,"no balance or capability in model context");
+            if (step==0) Check(prompt.find("get_shop_catalog")!=std::string::npos && prompt.find("base_price")!=std::string::npos,"shop list preloaded before first inference");
             if (step++==0) return std::string(R"({"tool":"get_player_condition","arguments":{}})");
             Check(prompt.find("tool_observations")!=std::string::npos && prompt.find("37")!=std::string::npos,"tool result returned to model");
             return std::string(R"({"say":"Have a rest."})");
@@ -125,6 +126,7 @@ struct NpcMcpTests
             deal.ready=true;
             Check(deal.Dispatch(list,wallet,1).dump().size()<=MaxMessageBytes,"full catalog fits one MCP frame");
             Check(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1).dump().find("minimum_price")!=std::string::npos,"per-item offer");
+            Check(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1).dump().find("move_speed")!=std::string::npos,"equipment offer includes stats");
             Check(deal.Call("get_shop_catalog",{{"item_id",999}},wallet,1)["isError"]==true,"unknown item rejected");
             deal.context.clear(); deal.quote=deal.previousQuote=nullptr;
             wallet.items={{{1,3}}}; wallet.gold=1000;
