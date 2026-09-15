@@ -29,6 +29,7 @@ bool NpcShopConfig::Load(const char* path)
     lua_State* L=luaL_newstate();
     if (!L) return false;
     auto next=NpcShopConfig{}.products;
+    auto nextAffinity=AffinityRules{};
     bool valid=luaL_dofile(L,path)==LUA_OK;
     if (!valid) Log::Warning("[LUA] '{}' load fail: {}",path,lua_tostring(L,-1));
     else
@@ -74,10 +75,25 @@ bool NpcShopConfig::Load(const char* path)
         lua_pop(L,1);
         if (!valid) Log::Warning("[LUA] invalid ShopPotions/ShopEquipment in '{}' (unique id 3..65535, name < {} bytes, integer prices minPrice <= avgPrice <= maxPrice, at most {} products)",
             path,SHOP_ITEM_NAME_BYTES,SHOP_MAX_PRODUCTS);
+
+        // Optional: how easily talking raises affinity.
+        lua_getglobal(L,"ShopAffinity");
+        if (valid && lua_istable(L,-1))
+        {
+            int cooldownSeconds=nextAffinity.cooldownMs/1000, windowSeconds=nextAffinity.windowMs/1000;
+            valid=ReadInt(L,"start",nextAffinity.start,0,100,false) && ReadInt(L,"maxStep",nextAffinity.maxStep,1,100,false) &&
+                ReadInt(L,"cooldownSeconds",cooldownSeconds,0,3600,false) && ReadInt(L,"maxGainPerWindow",nextAffinity.windowGain,1,100,false) &&
+                ReadInt(L,"windowSeconds",windowSeconds,1,3600,false);
+            nextAffinity.cooldownMs=cooldownSeconds*1000; nextAffinity.windowMs=windowSeconds*1000;
+            if (!valid) Log::Warning("[LUA] invalid ShopAffinity in '{}' (start 0..100, maxStep 1..100, cooldownSeconds 0..3600, maxGainPerWindow 1..100, windowSeconds 1..3600)",path);
+        }
+        lua_pop(L,1);
     }
     lua_close(L);
     if (!valid) return false;
-    products=std::move(next); enabled=true;
+    products=std::move(next); affinity=nextAffinity; enabled=true;
+    Log::Info("[LUA] shop affinity: start {}, step up to {}, cooldown {}s, +{} per {}s",
+        affinity.start,affinity.maxStep,affinity.cooldownMs/1000,affinity.windowGain,affinity.windowMs/1000);
     Log::Success("[LUA] shop loaded: {} products (HP potion {}G, MP potion {}G, {} equipment)",
         products.size(),products[0].basePrice,products[1].basePrice,products.size()-2);
     return true;
