@@ -7,7 +7,8 @@ condition lookup, catalog lookup, relationship lookup, price proposals and small
 relationship changes. The model never purchases. The player buys from the shop
 list (`CS_SHOP_BUY`), paying the base price or the committed quote, which the
 server re-checks. Gold, inventory and relationships are not persisted in the
-database. Only the existing shop NPC ID `0` is supported, with no distance check.
+database. Only the shopkeeper index `SHOP_NPC_INDEX` (1, what `BP_IngamePlayerController`
+sends) is accepted, with no distance check.
 
 ## Purchase
 

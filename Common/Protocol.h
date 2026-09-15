@@ -417,6 +417,8 @@ inline constexpr uint16_t SC_ACTION_RESULT_PACKET_SIZE = sizeof(SC_ActionResult)
 //  --------------- Shop ----------------
 // Item ids 1..SHOP_PRODUCT_COUNT. unitPrice is what the client must echo; a mismatch is PriceChanged.
 inline constexpr int32_t SHOP_PRODUCT_COUNT = 2;
+// CS_NpcChat.npcIndex of the only shopkeeper; BP_IngamePlayerController opens the shop with this index.
+inline constexpr uint32_t SHOP_NPC_INDEX = 1;
 struct CS_ShopBuy : PacketHeader
 {
 	uint32_t lifeId;

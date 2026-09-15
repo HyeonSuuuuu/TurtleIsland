@@ -31,7 +31,7 @@ void Room::BeginNpcChat(User& user, uint32_t npcId, const std::string& message)
 {
     std::lock_guard lock(m_mutex);
     const auto found=m_playerStates.find(user.GetSlotIndex());
-    if (!g_npcShopConfig.enabled || !m_inGame || found==m_playerStates.end() || !found->second.ready || found->second.hp<=0 || npcId!=0)
+    if (!g_npcShopConfig.enabled || !m_inGame || found==m_playerStates.end() || !found->second.ready || found->second.hp<=0 || npcId!=SHOP_NPC_INDEX)
     { Say(user,"지금은 이 상인과 대화할 수 없습니다."); return; }
     if (!g_aiSession) { Say(user,"상인이 잠시 대답할 수 없습니다."); return; }
     if (message.empty() || message.size()>600) { Say(user,"대화는 UTF-8 600바이트 이내로 입력해주세요."); return; }
