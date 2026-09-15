@@ -111,9 +111,16 @@ bool UAgentSkillComponent::IsMovementLocked() const
 	return Anim && ActiveSkillMontage && Anim->Montage_IsActive(ActiveSkillMontage);
 }
 
+bool UAgentSkillComponent::CanRotateWhileCasting() const
+{
+	return ActiveSkillId >= 0 && ActiveSkillId < PLAYER_SKILL_COUNT && GameplayRules::Skills[ActiveSkillId].rotateWhileCasting &&
+		IsMovementLocked();
+}
+
 void UAgentSkillComponent::ResetCast()
 {
 	MovementReadyAt = 0.;
+	ActiveSkillId = INDEX_NONE;
 	if (UAnimInstance* Anim = GetAnimInstance())
 	{
 		if (ActiveSkillMontage) Anim->Montage_Stop(0.f, ActiveSkillMontage);
@@ -146,6 +153,7 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 	Owner->SetActorRotation(Rotation);
 	float LockDuration = GameplayRules::Skills[SkillId].movementLockMs / 1000.f;
 	ActiveSkillMontage = nullptr;
+	ActiveSkillId = SkillId;
 
 	if (UAnimMontage** Found = SkillMontages.Find(SkillId))
 	{
