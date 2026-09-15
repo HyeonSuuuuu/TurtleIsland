@@ -4,6 +4,8 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
 #include "Character/TurtleAgent.h"
 #include "Character/ServerMonster.h"
 #include "Components/CapsuleComponent.h"
@@ -263,6 +265,9 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 	APlayerController* PC = GetOwningPlayer();
 	if (!PC || !Net) return TopLayer;
 	const FSlateBrush* White = FCoreStyle::Get().GetBrush("WhiteBrush");
+	const APawn* Viewer = PC->GetPawn();
+	const FVector ViewOrigin = Viewer ? Viewer->GetActorLocation() : PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+	const double MaxDistanceSq = MonsterPlateMaxDistance > 0.f ? FMath::Square(static_cast<double>(MonsterPlateMaxDistance)) : TNumericLimits<double>::Max();
 	for (TActorIterator<ATurtleAgent> It(GetWorld()); It; ++It)
 	{
 		if (It->IsHidden()) continue;
@@ -270,6 +275,7 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 		FString Name;
 		int32 Level = 0;
 		const bool bPlayer = Net->GetPlayerDisplayInfo(*It, Name, Level);
+		if (!bPlayer && FVector::DistSquared(It->GetActorLocation(), ViewOrigin) > MaxDistanceSq) continue;
 		const AServerMonster* Monster = Cast<AServerMonster>(*It);
 		FVector2D Position;
 		if (!Health || (!bPlayer && Health->IsDead()) || !UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC,
