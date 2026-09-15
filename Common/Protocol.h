@@ -245,7 +245,7 @@ inline constexpr uint16_t INPUT_FLAG_W      = 1 << 0;
 inline constexpr uint16_t INPUT_FLAG_A      = 1 << 1;
 inline constexpr uint16_t INPUT_FLAG_S      = 1 << 2;
 inline constexpr uint16_t INPUT_FLAG_D      = 1 << 3;
-inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 4;
+inline constexpr uint16_t GAMEPLAY_PROTOCOL_VERSION = 5;
 inline constexpr uint8_t ENTITY_NONE = 0;
 inline constexpr uint8_t ENTITY_PLAYER = 1;
 inline constexpr uint8_t ENTITY_NPC = 2;
@@ -433,6 +433,7 @@ struct SC_ShopPrices : PacketHeader
 {
 	int32_t unitPrice[SHOP_PRODUCT_COUNT];
 	uint16_t quoteQuantity[SHOP_PRODUCT_COUNT];
+	uint8_t affinity; // committed shopkeeper affinity, 0..100
 };
 inline constexpr uint16_t SC_SHOP_PRICES_PACKET_SIZE = sizeof(SC_ShopPrices);
 

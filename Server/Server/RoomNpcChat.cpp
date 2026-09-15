@@ -59,6 +59,7 @@ void Room::SendShopPricesLocked(User& user)
     const auto chat=m_npcConversations.find(user.GetSlotIndex());
     SC_ShopPrices packet{};
     packet.size=sizeof(packet); packet.id=static_cast<uint16_t>(PACKET_ID::SC_SHOP_PRICES);
+    packet.affinity=static_cast<uint8_t>(chat==m_npcConversations.end() ? NpcConversation::Relationship{}.affinity : chat->second.relationship.affinity);
     for (int i=0;i<SHOP_PRODUCT_COUNT;++i)
     {
         packet.unitPrice[i]=g_npcShopConfig.products[i].basePrice;

@@ -217,6 +217,11 @@ void UShopWidget::OpenShop(int32 InNpcIndex)
 	{
 		World->GetTimerManager().SetTimerForNextTick(this, &UShopWidget::FocusInput);
 	}
+	RefreshProducts();
+	if (ShownAffinity >= 0)
+	{
+		AddSystemLine(FString::Printf(TEXT("상인 호감도 %d / 100 (높을수록 더 깎아준다)"), ShownAffinity));
+	}
 
 	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 대화 시작 (npcIndex=%d)"), NpcIndex);
 }
@@ -375,7 +380,9 @@ void UShopWidget::AddBubble(const FString& Text, bool bFromNpc, bool bIsTyping)
 	{
 		if (UTextBlock* NameLabel = NewObject<UTextBlock>(this))
 		{
-			NameLabel->SetText(FText::FromString(bFromNpc ? NpcDisplayName : GetSelfDisplayName()));
+			const FString NpcLabel = ShownAffinity >= 0
+				? FString::Printf(TEXT("%s (호감도 %d)"), *NpcDisplayName, ShownAffinity) : NpcDisplayName;
+			NameLabel->SetText(FText::FromString(bFromNpc ? NpcLabel : GetSelfDisplayName()));
 			if (bStyleCached)
 			{
 				FSlateFontInfo NameFont = CachedFont;
@@ -474,6 +481,15 @@ void UShopWidget::RefreshProducts()
 	UNetSubsystem* Net = GetNet();
 	const SC_ShopPrices* Prices = Net ? Net->GetShopPrices() : nullptr;
 	const SC_PlayerState* State = Net ? Net->GetPlayerState() : nullptr;
+	if (Prices && Prices->affinity != ShownAffinity)
+	{
+		if (ShownAffinity >= 0)
+		{
+			const int32 Delta = Prices->affinity - ShownAffinity;
+			AddSystemLine(FString::Printf(TEXT("상인 호감도 %d → %d (%s%d)"), ShownAffinity, Prices->affinity, Delta > 0 ? TEXT("+") : TEXT(""), Delta));
+		}
+		ShownAffinity = Prices->affinity;
+	}
 	for (int32 i = 0; i < ProductButtons.Num(); ++i)
 	{
 		const int32 ItemId = ProductButtons[i]->GetItemId();

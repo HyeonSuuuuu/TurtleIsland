@@ -680,6 +680,7 @@ void UNetSubsystem::HandleShopPrices(const TArray<uint8>& Data)
 {
 	if (Data.Num() != SC_SHOP_PRICES_PACKET_SIZE) return;
 	const auto& Prices = *reinterpret_cast<const SC_ShopPrices*>(Data.GetData());
+	if (Prices.affinity > 100) return;
 	for (int32 i = 0; i < SHOP_PRODUCT_COUNT; ++i)
 		if (Prices.unitPrice[i] <= 0) return;
 	ShopPrices = Prices;
