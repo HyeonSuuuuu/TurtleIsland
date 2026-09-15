@@ -167,8 +167,18 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
             dialogue.erase(dialogue.begin());
             prompt["previous_dialogue"]=dialogue;
         }
-        auto action=Json::parse(infer(prompt.dump(),step==budget),nullptr,false);
-        if (!action.is_object()) throw std::runtime_error("Invalid model JSON");
+        const auto output=infer(prompt.dump(),step==budget);
+        auto action=Json::parse(output,nullptr,false);
+        if (!action.is_object())
+        {
+            // Some models ignore the JSON format and just talk. Take that as the shopkeeper's reply.
+            auto spoken=output;
+            spoken.erase(0,spoken.find_first_not_of(" \t\r\n"));
+            while (!spoken.empty() && (spoken.back()==' '||spoken.back()=='\t'||spoken.back()=='\r'||spoken.back()=='\n')) spoken.pop_back();
+            if (spoken.empty() || spoken.front()=='{' || spoken.front()=='[') throw std::runtime_error("Invalid model JSON");
+            if (spoken.size()>700) { spoken.resize(700); while (!spoken.empty() && (spoken.back()&0xC0)==0x80) spoken.pop_back(); spoken.pop_back(); }
+            return spoken;
+        }
         if (action.size()==1 && action.contains("say"))
         {
             const auto say=NpcMcp::Text(action,"say",700);
