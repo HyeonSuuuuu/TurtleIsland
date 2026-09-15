@@ -191,6 +191,9 @@ public:
 	FString GetShopItemName(int32 ItemId) const;
 	// Potion icons (PotionRed/PotionBlue) and T_UI_ShopItem_<id>_* map to item ids; 0 otherwise.
 	static int32 ItemIdFromIcon(const FString& TextureName);
+	// Shared item icon lookup for shop and HUD. Registered icons (shop cells, HUD designer) win; otherwise the icon folder is searched.
+	void RegisterItemIcon(int32 ItemId, class UTexture2D* Icon);
+	class UTexture2D* FindItemIcon(int32 ItemId);
 	UPROPERTY(BlueprintAssignable, Category="Shop")
 	FOnGameplayStateChanged OnShopPricesChanged;
 	// 구매 결과 문구. 상점 창에 찍는다.
@@ -369,4 +372,6 @@ protected:
 	double PlayerStateTime = 0;
 	SC_ShopPrices ShopPrices{};
 	bool bHasShopPrices = false;
+	UPROPERTY() TMap<int32, TObjectPtr<class UTexture2D>> ItemIcons; // found icons only; misses are retried
+	TSet<int32> MissingIconWarned;
 };

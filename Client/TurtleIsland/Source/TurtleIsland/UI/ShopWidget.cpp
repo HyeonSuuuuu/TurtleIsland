@@ -135,6 +135,7 @@ void UShopWidget::NativeOnInitialized()
 		Button->SetToolTip(Tooltip);
 		ProductTooltips.Add(Tooltip);
 		ProductIcons.Add(IconTexture);
+		if (UNetSubsystem* Net = GetNet()) Net->RegisterItemIcon(ItemId, IconTexture); // HUD 인벤토리 칸도 같은 아이콘을 쓴다
 	}
 	for (const auto& [Parent, Wraps] : WrapsByParent)
 	{

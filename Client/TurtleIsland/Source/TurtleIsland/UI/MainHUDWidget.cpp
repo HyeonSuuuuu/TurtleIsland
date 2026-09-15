@@ -1,7 +1,6 @@
 #include "UI/MainHUDWidget.h"
 #include "UI/PlayerNameplate.h"
 
-#include "AssetRegistry/IAssetRegistry.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Camera/PlayerCameraManager.h"
@@ -104,7 +103,7 @@ void UMainHUDWidget::SetupSlots()
 		if (!Overlay) continue;
 		UImage* Icon = Cast<UImage>(GetWidgetFromName(*FString::Printf(TEXT("%sIcon"), Names[i])));
 		UTextBlock* Count = Cast<UTextBlock>(GetWidgetFromName(*FString::Printf(TEXT("%sCount"), Names[i])));
-		if (Icon && i < 2) ItemIcons.Add(i + 1, Cast<UTexture2D>(Icon->GetBrush().GetResourceObject()));
+		if (Icon && i < 2 && Net) Net->RegisterItemIcon(i + 1, Cast<UTexture2D>(Icon->GetBrush().GetResourceObject()));
 		if (!Icon)
 		{
 			Icon = WidgetTree->ConstructWidget<UImage>();
@@ -146,19 +145,6 @@ void UMainHUDWidget::SetupSlots()
 	}
 }
 
-UTexture2D* UMainHUDWidget::FindItemIcon(int32 ItemId)
-{
-	if (const auto* Cached = ItemIcons.Find(ItemId)) return Cached->Get();
-	// Equipment icons follow T_UI_ShopItem_<id>_* in the icon folder.
-	UTexture2D* Found = nullptr;
-	TArray<FAssetData> Assets;
-	IAssetRegistry::GetChecked().GetAssetsByPath(TEXT("/Game/UI/Textures/Icons"), Assets, true);
-	for (const FAssetData& Asset : Assets)
-		if (UNetSubsystem::ItemIdFromIcon(Asset.AssetName.ToString()) == ItemId && (Found = Cast<UTexture2D>(Asset.GetAsset()))) break;
-	ItemIcons.Add(ItemId, Found);
-	return Found;
-}
-
 void UMainHUDWidget::SetText(FName Name, const FString& Value)
 {
 	if (UTextBlock* Text = Cast<UTextBlock>(GetWidgetFromName(Name))) Text->SetText(FText::FromString(Value));
@@ -186,7 +172,7 @@ void UMainHUDWidget::RefreshState()
 	for (int32 i = 0; i < SlotButtons.Num(); ++i)
 	{
 		const ItemSlot Item = State ? State->items[i] : ItemSlot{};
-		UTexture2D* Texture = Item.count ? FindItemIcon(Item.itemId) : nullptr;
+		UTexture2D* Texture = Item.count && Net ? Net->FindItemIcon(Item.itemId) : nullptr;
 		SlotIcons[i]->SetVisibility(Texture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		if (Texture) SlotIcons[i]->SetBrushFromTexture(Texture, false);
 		SlotCounts[i]->SetText(Item.count > 1 || Item.itemId == GameplayRules::HealthPotion || Item.itemId == GameplayRules::ManaPotion
