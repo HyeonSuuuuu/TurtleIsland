@@ -65,6 +65,19 @@ namespace
 		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple, EFace::Ground, {120, 0, -90}, 0.38f, 0.7f, 120, 900},
 		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple * 0.6f, EFace::Ground, {120, 0, -90}, 0.5f, 0.7f, 100, 650},
 		{ETurtleVfx::SkillE, TEXT("T_VFX_Burst"), Purple * 0.7f, EFace::Billboard, {150, 0, 20}, 0.38f, 0.35f, 80, 300},
+
+		// Quests: a teal ring when taken, a gold star when the goal is met, a big gold celebration on completion.
+		{ETurtleVfx::QuestAccept, TEXT("T_VFX_Ring"), Cyan, EFace::Ground, {0, 0, -90}, 0, 0.7f, 70, 300},
+		{ETurtleVfx::QuestAccept, TEXT("T_VFX_Star"), Cyan, EFace::Billboard, {0, 0, 110}, 0.1f, 0.8f, 50, 90, 1, 160, 50},
+		{ETurtleVfx::QuestReady, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {0, 0, 120}, 0, 0.9f, 50, 110, 1, 240, 40},
+		{ETurtleVfx::QuestReady, TEXT("T_VFX_Glow"), Gold * 0.3f, EFace::Billboard, {0, 0, 120}, 0, 0.6f, 60, 140},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Ring"), Gold, EFace::Ground, {0, 0, -90}, 0, 1.0f, 100, 520},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Ring"), Gold * 0.7f, EFace::Ground, {0, 0, -90}, 0.25f, 1.0f, 80, 400},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Glow"), Gold * 0.5f, EFace::Billboard, {0, 0, 40}, 0, 1.4f, 170, 240, 3.f},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Burst"), Gold * 0.6f, EFace::Billboard, {0, 0, 70}, 0.05f, 0.45f, 80, 300},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {0, 0, 80}, 0.1f, 1.2f, 60, 130, 1, 200, 150},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {40, 45, 50}, 0.25f, 1.0f, 40, 90, 1, -260, 180},
+		{ETurtleVfx::QuestComplete, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {-40, -45, 50}, 0.4f, 1.0f, 40, 90, 1, 260, 180},
 	};
 }
 
