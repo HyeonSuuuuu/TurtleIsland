@@ -43,8 +43,10 @@
 #include <condition_variable>
 #include <cctype>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -833,54 +835,7 @@ private:
 	const std::string* systemPrompt_ = nullptr;
 };
 
-// ==================== client thread ====================
-
-NpcMcp::Json ExchangeMcp(SOCKET socket, std::string& stream, const NpcMcp::Json& request)
-{
-	using namespace NpcMcp;
-	const auto body=request.dump();
-	std::vector<char> data(sizeof(PacketHeader)+body.size());
-	auto* header=reinterpret_cast<PacketHeader*>(data.data());
-	header->size=static_cast<uint16_t>(data.size()); header->id=static_cast<uint16_t>(PACKET_ID::AS_MCP);
-	std::memcpy(data.data()+sizeof(PacketHeader),body.data(),body.size());
-	if (!SendAllBytes(socket,data.data(),static_cast<int>(data.size()))) throw std::runtime_error("MCP send failed");
-	if (!request.contains("id")) return nullptr;
-	std::string deferred;
-	const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
-	try
-	{
-		while (std::chrono::steady_clock::now()<deadline)
-		{
-			while (stream.size()>=sizeof(PacketHeader))
-			{
-				PacketHeader frame{}; std::memcpy(&frame,stream.data(),sizeof(frame));
-				if (frame.size<sizeof(PacketHeader) || frame.size>kMaxWirePacketBytes) throw std::runtime_error("Invalid MCP frame");
-				if (stream.size()<frame.size) break;
-				const auto packet=stream.substr(0,frame.size); stream.erase(0,frame.size);
-				if (frame.id==static_cast<uint16_t>(PACKET_ID::SA_MCP))
-				{
-					const auto response=Json::parse(packet.substr(sizeof(PacketHeader)));
-					if (response.value("id",Json{})==request["id"])
-					{ stream.insert(0,deferred); return response; }
-					continue;
-				}
-				if (deferred.size()+packet.size()>16*kMaxWirePacketBytes)
-				{ stream.insert(0,packet); throw std::runtime_error("NPC queue full"); }
-				deferred+=packet;
-			}
-			fd_set reads; FD_ZERO(&reads); FD_SET(socket,&reads);
-			timeval timeout{0,100000};
-			const auto ready=select(0,&reads,nullptr,nullptr,&timeout);
-			if (ready<0) throw std::runtime_error("MCP socket failed");
-			if (ready==0) continue;
-			char buffer[kRecvBufferSize]; const auto received=recv(socket,buffer,sizeof(buffer),0);
-			if (received<=0) throw std::runtime_error("MCP disconnected");
-			stream.append(buffer,received);
-		}
-		throw std::runtime_error("MCP response timeout");
-	}
-	catch (...) { stream.insert(0,deferred); throw; }
-}
+// ==================== shared-link request dispatch ====================
 
 bool SendAgentResponse(SOCKET socket, uint32_t playerId, const std::string& context, const std::string& say, bool completed)
 {
@@ -894,208 +849,350 @@ bool SendAgentResponse(SOCKET socket, uint32_t playerId, const std::string& cont
 	return SendAllBytes(socket,data.data(),static_cast<int>(data.size()));
 }
 
-void HandleClient(
-	SOCKET clientSocket,
-	int clientId,
-	AiBatchWorkerQueue& aiQueue,
-	std::atomic<int>& activeClientCount)
+// 수신은 스레드 하나가 맡고, 서로 다른 대화는 일꾼 스레드들이 나눠 처리한다.
+// 같은 손님의 일(초기화·요약 포함)은 도착한 순서대로 끝난다.
+class ConversationWorkQueue
 {
-	Log::Info("Client connected. clientId={}", clientId);
-	const DWORD sendTimeout=5000;
-	setsockopt(clientSocket,SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<const char*>(&sendTimeout),sizeof(sendTimeout));
-
-	// 게임서버는 모든 플레이어의 대화를 이 소켓 하나로 보낸다.
-	// history 를 연결 단위로 두면 손님끼리 대화가 섞이므로 userIndex 로 나눈다.
-	ConversationStore conversations;
-	std::map<std::string,NpcAgent::Memory> agentHistory;
-
-	// TCP 는 메시지 경계가 없다. 받은 바이트를 여기 쌓아 두고
-	// PacketHeader.size 만큼씩 떼어 한 패킷으로 처리한다.
-	std::string recvStream;
-	char recvBuf[kRecvBufferSize];
-
-	bool keepRunning = true;
-
-	while (keepRunning)
+public:
+	ConversationWorkQueue()
 	{
-		// Tool calls may already have received subsequent chat frames on this shared link.
-		PacketHeader buffered{};
-		if (recvStream.size()>=sizeof(buffered)) std::memcpy(&buffered,recvStream.data(),sizeof(buffered));
-		int recvLen = (buffered.size>=sizeof(buffered) && recvStream.size()>=buffered.size)
-			? 0 : recv(clientSocket, recvBuf, sizeof(recvBuf), 0);
-
-		if (recvLen < 0 || (recvLen==0 && !(buffered.size>=sizeof(buffered) && recvStream.size()>=buffered.size)))
+		try
 		{
-			Log::Warning("Client disconnected. clientId={}", clientId);
-			break;
+			for (int i = 0; i < kMaxBatchSize; ++i)
+				threads_.emplace_back([this] { Run(); });
 		}
-
-		recvStream.append(recvBuf, recvLen);
-
-		while (recvStream.size() >= sizeof(PacketHeader))
+		catch (...) { Stop(); throw; }
+	}
+	~ConversationWorkQueue() { Stop(); }
+	bool Submit(const std::string& key, std::function<void()> job)
+	{
+		std::lock_guard<std::mutex> lock(mutex_);
+		if (stopping_ || outstanding_ >= 128) return false;
+		auto [lane, inserted] = lanes_.try_emplace(key);
+		lane->second.push_back(std::move(job));
+		if (inserted) ready_.push(key);
+		++outstanding_;
+		condition_.notify_one();
+		return true;
+	}
+	void Stop()
+	{
 		{
-			// 정렬을 보장할 수 없으므로 복사해서 읽는다.
-			PacketHeader header{};
-			std::memcpy(&header, recvStream.data(), sizeof(PacketHeader));
-
-			if (header.size < sizeof(SA_AI) || header.size > kMaxWirePacketBytes)
+			std::lock_guard<std::mutex> lock(mutex_);
+			stopping_ = true;
+		}
+		condition_.notify_all();
+		for (auto& thread : threads_) if (thread.joinable()) thread.join();
+		// 실행 중이던 일이 모두 끝났다: 붙잡고 있던 대화 기억을 이제 지워도 안전하다.
+		lanes_.clear();
+	}
+private:
+	void Run()
+	{
+		while (true)
+		{
+			std::string key;
+			std::function<void()> job;
 			{
-				// 스트림이 어긋난 상태다. 어디서부터 다시 맞출지 알 수 없으니 끊는다.
-				Log::Error("Bad frame (size={}, id={}). Dropping connection. clientId={}",
-					header.size, header.id, clientId);
-				keepRunning = false;
-				break;
+				std::unique_lock<std::mutex> lock(mutex_);
+				condition_.wait(lock, [this] { return stopping_ || !ready_.empty(); });
+				if (stopping_) return;
+				key = ready_.front(); ready_.pop();
+				auto& lane = lanes_.at(key);
+				job = std::move(lane.front()); lane.pop_front();
 			}
-
-			if (recvStream.size() < header.size)
-				break;   // 아직 덜 왔다 — 다음 recv 를 기다린다
-
-			// 한 패킷 확보. 헤더 뒤가 전부 UTF-8 텍스트(널 종단 없음)다.
-			SA_AI request{};
-			std::memcpy(&request, recvStream.data(), sizeof(SA_AI));
-
-			std::string userText(
-				recvStream.data() + sizeof(SA_AI),
-				header.size - sizeof(SA_AI));
-
-			recvStream.erase(0, header.size);
-
-			if (header.id == static_cast<uint16_t>(PACKET_ID::SA_AI_AGENT))
+			try { job(); }
+			catch (const std::exception& e) { Log::Error("Conversation job failed: {}", e.what()); }
+			catch (...) { Log::Error("Conversation job failed"); }
 			{
-				std::string context, say;
-				bool completed=false;
-				try
-				{
-					const auto envelope=NpcMcp::Json::parse(userText);
-					context=NpcMcp::Text(envelope,"context",32);
-					const auto conversation=NpcMcp::Text(envelope,"conversation",32);
-					const auto speech=NpcMcp::Text(envelope,"say",600);
-					if (context.size()!=32 || conversation.size()!=32 || speech.empty()) throw std::runtime_error("Invalid NPC envelope");
-					if (!agentHistory.contains(conversation) && agentHistory.size()>=128) agentHistory.erase(agentHistory.begin());
-					auto& memory=agentHistory[conversation];
-					if (speech=="/reset") memory={};
-					Log::Info("[Agent] customer: {}", speech);
-					NpcAgent::Client mcp(context,[&](const auto& rpc)
-					{
-						auto response=ExchangeMcp(clientSocket,recvStream,rpc);
-						if (rpc.value("method",std::string{})=="tools/call")
-							Log::Info("[Agent] tool {} {} -> {}", NpcMcp::Text(rpc["params"],"name",64),
-								rpc["params"].value("arguments",NpcMcp::Json::object()).dump(), response.value("result",response).dump());
-						return response;
-					});
-					say=NpcAgent::Run(mcp,speech,memory,[&](const std::string& prompt, bool sayOnly)
-					{
-						std::vector<ChatTurn> scratch;
-						auto output=aiQueue.Submit(clientId,prompt,scratch,true,nullptr,sayOnly).get();
-						Log::Info("[Agent] model: {}", output);
-						return output;
-					},[&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); });
-					memory.turns.push_back({{"customer",speech},{"npc",say}});
-					// Keep plenty; each prompt includes as many recent turns as its token budget allows.
-					if (memory.turns.size()>200) memory.turns.erase(memory.turns.begin());
-					completed=true;
-				}
-				catch (const std::exception& e)
-				{
-					Log::Warning("[Agent] turn failed: {}", e.what());
-					say="지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?";
-				}
-				if (!SendAgentResponse(clientSocket,request.userIndex,context,say,completed)) keepRunning=false;
-				continue;
+				std::lock_guard<std::mutex> lock(mutex_);
+				--outstanding_;
+				auto lane = lanes_.find(key);
+				if (lane->second.empty()) lanes_.erase(lane);
+				else if (!stopping_) { ready_.push(key); condition_.notify_one(); }
 			}
-
-			if (header.id == static_cast<uint16_t>(PACKET_ID::SA_AI_SUMMARIZE))
-			{
-				// The shop window closed, so nobody is waiting on this link for the player's reply.
-				const auto envelope=NpcMcp::Json::parse(userText,nullptr,false);
-				const auto found=agentHistory.find(NpcMcp::Text(envelope,"conversation",32));
-				if (found==agentHistory.end()) continue;
-				const auto started=std::chrono::steady_clock::now();
-				const bool compressed=NpcAgent::Compress(found->second,[&](const std::string& input)
-				{
-					std::vector<ChatTurn> scratch;
-					auto notes=TrimString(aiQueue.Submit(clientId,input,scratch,false,NpcAgent::SummaryPrompt).get());
-					return notes.starts_with("-") ? notes : std::string{}; // failures come back as "(...)"
-				});
-				if (compressed)
-					Log::Info("[Agent] memory compressed in {} ms, {} recent turns kept:\n{}",
-						std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count(),
-						found->second.turns.size(),found->second.notes);
-				continue;
-			}
-
-			if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI))
-			{
-				Log::Warning("Unexpected packet id={} - skipped. clientId={}", header.id, clientId);
-				continue;
-			}
-
-			userText = NormalizeReceivedText(std::move(userText));
-
-			if (userText.empty())
-				continue;
-
-			const std::string who = std::to_string(request.userIndex);
-
-			if (userText == "/reset")
-			{
-				conversations.Reset(who);
-
-				if (!SendAiResponse(clientSocket, request.userIndex, "대화 기억을 초기화했습니다."))
-				{
-					Log::Error("Failed to send reset response. clientId={}", clientId);
-					keepRunning = false;
-					break;
-				}
-
-				continue;
-			}
-
-			// 종료 명령은 두지 않는다. 게임서버와의 연결은 공유 링크라
-			// 플레이어가 친 한 마디로 끊기면 모두의 NPC 대화가 죽는다.
-
-			Log::Info("Received. clientId={} userIndex={} npcIndex={} text={}",
-				clientId, request.userIndex, request.npcIndex, userText);
-
-			// 워커가 이 history 에 user/assistant 턴을 직접 쌓는다.
-			// ConversationStore 는 std::map 이라 참조가 살아 있다.
-			std::vector<ChatTurn>& history = conversations.GetOrCreate(who);
-
-			std::string aiText;
-
-			try
-			{
-				aiText = aiQueue.Submit(clientId, userText, history).get();
-			}
-			catch (const std::exception& e)
-			{
-				Log::Error("Failed to get AI response. clientId={}, error={}", clientId, e.what());
-				aiText = "(Failed to get AI response)";
-			}
-			catch (...)
-			{
-				Log::Error("Failed to get AI response. clientId={}", clientId);
-				aiText = "(Failed to get AI response)";
-			}
-
-			if (!SendAiResponse(clientSocket, request.userIndex, aiText))
-			{
-				Log::Error("Failed to send response. clientId={}", clientId);
-				keepRunning = false;
-				break;
-			}
-
-			Log::Info("Response sent. clientId={} userIndex={}", clientId, request.userIndex);
 		}
 	}
+	std::mutex mutex_;
+	std::condition_variable condition_;
+	std::map<std::string, std::deque<std::function<void()>>> lanes_;
+	std::queue<std::string> ready_;
+	std::vector<std::thread> threads_;
+	size_t outstanding_ = 0;
+	bool stopping_ = false;
+};
 
-	closesocket(clientSocket);
+// recv 는 한 곳에서만 한다. 보내는 프레임은 MCP 를 포함해 통째로 직렬화한다.
+// 게임서버가 RPC id 를 재사용할 수 있으므로 도구 교환만 직렬화하고, 추론은 배칭되게 둔다.
+class SharedAiLink
+{
+public:
+	explicit SharedAiLink(SOCKET socket) : socket_(socket) {}
+	bool Closed() const { return closed_.load(); }
+	void Close()
+	{
+		// 끊김 신호를 놓치지 않도록 대기 조건과 같은 잠금으로 묶는다.
+		bool first;
+		{
+			std::lock_guard<std::mutex> lock(replyMutex_);
+			first = !closed_.exchange(true);
+		}
+		if (first) shutdown(socket_, SD_BOTH);
+		replyCondition_.notify_all();
+	}
+	template<class Writer> bool Send(Writer writer)
+	{
+		std::lock_guard<std::mutex> lock(sendMutex_);
+		if (Closed()) return false;
+		if (writer(socket_)) return true;
+		Close();
+		return false;
+	}
+	void Deliver(const NpcMcp::Json& response)
+	{
+		std::lock_guard<std::mutex> lock(replyMutex_);
+		if (waiting_ && !ready_ && response.is_object() && response.contains("id") && response["id"] == expectedId_)
+		{
+			reply_ = response; ready_ = true;
+			replyCondition_.notify_one();
+		}
+	}
+	NpcMcp::Json Exchange(const NpcMcp::Json& request)
+	{
+		std::lock_guard<std::mutex> rpcLock(rpcMutex_);
+		if (Closed()) throw std::runtime_error("MCP disconnected");
+		const auto body = request.dump();
+		if (sizeof(PacketHeader) + body.size() > kMaxWirePacketBytes)
+			throw std::runtime_error("MCP request exceeds wire packet limit");
+		std::vector<char> data(sizeof(PacketHeader) + body.size());
+		PacketHeader header{};
+		header.size = static_cast<uint16_t>(data.size());
+		header.id = static_cast<uint16_t>(PACKET_ID::AS_MCP);
+		std::memcpy(data.data(), &header, sizeof(header));
+		std::memcpy(data.data() + sizeof(header), body.data(), body.size());
+		const bool expectsReply = request.contains("id");
+		{
+			std::lock_guard<std::mutex> lock(replyMutex_);
+			waiting_ = expectsReply; ready_ = false;
+			if (expectsReply) expectedId_ = request["id"];
+		}
+		if (!Send([&](SOCKET socket) { return SendAllBytes(socket, data.data(), static_cast<int>(data.size())); }))
+			throw std::runtime_error("MCP send failed");
+		if (!expectsReply) return nullptr;
+		std::unique_lock<std::mutex> lock(replyMutex_);
+		const bool signaled = replyCondition_.wait_for(lock, std::chrono::seconds(5),
+			[this] { return ready_ || Closed(); });
+		waiting_ = false;
+		if (!signaled)
+		{
+			lock.unlock();
+			// 늦게 온 답이 같은 id 로 다음 호출에 붙는 일을 막는다.
+			Close();
+			throw std::runtime_error("MCP response timeout");
+		}
+		if (Closed()) throw std::runtime_error("MCP disconnected");
+		return std::move(reply_);
+	}
+private:
+	SOCKET socket_;
+	std::atomic<bool> closed_{false};
+	std::mutex sendMutex_, rpcMutex_, replyMutex_;
+	std::condition_variable replyCondition_;
+	bool waiting_ = false, ready_ = false;
+	NpcMcp::Json expectedId_, reply_;
+};
 
-	const int remain = --activeClientCount;
-	Log::Info("Client thread ended. clientId={}, activeClientCount={}",
-		clientId,
-		remain);
+struct ClientConversationState
+{
+	ConversationStore conversations;
+	std::mutex agentMutex;
+	std::map<std::string, std::shared_ptr<NpcAgent::Memory>> agentHistory;
+	std::shared_ptr<NpcAgent::Memory> AgentMemory(const std::string& key, bool create)
+	{
+		std::lock_guard<std::mutex> lock(agentMutex);
+		auto found = agentHistory.find(key);
+		if (found != agentHistory.end()) return found->second;
+		if (!create) return {};
+		if (agentHistory.size() >= 128)
+		{
+			// 지금 대화 중인 기억은 지우지 않는다.
+			auto idle = std::find_if(agentHistory.begin(), agentHistory.end(),
+				[](const auto& entry) { return entry.second.use_count() == 1; });
+			if (idle == agentHistory.end()) throw std::runtime_error("NPC memory capacity reached");
+			agentHistory.erase(idle);
+		}
+		auto memory = std::make_shared<NpcAgent::Memory>();
+		agentHistory.emplace(key, memory);
+		return memory;
+	}
+};
+
+void ProcessClientRequest(SharedAiLink& link, ClientConversationState& state,
+	AiBatchWorkerQueue& aiQueue, int clientId, SA_AI request, const std::string& userText)
+{
+	if (link.Closed()) return;
+	if (request.id == static_cast<uint16_t>(PACKET_ID::SA_AI_AGENT))
+	{
+		std::string context, say;
+		bool completed = false;
+		try
+		{
+			const auto envelope = NpcMcp::Json::parse(userText);
+			context = NpcMcp::Text(envelope, "context", 32);
+			const auto conversation = NpcMcp::Text(envelope, "conversation", 32);
+			const auto speech = NpcMcp::Text(envelope, "say", 600);
+			if (context.size() != 32 || conversation.size() != 32 || speech.empty())
+				throw std::runtime_error("Invalid NPC envelope");
+			auto memory = state.AgentMemory(conversation, true);
+			if (speech == "/reset") *memory = {};
+			Log::Info("[Agent] customer: {}", speech);
+			NpcAgent::Client mcp(context, [&](const auto& rpc)
+			{
+				auto response = link.Exchange(rpc);
+				if (rpc.value("method", std::string{}) == "tools/call")
+					Log::Info("[Agent] tool {} {} -> {}", NpcMcp::Text(rpc["params"], "name", 64),
+						rpc["params"].value("arguments", NpcMcp::Json::object()).dump(), response.value("result", response).dump());
+				return response;
+			});
+			say = NpcAgent::Run(mcp, speech, *memory, [&](const std::string& prompt, bool sayOnly)
+			{
+				if (link.Closed()) throw std::runtime_error("Client disconnected");
+				std::vector<ChatTurn> scratch;
+				auto output = aiQueue.Submit(clientId, prompt, scratch, true, nullptr, sayOnly).get();
+				Log::Info("[Agent] model: {}", output);
+				return output;
+			}, [&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); });
+			memory->turns.push_back({{"customer", speech}, {"npc", say}});
+			// 넉넉히 쌓아두고, 프롬프트에는 토큰 한도가 허용하는 만큼만 최근 턴을 넣는다.
+			if (memory->turns.size() > 200) memory->turns.erase(memory->turns.begin());
+			completed = true;
+		}
+		catch (const std::exception& e)
+		{
+			Log::Warning("[Agent] turn failed: {}", e.what());
+			say = "지금은 상점 정보를 확인할 수 없네. 잠시 후 다시 이야기해 주겠나?";
+		}
+		link.Send([&](SOCKET socket) { return SendAgentResponse(socket, request.userIndex, context, say, completed); });
+		return;
+	}
+	if (request.id == static_cast<uint16_t>(PACKET_ID::SA_AI_SUMMARIZE))
+	{
+		// 상점 창을 닫은 뒤라 이 연결에서 답을 기다리는 사람은 없다.
+		const auto envelope = NpcMcp::Json::parse(userText, nullptr, false);
+		auto memory = state.AgentMemory(NpcMcp::Text(envelope, "conversation", 32), false);
+		if (!memory) return;
+		const auto started = std::chrono::steady_clock::now();
+		const bool compressed = NpcAgent::Compress(*memory, [&](const std::string& input)
+		{
+			if (link.Closed()) throw std::runtime_error("Client disconnected");
+			std::vector<ChatTurn> scratch;
+			auto notes = TrimString(aiQueue.Submit(clientId, input, scratch, false, NpcAgent::SummaryPrompt).get());
+			return notes.starts_with("-") ? notes : std::string{}; // 실패하면 "(...)" 로 돌아온다
+		});
+		if (compressed)
+			Log::Info("[Agent] memory compressed in {} ms, {} recent turns kept:\n{}",
+				std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count(),
+				memory->turns.size(), memory->notes);
+		return;
+	}
+
+	const auto text = NormalizeReceivedText(userText);
+	if (text.empty()) return;
+	const auto who = std::to_string(request.userIndex);
+	if (text == "/reset")
+	{
+		state.conversations.Reset(who);
+		link.Send([&](SOCKET socket) { return SendAiResponse(socket, request.userIndex, "대화 기억을 초기화했습니다."); });
+		return;
+	}
+	// 종료 명령은 두지 않는다. 게임서버와의 연결은 공유 링크라
+	// 플레이어가 친 한 마디로 끊기면 모두의 NPC 대화가 죽는다.
+	Log::Info("Received. clientId={} userIndex={} npcIndex={} text={}", clientId, request.userIndex, request.npcIndex, text);
+	auto& history = state.conversations.GetOrCreate(who);
+	std::string output;
+	try { output = aiQueue.Submit(clientId, text, history).get(); }
+	catch (const std::exception& e)
+	{
+		Log::Error("AI response failed: {}", e.what());
+		output = "(Failed to get AI response)";
+	}
+	link.Send([&](SOCKET socket) { return SendAiResponse(socket, request.userIndex, output); });
 }
+
+void HandleClient(SOCKET clientSocket, int clientId, AiBatchWorkerQueue& aiQueue, std::atomic<int>& activeClientCount)
+{
+	// 소켓은 모든 작업이 끝날 때까지 살아 있고, shutdown 이 먼저 I/O 를 끊는다.
+	struct SocketGuard
+	{
+		SOCKET socket; std::atomic<int>& count;
+		~SocketGuard() { closesocket(socket); --count; }
+	} guard{clientSocket, activeClientCount};
+	const DWORD sendTimeout = 5000;
+	setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&sendTimeout), sizeof(sendTimeout));
+	SharedAiLink link(clientSocket);
+	try
+	{
+		ClientConversationState state;
+		ConversationWorkQueue jobs;
+		// 예외로 빠져나갈 때도 jobs/state 보다 먼저 돌아 대기 중인 작업을 깨운다.
+		struct LinkGuard { SharedAiLink& link; ~LinkGuard() { link.Close(); } } linkGuard{link};
+		std::string stream;
+		char buffer[kRecvBufferSize];
+		Log::Info("Client connected. clientId={}", clientId);
+		while (!link.Closed())
+		{
+			const auto received = recv(clientSocket, buffer, sizeof(buffer), 0);
+			if (received <= 0) break;
+			stream.append(buffer, received);
+			while (!link.Closed() && stream.size() >= sizeof(PacketHeader))
+			{
+				PacketHeader header{};
+				std::memcpy(&header, stream.data(), sizeof(header));
+				if (header.size < sizeof(PacketHeader) || header.size > kMaxWirePacketBytes)
+					throw std::runtime_error("Invalid AI frame size");
+				if (stream.size() < header.size) break;
+				const auto packet = stream.substr(0, header.size);
+				stream.erase(0, header.size);
+				if (header.id == static_cast<uint16_t>(PACKET_ID::SA_MCP))
+				{
+					link.Deliver(NpcMcp::Json::parse(packet.substr(sizeof(PacketHeader)), nullptr, false));
+					continue;
+				}
+				if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI) &&
+					header.id != static_cast<uint16_t>(PACKET_ID::SA_AI_AGENT) &&
+					header.id != static_cast<uint16_t>(PACKET_ID::SA_AI_SUMMARIZE))
+				{
+					Log::Warning("Unexpected packet id={} - skipped. clientId={}", header.id, clientId);
+					continue;
+				}
+				if (header.size < sizeof(SA_AI)) throw std::runtime_error("Short AI frame");
+				SA_AI request{};
+				std::memcpy(&request, packet.data(), sizeof(request));
+				const auto text = packet.substr(sizeof(request));
+				// 손님별(일반 대화)·대화별(상인) 차선으로 나눠 순서를 지킨다.
+				std::string key = "chat:" + std::to_string(request.userIndex);
+				if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI))
+				{
+					const auto envelope = NpcMcp::Json::parse(text, nullptr, false);
+					const auto conversation = NpcMcp::Text(envelope, "conversation", 32);
+					if (conversation.size() != 32) throw std::runtime_error("Invalid conversation id");
+					key = "agent:" + conversation;
+				}
+				if (!jobs.Submit(key, [&, request, text]
+				{
+					try { ProcessClientRequest(link, state, aiQueue, clientId, request, text); }
+					catch (...) { link.Close(); throw; }
+				}))
+					throw std::runtime_error("AI connection queue full (128 outstanding requests)");
+			}
+		}
+	}
+	catch (const std::exception& e) { Log::Warning("Client {} stopped: {}", clientId, e.what()); }
+	catch (...) { Log::Warning("Client {} stopped after an unexpected error", clientId); }
+	link.Close();
+	Log::Info("Client thread ended. clientId={}", clientId);
+}
+
 
 // ==================== main ====================
 
