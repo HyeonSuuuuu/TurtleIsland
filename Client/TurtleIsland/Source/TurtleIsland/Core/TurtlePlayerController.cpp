@@ -11,6 +11,7 @@
 #include "Engine/GameInstance.h"
 #include "Network/NetSubsystem.h"
 #include "UI/PauseMenuWidget.h"
+#include "UI/ShopWidget.h"
 #include "UI/PlayerUIComponent.h"
 #include "TurtleIsland.h"
 #include "Kismet/GameplayStatics.h"
@@ -93,6 +94,13 @@ void ATurtlePlayerController::TogglePauseMenu()
 	if (PauseMenuWidget)
 	{
 		ClosePauseMenu();
+		return;
+	}
+
+	// 상점이 열려 있으면 일시정지 메뉴 대신 상점을 닫는다(입력창 밖에 포커스가 있을 때).
+	if (UShopWidget* Shop = UShopWidget::FindOpen(this))
+	{
+		Shop->Close();
 		return;
 	}
 

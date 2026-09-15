@@ -69,10 +69,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Shop")
 	int32 GetNpcIndex() const { return NpcIndex; }
 
+	/** 컨트롤러의 CloseShop 으로 닫는다(isShopOpen·입력 모드도 함께 되돌린다). ESC 가 부른다. */
+	UFUNCTION(BlueprintCallable, Category = "Shop")
+	void Close();
+
+	/** 이 컨트롤러가 열어 둔 상점 창. 없으면 null. */
+	static UShopWidget* FindOpen(const APlayerController* Owner);
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	/** 입력창에 포커스가 있어도 ESC 를 먼저 받아 창을 닫는다. */
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 
 	// WBP_Shop 의 같은 이름 위젯에 자동으로 붙는다. 없어도 크래시 나지 않는다.
 	UPROPERTY(BlueprintReadOnly, Category = "Shop", meta = (BindWidgetOptional))
@@ -197,6 +206,9 @@ private:
 
 	/** 대화 상대 NPC. OpenShop 으로 정해진다. */
 	int32 NpcIndex = 0;
+
+	/** 닫는 키 안내는 창을 처음 열 때 한 번만 로그에 남긴다. */
+	bool bCloseKeysShown = false;
 
 	FSlateFontInfo CachedFont;
 	bool bStyleCached = false;

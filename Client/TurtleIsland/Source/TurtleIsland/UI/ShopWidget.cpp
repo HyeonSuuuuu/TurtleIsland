@@ -23,6 +23,7 @@
 #include "Network/NetSubsystem.h"
 #include "Core/TurtleAudioSubsystem.h"
 #include "GameplayRules.h"
+#include "UObject/UObjectIterator.h"
 #include "UI/ItemTooltipWidget.h"
 #include "Styling/CoreStyle.h"
 #include "TurtleIsland.h"
@@ -247,6 +248,16 @@ void UShopWidget::OpenShop(int32 InNpcIndex)
 		World->GetTimerManager().SetTimerForNextTick(this, &UShopWidget::FocusInput);
 	}
 	RefreshProducts();
+	if (!bCloseKeysShown)
+	{
+		AddSystemLine(TEXT("F 또는 ESC 를 누르면 창을 닫습니다"));
+		bCloseKeysShown = true;
+	}
+	if (Input_Message && !Input_Message->GetHintText().ToString().Contains(TEXT("ESC")))
+	{
+		const FString Hint = Input_Message->GetHintText().ToString();
+		Input_Message->SetHintText(FText::FromString(Hint.IsEmpty() ? TEXT("닫기: F / ESC") : Hint + TEXT("   (닫기: F / ESC)")));
+	}
 	if (ShownAffinity >= 0)
 	{
 		AddSystemLine(FString::Printf(TEXT("상인 호감도 %d / 100 (높을수록 더 깎아준다)"), ShownAffinity));
@@ -254,6 +265,30 @@ void UShopWidget::OpenShop(int32 InNpcIndex)
 
 	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowOpen);
 	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 대화 시작 (npcIndex=%d)"), NpcIndex);
+}
+
+FReply UShopWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
+{
+	if (KeyEvent.GetKey() == EKeys::Escape)
+	{
+		Close();
+		return FReply::Handled();
+	}
+	return Super::NativeOnPreviewKeyDown(Geometry, KeyEvent);
+}
+
+void UShopWidget::Close()
+{
+	APlayerController* PC = GetOwningPlayer();
+	if (UFunction* CloseShop = PC ? PC->FindFunction(TEXT("CloseShop")) : nullptr) PC->ProcessEvent(CloseShop, nullptr);
+	else RemoveFromParent();
+}
+
+UShopWidget* UShopWidget::FindOpen(const APlayerController* Owner)
+{
+	for (TObjectIterator<UShopWidget> Shop; Shop; ++Shop)
+		if (Shop->IsInViewport() && Shop->GetOwningPlayer() == Owner) return *Shop;
+	return nullptr;
 }
 
 void UShopWidget::FocusInput()
