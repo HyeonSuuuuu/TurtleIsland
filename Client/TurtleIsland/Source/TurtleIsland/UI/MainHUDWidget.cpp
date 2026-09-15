@@ -23,11 +23,14 @@
 #include "TimerManager.h"
 #include "EngineUtils.h"
 #include "Gameplay/HealthComponent.h"
+#include "Gameplay/NpcNameplateComponent.h"
 #include "GameplayRules.h"
 #include "Network/NetSubsystem.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "UI/ItemTooltipWidget.h"
+#include "UI/ShopWidget.h"
+#include "UObject/UObjectIterator.h"
 
 UQuickSlotButton::UQuickSlotButton() { InitIsFocusable(false); }
 
@@ -244,6 +247,18 @@ void UMainHUDWidget::ScrollCombatLogToEnd()
 		}
 }
 
+namespace
+{
+	void DrawShadowedText(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry,
+		const PlayerNameplate::FTextLayout& Text, const FVector2D& Position, const FLinearColor& Color)
+	{
+		FSlateDrawElement::MakeText(Elements, Layer, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(Position + FVector2D(1, 1))),
+			Text.Text, Text.Font, ESlateDrawEffect::None, FLinearColor::Black);
+		FSlateDrawElement::MakeText(Elements, Layer + 1, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(Position)),
+			Text.Text, Text.Font, ESlateDrawEffect::None, Color);
+	}
+}
+
 int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
 	FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const
 {
@@ -284,15 +299,8 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 			FSlateDrawElement::MakeBox(Elements, TopLayer + 1,
 				Geometry.ToPaintGeometry(FVector2D((BarSize.X - 2) * Health->GetHPRatio(), BarSize.Y - 2), FSlateLayoutTransform(BarPosition + FVector2D(1, 1))),
 				White, ESlateDrawEffect::None, Color);
-			const auto DrawLabel = [&](const PlayerNameplate::FTextLayout& Text, const FVector2D& TextPosition)
-			{
-				FSlateDrawElement::MakeText(Elements, TopLayer + 2, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(TextPosition + FVector2D(1, 1))),
-					Text.Text, Text.Font, ESlateDrawEffect::None, FLinearColor::Black);
-				FSlateDrawElement::MakeText(Elements, TopLayer + 3, Geometry.ToPaintGeometry(Text.Size, FSlateLayoutTransform(TextPosition)),
-					Text.Text, Text.Font, ESlateDrawEffect::None, FLinearColor::White);
-			};
-			DrawLabel(Title, FVector2D(Position.X - Title.Size.X / 2.f, BarPosition.Y - Title.Size.Y - 3.f));
-			DrawLabel(HP, BarPosition + (BarSize - HP.Size) / 2.f);
+			DrawShadowedText(Elements, TopLayer + 2, Geometry, Title, FVector2D(Position.X - Title.Size.X / 2.f, BarPosition.Y - Title.Size.Y - 3.f), FLinearColor::White);
+			DrawShadowedText(Elements, TopLayer + 2, Geometry, HP, BarPosition + (BarSize - HP.Size) / 2.f, FLinearColor::White);
 			continue;
 		}
 		Position -= FVector2D(36, 4);
@@ -301,6 +309,36 @@ int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geome
 		FSlateDrawElement::MakeBox(Elements, TopLayer + 1, Geometry.ToPaintGeometry(FVector2D(70 * Health->GetHPRatio(), 5), FSlateLayoutTransform(Position + FVector2D(1, 1))),
 			White, ESlateDrawEffect::None, FLinearColor(0.8f, 0.12f, 0.12f));
 	}
+	// NPC 이름표. 상호작용 구체 안이면 그 위에 "F 대화하기" 를 붙이고, 상점 창이 열려 있으면 안내는 숨긴다.
+	bool bShopOpen = false;
+	for (TObjectIterator<UShopWidget> Shop; Shop && !bShopOpen; ++Shop) bShopOpen = Shop->GetWorld() == GetWorld() && Shop->IsInViewport();
+	for (const TWeakObjectPtr<UNpcNameplateComponent>& Weak : UNpcNameplateComponent::GetAll())
+	{
+		const UNpcNameplateComponent* Plate = Weak.Get();
+		FVector2D Position;
+		if (!Plate || Plate->GetWorld() != GetWorld() || Plate->DisplayName.IsEmpty() ||
+			FVector::DistSquared(Plate->GetLabelLocation(), ViewOrigin) > MaxDistanceSq ||
+			!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, Plate->GetLabelLocation(), Position, true)) continue;
+		const auto Name = PlayerNameplate::FitText(Plate->DisplayName.ToString(), PlayerNameplate::NameWidth, 16, 12);
+		const FVector2D NamePosition(Position.X - Name.Size.X / 2.f, Position.Y - Name.Size.Y);
+		DrawShadowedText(Elements, TopLayer + 2, Geometry, Name, NamePosition, FLinearColor(1.f, 0.85f, 0.4f));
+		if (bShopOpen || !Plate->IsPlayerInRange(Viewer)) continue;
+		const auto Key = PlayerNameplate::FitText(TEXT("F"), 20.f, 13, 13);
+		const auto Prompt = PlayerNameplate::FitText(Plate->PromptText.ToString(), PlayerNameplate::NameWidth, 13, 11);
+		const FVector2D KeySize(22, 22);
+		const FVector2D PillSize(KeySize.X + Prompt.Size.X + 18, KeySize.Y + 6);
+		const FVector2D PillPosition(Position.X - PillSize.X / 2.f, NamePosition.Y - PillSize.Y - 4);
+		const FVector2D KeyPosition = PillPosition + FVector2D(3, 3);
+		FSlateDrawElement::MakeBox(Elements, TopLayer, Geometry.ToPaintGeometry(PillSize, FSlateLayoutTransform(PillPosition)),
+			White, ESlateDrawEffect::None, FLinearColor(0.01f, 0.01f, 0.01f, 0.75f));
+		FSlateDrawElement::MakeBox(Elements, TopLayer + 1, Geometry.ToPaintGeometry(KeySize, FSlateLayoutTransform(KeyPosition)),
+			White, ESlateDrawEffect::None, FLinearColor(0.9f, 0.9f, 0.9f));
+		FSlateDrawElement::MakeText(Elements, TopLayer + 2, Geometry.ToPaintGeometry(Key.Size, FSlateLayoutTransform(KeyPosition + (KeySize - Key.Size) / 2.f)),
+			Key.Text, Key.Font, ESlateDrawEffect::None, FLinearColor::Black);
+		DrawShadowedText(Elements, TopLayer + 2, Geometry, Prompt,
+			FVector2D(KeyPosition.X + KeySize.X + 7, PillPosition.Y + (PillSize.Y - Prompt.Size.Y) / 2.f), FLinearColor::White);
+	}
+
 	const double Now = FPlatformTime::Seconds();
 	for (const FDamagePopup& Popup : DamagePopups)
 	{
