@@ -52,7 +52,9 @@ inline Json Tools(int maxAffinityStep = 2)
             {"inputSchema", {{"type", "object"}, {"properties", {{"item_id", number(1,65535)}, {"quantity", number(1,99)}, {"unit_price", number(1,1000000)}}},
                 {"required", {"item_id", "quantity", "unit_price"}}, {"additionalProperties", false}}}},
         {{"name", "propose_affinity_change"}, {"description", "Change this customer's affinity (0..100) by delta. Higher affinity lowers minimum prices. Server may refuse repetition or cooldown."},
-            {"inputSchema", {{"type", "object"}, {"properties", {{"delta", number(-maxAffinityStep,maxAffinityStep)}}}, {"required", {"delta"}}, {"additionalProperties", false}}}}
+            {"inputSchema", {{"type", "object"}, {"properties", {{"delta", number(-maxAffinityStep,maxAffinityStep)}}}, {"required", {"delta"}}, {"additionalProperties", false}}}},
+        {{"name", "get_monster_info"}, {"description", "What locals know about island monsters. Without arguments: list monster_id and name. With monster_id: habitat, looks, lore, danger for this customer and the gold/exp a hunter earns."},
+            {"inputSchema", {{"type", "object"}, {"properties", {{"monster_id", number(0,255)}}}, {"additionalProperties", false}}}}
     });
 }
 inline std::string Text(const Json& value, const char* key, size_t maxBytes)

@@ -14,7 +14,11 @@ struct MonsterDef
 
 	int gold = 10;
 	int exp = 25;
+
+	// What a local knows, for the shopkeeper AI (get_monster_info). UTF-8, each at most MonsterLoreBytes.
+	std::string habitat, looks, lore;
 };
+inline constexpr size_t MonsterLoreBytes = 240; // keeps one monster's tool result inside an MCP message
 
 inline std::vector<MonsterDef> g_monsterDefs;
 

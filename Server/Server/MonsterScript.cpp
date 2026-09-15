@@ -117,6 +117,20 @@ bool LoadMonsterScript(const char* path)
 				ReadField(L, "attackCooldownMs", def.attackCooldownMs, 1, 60000);
 				ReadField(L, "gold", def.gold, 0, 1000000);
 				ReadField(L, "exp", def.exp, 0, 1000000);
+				for (auto [field, text] : {std::pair{"habitat", &def.habitat}, {"looks", &def.looks}, {"lore", &def.lore}})
+				{
+					lua_getfield(L, -1, field);
+					if (lua_type(L, -1) == LUA_TSTRING)
+					{
+						*text = lua_tostring(L, -1);
+						if (text->size() > MonsterLoreBytes)
+						{
+							Log::Warning("[LUA] Monsters[{}].{} is over {} bytes; ignored", i, field, MonsterLoreBytes);
+							text->clear();
+						}
+					}
+					lua_pop(L, 1);
+				}
 				def.attackCooldownMs = std::max(def.attackCooldownMs, def.attackWindupMs + 1);
 				g_monsterDefs.push_back(def);
 			}

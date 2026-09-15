@@ -2,6 +2,8 @@
 #include "../../Common/NpcMcp.h"
 #include "../../Common/GameplayRules.h"
 #include "NpcShopConfig.h"
+#include "MonsterScript.h"
+#include <cmath>
 #include <deque>
 #include <algorithm>
 
@@ -74,6 +76,16 @@ struct NpcConversation
             offer["effect"]=p.itemId==GameplayRules::HealthPotion ? "restores 50 HP" : "restores 50 MP";
         return offer;
     }
+    // Rough fight estimate from server stats: time for this customer to win with basic attacks vs. time to fall.
+    static const char* Danger(const MonsterDef& monster, const GameplayRules::PlayerState& player)
+    {
+        const auto& basic=GameplayRules::Skills[SKILL_ID_BASIC_ATTACK];
+        const double toWin=std::ceil(monster.hp/static_cast<double>(std::max(1,basic.damage+player.attack-20)))*
+            std::max(basic.cooldownMs,basic.movementLockMs);
+        const double toFall=std::ceil(player.maxHP/static_cast<double>(std::max(1,monster.attackDamage-player.defense)))*monster.attackCooldownMs;
+        const double ratio=toWin/toFall;
+        return ratio<0.5 ? "easy" : ratio<1. ? "fair" : ratio<2. ? "hard" : "deadly";
+    }
     NpcMcp::Json Call(const std::string& name, const NpcMcp::Json& args, const GameplayRules::PlayerState& player, uint64_t now)
     {
         using namespace NpcMcp;
@@ -86,6 +98,23 @@ struct NpcConversation
         {
             const auto* product = args.size()==1 && Integer(args,"item_id",1,65535) ? g_npcShopConfig.Find(args["item_id"].get<int>()) : nullptr;
             return product ? ToolResult(Offer(*product)) : ToolError("unknown_item");
+        }
+        if (name == "get_monster_info" && args.empty())
+        {
+            auto monsters=Json::array();
+            for (size_t i=0;i<g_monsterDefs.size();++i) monsters.push_back({{"monster_id",i},{"name",g_monsterDefs[i].name}});
+            return ToolResult({{"monsters",monsters}});
+        }
+        if (name == "get_monster_info")
+        {
+            if (args.size()!=1 || !Integer(args,"monster_id",0,255) || args["monster_id"].get<size_t>()>=g_monsterDefs.size())
+                return ToolError("unknown_monster");
+            const auto& monster=g_monsterDefs[args["monster_id"].get<size_t>()];
+            Json info={{"name",monster.name},{"danger_for_customer",Danger(monster,player)},
+                {"hunter_reward_gold",monster.gold},{"hunter_reward_exp",monster.exp}};
+            for (const auto& [key,text]:{std::pair{"habitat",&monster.habitat},{"looks",&monster.looks},{"lore",&monster.lore}})
+                if (!text->empty()) info[key]=*text;
+            return ToolResult(info);
         }
         if (name == "get_relationship" && args.empty()) return ToolResult({{"affinity",affinity},{"minimum",0},{"maximum",100}});
         if (name == "propose_price")
@@ -152,10 +181,10 @@ struct NpcConversation
         else if (method=="tools/list")
         {
             const auto cursor=Text(params,"cursor",1);
-            if ((!cursor.empty() && (cursor[0]<'0' || cursor[0]>'4')) || (params.contains("cursor") && cursor.empty()))
+            const auto tools=Tools(g_npcShopConfig.affinity.maxStep);
+            if ((!cursor.empty() && (cursor[0]<'0' || static_cast<size_t>(cursor[0]-'0')>=tools.size())) || (params.contains("cursor") && cursor.empty()))
                 return Error(id,-32602,"Invalid cursor");
             const size_t index=cursor.empty()?0:cursor[0]-'0';
-            const auto tools=Tools(g_npcShopConfig.affinity.maxStep);
             result={{"tools",Json::array({tools[index]})}};
             if (index+1<tools.size()) result["nextCursor"]=std::to_string(index+1);
         }
