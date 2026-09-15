@@ -40,6 +40,7 @@ private:
 	UFUNCTION() void AddDamage(FVector Location, int32 Damage, uint8 Flags);
 	UFUNCTION() void ShowFeedback(FString Message);
 	void ScrollCombatLogToEnd();
+	UTexture2D* FindItemIcon(int32 ItemId);
 	UPROPERTY() TObjectPtr<UNetSubsystem> Net;
 	UPROPERTY() TArray<TObjectPtr<UQuickSlotButton>> SlotButtons;
 	UPROPERTY() TArray<TObjectPtr<UImage>> SlotIcons;

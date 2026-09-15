@@ -21,7 +21,7 @@ public class TurtleIsland : ModuleRules
 			"Networking"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "AssetRegistry" });
 
 		// 모듈 루트 + 공통 프로토콜만. 하위 폴더는 "Network/NetSubsystem.h" 처럼 경로를 명시해 참조한다.
 		PublicIncludePaths.AddRange(new string[] {

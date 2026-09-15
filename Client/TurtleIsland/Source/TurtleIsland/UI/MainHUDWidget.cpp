@@ -1,6 +1,7 @@
 #include "UI/MainHUDWidget.h"
 #include "UI/PlayerNameplate.h"
 
+#include "AssetRegistry/IAssetRegistry.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Character/TurtleAgent.h"
@@ -21,6 +22,7 @@
 #include "TimerManager.h"
 #include "EngineUtils.h"
 #include "Gameplay/HealthComponent.h"
+#include "GameplayRules.h"
 #include "Network/NetSubsystem.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -66,6 +68,7 @@ void UMainHUDWidget::BindNetwork(UNetSubsystem* InNet)
 		Net->OnGameplayStateChanged.RemoveDynamic(this, &UMainHUDWidget::RefreshState);
 		Net->OnDamageNumber.RemoveDynamic(this, &UMainHUDWidget::AddDamage);
 		Net->OnActionFeedback.RemoveDynamic(this, &UMainHUDWidget::ShowFeedback);
+		Net->OnShopPricesChanged.RemoveDynamic(this, &UMainHUDWidget::RefreshState);
 	}
 	Net = InNet;
 	if (Net)
@@ -73,6 +76,7 @@ void UMainHUDWidget::BindNetwork(UNetSubsystem* InNet)
 		Net->OnGameplayStateChanged.AddUniqueDynamic(this, &UMainHUDWidget::RefreshState);
 		Net->OnDamageNumber.AddUniqueDynamic(this, &UMainHUDWidget::AddDamage);
 		Net->OnActionFeedback.AddUniqueDynamic(this, &UMainHUDWidget::ShowFeedback);
+		Net->OnShopPricesChanged.AddUniqueDynamic(this, &UMainHUDWidget::RefreshState);
 	}
 	SetupSlots();
 	RefreshState();
@@ -138,6 +142,19 @@ void UMainHUDWidget::SetupSlots()
 	}
 }
 
+UTexture2D* UMainHUDWidget::FindItemIcon(int32 ItemId)
+{
+	if (const auto* Cached = ItemIcons.Find(ItemId)) return Cached->Get();
+	// Equipment icons follow T_UI_ShopItem_<id>_* in the icon folder.
+	UTexture2D* Found = nullptr;
+	TArray<FAssetData> Assets;
+	IAssetRegistry::GetChecked().GetAssetsByPath(TEXT("/Game/UI/Textures/Icons"), Assets, true);
+	for (const FAssetData& Asset : Assets)
+		if (UNetSubsystem::ItemIdFromIcon(Asset.AssetName.ToString()) == ItemId && (Found = Cast<UTexture2D>(Asset.GetAsset()))) break;
+	ItemIcons.Add(ItemId, Found);
+	return Found;
+}
+
 void UMainHUDWidget::SetText(FName Name, const FString& Value)
 {
 	if (UTextBlock* Text = Cast<UTextBlock>(GetWidgetFromName(Name))) Text->SetText(FText::FromString(Value));
@@ -165,11 +182,12 @@ void UMainHUDWidget::RefreshState()
 	for (int32 i = 0; i < SlotButtons.Num(); ++i)
 	{
 		const ItemSlot Item = State ? State->items[i] : ItemSlot{};
-		const auto* Texture = ItemIcons.Find(Item.itemId);
-		SlotIcons[i]->SetVisibility(Texture && Item.count ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
-		if (Texture) SlotIcons[i]->SetBrushFromTexture(Texture->Get(), false);
-		SlotCounts[i]->SetText(Item.count ? FText::AsNumber(Item.count) : FText::GetEmpty());
-		SlotButtons[i]->SetToolTipText(FText::FromString(Item.itemId == 1 ? TEXT("HP +50") : Item.itemId == 2 ? TEXT("MP +50") : TEXT("Empty")));
+		UTexture2D* Texture = Item.count ? FindItemIcon(Item.itemId) : nullptr;
+		SlotIcons[i]->SetVisibility(Texture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		if (Texture) SlotIcons[i]->SetBrushFromTexture(Texture, false);
+		SlotCounts[i]->SetText(Item.count > 1 || Item.itemId == GameplayRules::HealthPotion || Item.itemId == GameplayRules::ManaPotion
+			? FText::AsNumber(Item.count) : FText::GetEmpty());
+		SlotButtons[i]->SetToolTipText(FText::FromString(Item.count ? Net->DescribeShopItem(Item.itemId) : TEXT("Empty")));
 	}
 	if (!State) DamagePopups.Reset();
 }
@@ -225,8 +243,13 @@ void UMainHUDWidget::ShowFeedback(FString Message)
 
 void UMainHUDWidget::ScrollCombatLogToEnd()
 {
+	// 빈 CombatLine 도 높이를 차지하므로, 8줄이 다 차기 전에 끝으로 내리면 첫 줄이 위로 잘린다.
 	for (UWidget* Widget = GetWidgetFromName(TEXT("CombatLine0")); Widget; Widget = Widget->GetParent())
-		if (UScrollBox* Scroll = Cast<UScrollBox>(Widget)) { Scroll->ScrollToEnd(); return; }
+		if (UScrollBox* Scroll = Cast<UScrollBox>(Widget))
+		{
+			if (CombatLines.Num() >= 8) Scroll->ScrollToEnd(); else Scroll->ScrollToStart();
+			return;
+		}
 }
 
 int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,

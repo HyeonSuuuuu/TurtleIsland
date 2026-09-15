@@ -59,14 +59,19 @@ void Room::SendShopPricesLocked(User& user)
     const auto chat=m_npcConversations.find(user.GetSlotIndex());
     SC_ShopPrices packet{};
     packet.size=sizeof(packet); packet.id=static_cast<uint16_t>(PACKET_ID::SC_SHOP_PRICES);
-    for (int i=0;i<SHOP_PRODUCT_COUNT;++i)
+    packet.affinity=static_cast<uint8_t>(chat==m_npcConversations.end() ? NpcConversation::Relationship{}.affinity : chat->second.relationship.affinity);
+    for (const auto& p:g_npcShopConfig.products)
     {
-        packet.unitPrice[i]=g_npcShopConfig.products[i].basePrice;
+        if (packet.count>=SHOP_MAX_PRODUCTS) break;
+        auto& out=packet.products[packet.count++];
+        out.itemId=p.itemId; out.unitPrice=p.basePrice; out.equipment=p.equipment;
+        out.hp=p.stats.hp; out.attack=p.stats.attack; out.defense=p.stats.defense; out.moveSpeed=p.stats.moveSpeed;
+        strncpy_s(out.name,p.name.c_str(),SHOP_ITEM_NAME_BYTES-1);
         if (chat==m_npcConversations.end()) continue;
         const auto& quote=chat->second.CommittedQuote();
-        if (quote.is_null() || quote["item_id"]!=i+1) continue;
-        packet.unitPrice[i]=quote["unit_price"].get<int>();
-        packet.quoteQuantity[i]=quote["quantity"].get<uint16_t>();
+        if (quote.is_null() || quote["item_id"]!=p.itemId) continue;
+        out.unitPrice=quote["unit_price"].get<int>();
+        out.quoteQuantity=quote["quantity"].get<uint16_t>();
     }
     user.Send({reinterpret_cast<const uint8_t*>(&packet),sizeof(packet)});
 }
@@ -80,10 +85,12 @@ void Room::BuyItem(User& user, const CS_ShopBuy& request)
     auto& chat=m_npcConversations[user.GetSlotIndex()];
     const auto now=GetTickCount64();
     ActionResult result=ActionResult::Invalid;
-    if (!g_npcShopConfig.enabled || request.lifeId!=state.lifeId || request.itemId<1 || request.itemId>SHOP_PRODUCT_COUNT) {}
+    const auto* product=g_npcShopConfig.Find(request.itemId);
+    if (!g_npcShopConfig.enabled || request.lifeId!=state.lifeId || !product) {}
     else if (chat.Busy(now)) result=ActionResult::Cooldown; // the reply may still change the quote
     else if (request.unitPrice!=chat.UnitPrice(request.itemId,request.quantity)) result=ActionResult::PriceChanged;
-    else if ((result=GameplayRules::BuyItem(state,request.itemId,request.quantity,request.unitPrice))==ActionResult::Ok)
+    else if ((result=GameplayRules::BuyItem(state,request.itemId,request.quantity,request.unitPrice,
+        product->equipment ? &product->stats : nullptr))==ActionResult::Ok)
         chat.ConsumeQuote(request.itemId,request.quantity);
     SC_ActionResult response{};
     response.size=sizeof(response); response.id=static_cast<uint16_t>(PACKET_ID::SC_ACTION_RESULT);
@@ -134,8 +141,9 @@ bool Room::CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response)
         if (completed) chat.relationship=chat.proposedRelationship;
         else chat.quote=chat.previousQuote;
         std::string text=say.empty()?"상인이 대답을 정리하지 못했습니다. 다시 말씀해주세요.":say;
-        if (!chat.quote.is_null() && chat.quote!=chat.previousQuote)
-            text += "\n[흥정 가격] " + std::string(chat.quote["item_id"]==1?"회복 포션":"마나 포션") + " " +
+        const auto* quoted=chat.quote.is_null() ? nullptr : g_npcShopConfig.Find(chat.quote["item_id"].get<int>());
+        if (quoted && chat.quote!=chat.previousQuote)
+            text += "\n[흥정 가격] " + quoted->name + " " +
                 std::to_string(chat.quote["quantity"].get<int>()) + "개까지 개당 " + std::to_string(chat.quote["unit_price"].get<int>()) +
                 "G - 상점 목록에서 구매하세요";
         chat.previousQuote=chat.quote;

@@ -188,6 +188,9 @@ private:
 	/** 입력창에 키보드 포커스. */
 	void FocusInput();
 
+	/** 마지막으로 표시한 상인 호감도. 아직 모르면 -1. 바뀌면 대화창에 알린다. */
+	int32 ShownAffinity = -1;
+
 	/** 대화 상대 NPC. OpenShop 으로 정해진다. */
 	int32 NpcIndex = 0;
 
