@@ -52,6 +52,9 @@ at 1x, taking the current mesh scale into account. The default `100` is a tuning
 starting point, not an automatically measured stride speed. A value of `100`
 gives 0.5x playback at 50 cm/s. Increasing the reference slows the animation;
 decreasing it speeds the animation up without changing server movement.
+`Content/Python/calibrate_monster_move_speed.py` sets it from the clip's baked root
+travel × mesh scale and turns on the clip's Force Root Lock, so the mesh stays on the
+capsule instead of sliding ahead and snapping back each loop (all five monsters).
 
 `Move Animation Smoothing` defaults to `8` inverse seconds; lower values respond
 more gently and higher values react faster. The frame-rate-independent filter
