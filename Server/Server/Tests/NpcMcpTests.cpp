@@ -41,7 +41,7 @@ struct NpcMcpTests
         };
         NpcAgent::Client client(chat.context,exchange);
         const auto tools=client.Initialize();
-        Check(tools.size()==5,"MCP pagination discovers all tools");
+        Check(tools.size()==6,"MCP pagination discovers all tools");
         auto call=[&](const char* name,Json args=Json::object())
         { return client.Request("tools/call",{{"name",name},{"arguments",args}}); };
         auto result=call("get_player_condition");
@@ -123,6 +123,27 @@ struct NpcMcpTests
         Check(chat.Call("propose_price",{{"item_id",1},{"quantity",1},{"unit_price",92}},player,now+60001)["isError"]==false,"affinity discount quote");
         chat.Call("propose_affinity_change",{{"delta",-2}},player,now+60001);
         Check(chat.quote.is_null(),"quote invalidated when new floor exceeds price");
+
+        {
+            Check(LoadMonsterScript("Monster.lua") && g_monsterDefs.size()>=5,"Monster.lua loads");
+            NpcConversation guide;
+            guide.Begin(std::string(32,'m'),"tell me about monsters",now);
+            auto text=[](const Json& result) { return Json::parse(result["content"][0]["text"].get<std::string>()); };
+            const auto listed=guide.Call("get_monster_info",Json::object(),player,now);
+            Check(Result(1,listed).dump().size()<=MaxMessageBytes && text(listed)["monsters"].size()==g_monsterDefs.size(),"monster list fits one message");
+            for (size_t i=0;i<g_monsterDefs.size();++i)
+            {
+                const auto detail=guide.Call("get_monster_info",{{"monster_id",i}},player,now);
+                const auto info=text(detail);
+                Check(Result(1,detail).dump().size()<=MaxMessageBytes,"each monster's lore fits one MCP message");
+                Check(info["name"]==g_monsterDefs[i].name && info["hunter_reward_gold"]==g_monsterDefs[i].gold &&
+                    info.contains("habitat") && info.contains("looks") && info.contains("lore"),"monster lore and rewards come from Monster.lua");
+            }
+            Check(text(guide.Call("get_monster_info",{{"monster_id",0}},player,now))["danger_for_customer"]=="easy" &&
+                text(guide.Call("get_monster_info",{{"monster_id",g_monsterDefs.size()-1}},player,now))["danger_for_customer"]=="deadly",
+                "danger follows the customer's stats");
+            Check(guide.Call("get_monster_info",{{"monster_id",200}},player,now)["isError"]==true,"unknown monster refused");
+        }
 
         {
             // Pool users have no slot index in tests, so the buyer's state lives under that key.
