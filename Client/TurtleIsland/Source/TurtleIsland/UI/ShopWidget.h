@@ -185,6 +185,9 @@ private:
 	/** 레이아웃이 갱신된 다음 틱에 실제로 끝까지 내린다. */
 	void ScrollToBottomNow();
 
+	/** 입력창에 키보드 포커스. */
+	void FocusInput();
+
 	/** 대화 상대 NPC. OpenShop 으로 정해진다. */
 	int32 NpcIndex = 0;
 

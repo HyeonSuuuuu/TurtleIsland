@@ -590,6 +590,19 @@ void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 		State.expToNext <= 0 || State.gold < 0 || !FMath::IsFinite(State.moveSpeed) || State.moveSpeed <= 0.f) return;
 	for (const ItemSlot& Item : State.items)
 		if ((Item.itemId == 0) != (Item.count == 0)) return;
+	// 골드·경험치는 처치 보상으로만 오른다. 직전 상태와의 차이를 시스템 로그에 찍는다.
+	TArray<FString> Rewards;
+	if (bHasPlayerState)
+	{
+		int32 Exp = State.exp - PlayerState.exp;
+		for (int32 Level = PlayerState.level; Level < State.level; ++Level)   // GameplayRules::RewardKill 의 필요 경험치 공식
+			Exp += Level == PlayerState.level ? PlayerState.expToNext : 100 + (Level - 1) * 50;
+		const int32 Gold = State.gold - PlayerState.gold;
+		if (Exp > 0 && Gold > 0) Rewards.Add(FString::Printf(TEXT("경험치 +%d, 골드 +%d"), Exp, Gold));
+		else if (Exp > 0) Rewards.Add(FString::Printf(TEXT("경험치 +%d"), Exp));
+		else if (Gold > 0) Rewards.Add(FString::Printf(TEXT("골드 +%d"), Gold));
+		if (State.level > PlayerState.level) Rewards.Add(FString::Printf(TEXT("레벨 업! Lv.%d"), State.level));
+	}
 	PlayerState = State;
 	PlayerLifeId = State.lifeId;
 	bHasPlayerState = true;
@@ -605,6 +618,7 @@ void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 		Agent->GetCharacterMovement()->MaxWalkSpeed = State.moveSpeed;
 	}
 	OnGameplayStateChanged.Broadcast();
+	for (const FString& Reward : Rewards) OnActionFeedback.Broadcast(Reward);
 }
 
 void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
