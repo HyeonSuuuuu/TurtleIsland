@@ -2,6 +2,7 @@
 
 
 #include "Core/TurtlePlayerController.h"
+#include "Core/TurtleAudioSubsystem.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
@@ -10,6 +11,7 @@
 #include "Engine/GameInstance.h"
 #include "Network/NetSubsystem.h"
 #include "UI/PauseMenuWidget.h"
+#include "UI/ShopWidget.h"
 #include "UI/PlayerUIComponent.h"
 #include "TurtleIsland.h"
 #include "Kismet/GameplayStatics.h"
@@ -95,6 +97,13 @@ void ATurtlePlayerController::TogglePauseMenu()
 		return;
 	}
 
+	// 상점이 열려 있으면 일시정지 메뉴 대신 상점을 닫는다(입력창 밖에 포커스가 있을 때).
+	if (UShopWidget* Shop = UShopWidget::FindOpen(this))
+	{
+		Shop->Close();
+		return;
+	}
+
 	// 이 컨트롤러는 로비/방에서도 쓰이므로 인게임에서만 연다
 	if (!GetWorld() || !GetWorld()->GetMapName().Contains(UNetSubsystem::IngameLevelName.ToString()))
 		return;
@@ -105,6 +114,7 @@ void ATurtlePlayerController::TogglePauseMenu()
 	if (!PauseMenuWidget) return;
 
 	PauseMenuWidget->AddToViewport(100);
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowOpen);
 
 	if (PlayerUIComponent)
 	{
@@ -125,6 +135,7 @@ void ATurtlePlayerController::ClosePauseMenu()
 	if (!PauseMenuWidget) return;
 
 	PauseMenuWidget->RemoveFromParent();
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowClose);
 	UPauseMenuWidget* ClosedWidget = PauseMenuWidget;
 	PauseMenuWidget = nullptr;
 

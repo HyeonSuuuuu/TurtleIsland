@@ -14,6 +14,7 @@
 #include "Engine/GameInstance.h"
 #include "GameplayRules.h"
 #include "Gameplay/TurtleVfxActor.h"
+#include "Core/TurtleAudioSubsystem.h"
 
 UAgentSkillComponent::UAgentSkillComponent()
 {
@@ -208,5 +209,16 @@ void UAgentSkillComponent::PlaySkill(int32 SkillId, float Yaw)
 	}
 
 	if (SkillId == 2) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::SkillE, Owner->GetActorLocation(), Yaw);
+	const FVector CastAt = Owner->GetActorLocation();
+	UTurtleAudioSubsystem::Play(this, SkillId == 0 ? ETurtleSound::BasicSwing : SkillId == 1 ? ETurtleSound::SkillQ : ETurtleSound::SkillECast, &CastAt);
+	if (SkillId == 2)
+	{
+		// E 충격파 이펙트(0.38초)에 맞춰 충격음을 한 번 더 낸다.
+		FTimerHandle Impact;
+		GetWorld()->GetTimerManager().SetTimer(Impact, FTimerDelegate::CreateWeakLambda(this, [this, CastAt]
+		{
+			UTurtleAudioSubsystem::Play(this, ETurtleSound::SkillEImpact, &CastAt);
+		}), 0.38f, false);
+	}
 	OnSkillPlayed.Broadcast(SkillId, Yaw);
 }
