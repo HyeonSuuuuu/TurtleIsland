@@ -12,10 +12,13 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/ProgressBar.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "EngineUtils.h"
 #include "Gameplay/HealthComponent.h"
 #include "Network/NetSubsystem.h"
@@ -215,6 +218,15 @@ void UMainHUDWidget::ShowFeedback(FString Message)
 	CombatLines.Add(MoveTemp(Message));
 	if (CombatLines.Num() > 8) CombatLines.RemoveAt(0);
 	for (int32 i = 0; i < 8; ++i) SetText(*FString::Printf(TEXT("CombatLine%d"), i), CombatLines.IsValidIndex(i) ? CombatLines[i] : TEXT(""));
+	ScrollCombatLogToEnd();
+	// 줄바꿈된 새 줄은 다음 레이아웃에서야 높이가 잡혀 한 번 더 내린다.
+	if (UWorld* World = GetWorld()) World->GetTimerManager().SetTimerForNextTick(this, &UMainHUDWidget::ScrollCombatLogToEnd);
+}
+
+void UMainHUDWidget::ScrollCombatLogToEnd()
+{
+	for (UWidget* Widget = GetWidgetFromName(TEXT("CombatLine0")); Widget; Widget = Widget->GetParent())
+		if (UScrollBox* Scroll = Cast<UScrollBox>(Widget)) { Scroll->ScrollToEnd(); return; }
 }
 
 int32 UMainHUDWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,

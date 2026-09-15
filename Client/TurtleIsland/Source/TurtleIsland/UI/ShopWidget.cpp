@@ -210,12 +210,23 @@ void UShopWidget::OpenShop(int32 InNpcIndex)
 
 	// 입력모드·커서·시점 무시는 건드리지 않는다. 컨트롤러가 짝을 맞춰 관리하고 있어서
 	// 여기서 같이 만지면 닫을 때 되돌리는 쪽과 어긋난다.
+	FocusInput();
+	// 처음 만든 위젯은 아직 레이아웃 전이라 포커스가 안 붙고, 컨트롤러가 이 뒤에
+	// 입력 모드를 바꾸며 포커스를 가져가기도 한다. 다음 틱에 한 번 더 준다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &UShopWidget::FocusInput);
+	}
+
+	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 대화 시작 (npcIndex=%d)"), NpcIndex);
+}
+
+void UShopWidget::FocusInput()
+{
 	if (Input_Message)
 	{
 		Input_Message->SetKeyboardFocus();
 	}
-
-	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 대화 시작 (npcIndex=%d)"), NpcIndex);
 }
 
 void UShopWidget::HandleTextCommitted(const FText& Text, ETextCommit::Type CommitMethod)
