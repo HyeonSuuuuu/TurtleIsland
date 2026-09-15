@@ -35,6 +35,9 @@ protected:
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	virtual int32 NativePaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
 		FSlateWindowElementList& Elements, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const override;
+	/** 몬스터 이름·체력바를 그리는 최대 거리(cm, 내 캐릭터 기준). 0 이하면 제한 없음. 플레이어 이름표는 항상 그린다. */
+	UPROPERTY(EditDefaultsOnly, Category="HUD", meta=(Units="cm"))
+	float MonsterPlateMaxDistance = 2500.f;
 private:
 	void SetupSlots();
 	UFUNCTION() void AddDamage(FVector Location, int32 Damage, uint8 Flags);
