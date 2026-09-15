@@ -2,6 +2,7 @@
 
 
 #include "Core/TurtlePlayerController.h"
+#include "Core/TurtleAudioSubsystem.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputMappingContext.h"
@@ -105,6 +106,7 @@ void ATurtlePlayerController::TogglePauseMenu()
 	if (!PauseMenuWidget) return;
 
 	PauseMenuWidget->AddToViewport(100);
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowOpen);
 
 	if (PlayerUIComponent)
 	{
@@ -125,6 +127,7 @@ void ATurtlePlayerController::ClosePauseMenu()
 	if (!PauseMenuWidget) return;
 
 	PauseMenuWidget->RemoveFromParent();
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowClose);
 	UPauseMenuWidget* ClosedWidget = PauseMenuWidget;
 	PauseMenuWidget = nullptr;
 

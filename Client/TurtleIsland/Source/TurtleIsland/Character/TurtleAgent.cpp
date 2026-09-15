@@ -2,6 +2,8 @@
 
 #include "Character/TurtleAgent.h"
 #include "Gameplay/TurtleVfxActor.h"
+#include "Core/TurtleAudioSubsystem.h"
+#include "Character/ServerMonster.h"
 #include "Gameplay/HealthComponent.h"
 #include "Gameplay/AgentSkillComponent.h"
 #include "Gameplay/LocalMoverComponent.h"
@@ -61,6 +63,11 @@ void ATurtleAgent::HandleDied(AActor* Killer)
 void ATurtleAgent::EnterDeadState()
 {
 	ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Death, GetActorLocation());
+	if (!IsA<AServerMonster>()) // monsters play their own death sound
+	{
+		const FVector At = GetActorLocation();
+		UTurtleAudioSubsystem::Play(this, ETurtleSound::PlayerDeath, &At);
+	}
 	if (Skill)
 	{
 		Skill->ResetPlayback();
@@ -123,6 +130,10 @@ void ATurtleAgent::ResetForRespawn(const FVector& At, int32 HP)
 		C->SetIgnoreLookInput(false);
 	}
 	DeathController.Reset();
-	if (bWasDead) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Respawn, At);
+	if (bWasDead)
+	{
+		ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Respawn, At);
+		UTurtleAudioSubsystem::Play(this, ETurtleSound::Respawn, &At);
+	}
 
 }

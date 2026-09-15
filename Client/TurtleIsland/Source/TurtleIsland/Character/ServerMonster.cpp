@@ -1,4 +1,5 @@
 #include "Character/ServerMonster.h"
+#include "Core/TurtleAudioSubsystem.h"
 #include "Animation/AnimSequence.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Gameplay/HealthComponent.h"
@@ -55,6 +56,8 @@ void AServerMonster::PlayAttack(float Yaw)
 	if (bDying || Health->IsDead()) return;
 	SetActorRotation(FRotator(0.f, Yaw, 0.f));
 	PlayClip(AttackAnimation, false);
+	const FVector At = GetActorLocation();
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::MonsterAttack, &At);
 	bAttacking = true;
 	ActionEndsAt = GetWorld()->GetTimeSeconds() + (AttackAnimation ? AttackAnimation->GetPlayLength() : 0.3f);
 }
@@ -80,6 +83,8 @@ void AServerMonster::HandleDied(AActor* Killer)
 	SetActorEnableCollision(false);
 	GetCharacterMovement()->StopMovementImmediately();
 	PlayClip(DeathAnimation, false);
+	const FVector At = GetActorLocation();
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::MonsterDeath, &At);
 	OnDied();
 	// No GameMode respawn for server-owned NPCs. The registry drops the ID separately.
 	SetLifeSpan((DeathAnimation ? DeathAnimation->GetPlayLength() : 0.f) + 0.25f);

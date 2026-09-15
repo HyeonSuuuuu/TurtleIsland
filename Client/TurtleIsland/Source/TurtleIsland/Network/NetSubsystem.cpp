@@ -16,6 +16,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Gameplay/TurtleVfxActor.h"
+#include "Core/TurtleAudioSubsystem.h"
 #include "Engine/Texture2D.h"
 
 const FName UNetSubsystem::IngameLevelName(TEXT("Lv3_Ingame"));
@@ -540,7 +541,11 @@ void UNetSubsystem::HandleDamageNotify(const TArray<uint8>& RecvData)
 		Health->MaxHP = Pkt->maxHP;
 		OnDamageNumber.Broadcast(Target->GetActorLocation(), Pkt->damage, Pkt->flags);
 		if (Pkt->damage > 0 && !(Pkt->flags & 2))
-			ATurtleVfxActor::Spawn(GetWorld(), Pkt->targetKind == ENTITY_PLAYER ? ETurtleVfx::HitPlayer : ETurtleVfx::Hit, Target->GetActorLocation());
+		{
+			const FVector At = Target->GetActorLocation();
+			ATurtleVfxActor::Spawn(GetWorld(), Pkt->targetKind == ENTITY_PLAYER ? ETurtleVfx::HitPlayer : ETurtleVfx::Hit, At);
+			UTurtleAudioSubsystem::Play(this, Pkt->targetKind == ENTITY_PLAYER ? ETurtleSound::HitPlayer : ETurtleSound::HitMonster, &At);
+		}
 		Health->ApplyServerDamage(Pkt->remainHP, Pkt->damage, Causer);
 	}
 }
@@ -623,7 +628,11 @@ void UNetSubsystem::HandlePlayerState(const TArray<uint8>& Data)
 			Stats->ApplyServerStats(State.level, State.exp, State.expToNext, State.gold);
 		}
 		Agent->GetCharacterMovement()->MaxWalkSpeed = State.moveSpeed;
-		if (bLevelUp) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::LevelUp, Agent->GetActorLocation());
+		if (bLevelUp)
+		{
+			ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::LevelUp, Agent->GetActorLocation());
+			UTurtleAudioSubsystem::Play(this, ETurtleSound::LevelUp);
+		}
 	}
 	OnGameplayStateChanged.Broadcast();
 	for (const FString& Reward : Rewards) OnActionFeedback.Broadcast(Reward);
@@ -642,6 +651,7 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 		case ActionResult::Ok:
 			Message = FString::Printf(TEXT("%s 구매 완료"), *Item);
 			if (const ATurtleAgent* Buyer = FindAgentById(myId)) ATurtleVfxActor::Spawn(GetWorld(), ETurtleVfx::Purchase, Buyer->GetActorLocation());
+			UTurtleAudioSubsystem::Play(this, ETurtleSound::Purchase);
 			break;
 		case ActionResult::NotEnoughGold: Message = TEXT("골드가 부족합니다."); break;
 		case ActionResult::InventoryFull: Message = TEXT("인벤토리에 빈 칸이 없습니다."); break;
@@ -659,7 +669,10 @@ void UNetSubsystem::HandleActionResult(const TArray<uint8>& Data)
 		// The result arrives before the new state, so the slot still holds the used potion.
 		const uint16 Used = PlayerState.items[Result.actionId].itemId;
 		if (const ATurtleAgent* User = FindAgentById(myId); User && (Used == GameplayRules::HealthPotion || Used == GameplayRules::ManaPotion))
+		{
 			ATurtleVfxActor::Spawn(GetWorld(), Used == GameplayRules::HealthPotion ? ETurtleVfx::PotionHP : ETurtleVfx::PotionMP, User->GetActorLocation());
+			UTurtleAudioSubsystem::Play(this, ETurtleSound::Potion);
+		}
 	}
 	switch (Result.result)
 	{
@@ -778,6 +791,7 @@ void UNetSubsystem::HandleQuestState(const TArray<uint8>& Data)
 		bool bWasReady = false;
 		for (int32 j = 0; j < QuestState.count; ++j)
 			bWasReady |= QuestState.quests[j].questId == Quest.questId && QuestState.quests[j].progress >= Quest.goal;
+		if (!bWasReady) UTurtleAudioSubsystem::Play(this, ETurtleSound::QuestReady);
 		if (!bWasReady)
 			EmitChat(FString::Printf(TEXT("[퀘스트] %s 목표 달성 - 촌장에게 보고하세요"), *FClientPacketCodec::DecodeFixedUtf8(Quest.title, QUEST_TITLE_BYTES)));
 	}
@@ -839,6 +853,9 @@ void UNetSubsystem::HandleNpcChat(const TArray<uint8>& RecvData)
 	}
 
 	const FString Say = FClientPacketCodec::DecodeUtf8Payload(RecvData, SC_NPC_CHAT_PACKET_SIZE);
+	// 서버가 대사 끝에 붙이는 퀘스트 표시로 소리를 고른다.
+	UTurtleAudioSubsystem::Play(this, Say.Contains(TEXT("[퀘스트 완료]")) ? ETurtleSound::QuestComplete :
+		Say.Contains(TEXT("[퀘스트 수락]")) ? ETurtleSound::QuestAccept : ETurtleSound::NpcReply);
 	OnNpcChatReceived.Broadcast(Say);
 }
 

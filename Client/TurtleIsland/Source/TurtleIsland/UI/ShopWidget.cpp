@@ -21,6 +21,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/Texture2D.h"
 #include "Network/NetSubsystem.h"
+#include "Core/TurtleAudioSubsystem.h"
 #include "GameplayRules.h"
 #include "UI/ItemTooltipWidget.h"
 #include "Styling/CoreStyle.h"
@@ -220,6 +221,7 @@ void UShopWidget::NativeDestruct()
 		// BP CloseShop 이 RemoveFromParent 로 닫으므로 여기가 창을 닫는 시점이다.
 		Net->SendNpcChatEnd(NpcIndex);
 	}
+	if (GetWorld() && !GetWorld()->bIsTearingDown) UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowClose);
 
 	Super::NativeDestruct();
 }
@@ -250,6 +252,7 @@ void UShopWidget::OpenShop(int32 InNpcIndex)
 		AddSystemLine(FString::Printf(TEXT("상인 호감도 %d / 100 (높을수록 더 깎아준다)"), ShownAffinity));
 	}
 
+	UTurtleAudioSubsystem::Play(this, ETurtleSound::WindowOpen);
 	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 대화 시작 (npcIndex=%d)"), NpcIndex);
 }
 
