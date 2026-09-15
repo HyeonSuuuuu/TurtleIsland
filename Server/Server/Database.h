@@ -24,6 +24,10 @@ public:
 	// 존재하면 비번 검증, 없으면 자동 가입. 성공 시 outAccountId 채움.
 	AuthResult LoginOrRegister(const std::string& loginId, const std::string& password, uint64_t& outAccountId);
 
+	// dbo.CharacterProgress (Sql/CharacterProgress.sql). Load leaves outJson empty for a character never saved.
+	bool LoadCharacter(uint64_t accountId, std::string& outJson);
+	bool SaveCharacter(uint64_t accountId, const std::string& json);
+
 private:
 	void* m_env = nullptr;      // SQLHENV (헤더에 odbc 의존을 두지 않으려 void*)
 	void* m_dbc = nullptr;      // SQLHDBC

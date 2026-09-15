@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "Room.h"
 #include "Globals.h"
+#include "PlayerProgress.h"
 #include "../../../AI/Server/Server/NpcAgent.h"
 #include <stdexcept>
 #include <filesystem>
@@ -12,6 +13,42 @@ static void Check(bool value, const char* message)
 }
 struct NpcMcpTests
 {
+    static bool SameItems(const GameplayRules::PlayerState& a, const GameplayRules::PlayerState& b)
+    {
+        return std::equal(a.items.begin(),a.items.end(),b.items.begin(),[](const auto& x,const auto& y){ return x.itemId==y.itemId && x.count==y.count; });
+    }
+    static void TestProgress()
+    {
+        using namespace GameplayRules;
+        using NpcMcp::Json;
+        Check(g_npcShopConfig.Load("Shop.lua") && g_npcShopConfig.Find(1004) && g_npcShopConfig.Find(1004)->equipment,"Shop.lua equipment for progress");
+        PlayerState played; played.ready=true; played.gold=5000;
+        Check(BuyItem(played,1004,1,2500,&g_npcShopConfig.Find(1004)->stats)==ActionResult::Ok,"equipment bought");
+        RewardKill(played,300,260);
+        played.hp=5; played.items[0].count=1;
+        const auto saved=Json::parse(PlayerProgress::Capture(played,12).dump()); // through text, like the DB
+        PlayerState loaded; int affinity=g_npcShopConfig.affinity.start;
+        PlayerProgress::Apply(loaded,affinity,saved);
+        Check(loaded.level==3 && loaded.exp==played.exp && loaded.expToNext==played.expToNext && loaded.gold==played.gold &&
+            SameItems(loaded,played) && affinity==12,"level, exp, gold, items and affinity survive a save");
+        Check(loaded.maxHP==played.maxHP && loaded.maxMP==played.maxMP && loaded.attack==played.attack && loaded.defense==played.defense &&
+            loaded.moveSpeed==played.moveSpeed && loaded.hp==loaded.maxHP && loaded.mp==loaded.maxMP,"stats rebuilt from level and equipment, full HP/MP");
+
+        auto tampered=saved;
+        tampered["level"]=999; tampered["gold"]=-5; tampered["shop_affinity"]=500;
+        tampered["items"]=Json::array({Json::array({1004,5}),Json::array({9999,1}),Json::array({1,3}),"junk"});
+        PlayerState clamped; int clampedAffinity=30;
+        PlayerProgress::Apply(clamped,clampedAffinity,tampered);
+        Check(clamped.level==PlayerProgress::MaxLevel && clamped.exp==clamped.expToNext && clamped.gold==0 && clampedAffinity==100 &&
+            clamped.items[0].itemId==0 && clamped.items[1].itemId==0 && clamped.items[2].itemId==1 && clamped.items[2].count==3 &&
+            clamped.attack==PlayerState{}.attack+2*(PlayerProgress::MaxLevel-1),"invalid saved values are clamped or dropped");
+
+        PlayerState fresh; int freshAffinity=30;
+        PlayerProgress::Apply(fresh,freshAffinity,Json());
+        Check(fresh.level==1 && fresh.gold==0 && freshAffinity==30 && SameItems(fresh,PlayerState{}),"never-saved character starts new");
+        std::println("PASS: character progress capture/apply round trip, stat rebuild, tamper clamping, new character");
+    }
+
     static void Run()
     {
         using namespace NpcMcp;
@@ -214,6 +251,7 @@ struct NpcMcpTests
         room.Leave(0);
         Check(room.m_npcConversations.empty(),"room leave clears capabilities and relationship session");
         std::println("PASS: MCP lifecycle/pagination, scope, HP privacy, price floor, staged affinity, replay, expiry and agent loop");
+        TestProgress();
     }
 };
 

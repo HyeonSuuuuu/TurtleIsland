@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Session.h"
 #include "../../Common/Protocol.h"
+#include "../../Common/NpcMcp.h"
 
 class User : public Session
 {
@@ -25,6 +26,8 @@ public:
 	void LeaveCurrentRoom(); // called by GameServer::OnClose on disconnect
 
 	std::string GetUserId()    const { return m_userId; }
+	// Character progress loaded from the DB at login; the room applies it at game start (PlayerProgress.h).
+	NpcMcp::Json GetProgress() const { std::lock_guard lock(m_progressMutex); return m_progress; }
 	UserState   GetUserState() const { return m_userState.load(); }
 
 	using PacketHandler = void(User::*)(const Packet&);
@@ -59,7 +62,13 @@ private:
 		Send(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(&pkt), sizeof(T)));
 	}
 
+	void SaveProgress(NpcMcp::Json progress);
+
 	std::optional<uint32_t> m_roomIndex;
+	uint64_t                m_accountId = 0;
+	bool                    m_progressLoaded = false; // never overwrite a save that failed to load
+	mutable std::mutex      m_progressMutex;
+	NpcMcp::Json            m_progress;
 	std::string             m_userId;
 	std::atomic<UserState>  m_userState{ UserState::Login };
 };

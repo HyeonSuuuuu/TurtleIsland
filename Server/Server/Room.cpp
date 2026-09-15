@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "MonsterScript.h"
 #include "ObstacleMap.h"
+#include "PlayerProgress.h"
 #include <cmath>
 #include <random>
 
@@ -44,7 +45,7 @@ RoomEnterResult Room::Enter(uint16_t roomId, uint32_t slotIndex, std::string_vie
 	return RoomEnterResult::Joined;
 }
 
-bool Room::Leave(uint32_t slotIndex)
+bool Room::Leave(uint32_t slotIndex, NpcMcp::Json* progress)
 {
 	std::lock_guard lock(m_mutex);
 
@@ -63,6 +64,12 @@ bool Room::Leave(uint32_t slotIndex)
 	}
 
 	if (!found) return false;
+	if (const auto state = m_playerStates.find(slotIndex); progress && state != m_playerStates.end())
+	{
+		const auto chat = m_npcConversations.find(slotIndex);
+		*progress = PlayerProgress::Capture(state->second,
+			chat != m_npcConversations.end() ? chat->second.relationship.affinity : g_npcShopConfig.affinity.start);
+	}
 	m_playerStates.erase(slotIndex);
 	m_npcConversations.erase(slotIndex);
 	m_pendingAttacks.erase(slotIndex);
@@ -118,7 +125,10 @@ void Room::StartGame()
 	{
 		User* u = g_userPool.Get(m_userSlots[i]);
 		if (!u) continue;
-		m_playerStates[m_userSlots[i]] = GameplayRules::PlayerState{};
+		int affinity = g_npcShopConfig.affinity.start;
+		PlayerProgress::Apply(m_playerStates[m_userSlots[i]], affinity, u->GetProgress());
+		auto& chat = m_npcConversations[m_userSlots[i]];
+		chat.relationship.affinity = chat.proposedRelationship.affinity = affinity;
 		float px = MapSpawn::PLAYER_X + static_cast<float>(i % 2) * 120.0f;
 		float py = MapSpawn::PLAYER_Y + static_cast<float>(i / 2) * 120.0f;
 		g_obstacleMap.SnapToFree(px, py, PlayerRadius);
