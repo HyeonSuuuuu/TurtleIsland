@@ -70,10 +70,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Skill")
 	bool IsMovementLocked() const;
+	/** 이동은 잠겨도 방향키로 몸을 돌릴 수 있는 시전 중인지(GameplayRules::SkillDef::rotateWhileCasting). */
+	bool CanRotateWhileCasting() const;
 	void ResetCast();
 	void ResetPlayback();
 private:
 	double MovementReadyAt = 0.;
+	int32 ActiveSkillId = INDEX_NONE;
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> ActiveSkillMontage;
 	bool bWasAirborne = false;
 	UPROPERTY(Transient) TObjectPtr<UAnimMontage> AirMontage;

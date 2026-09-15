@@ -262,8 +262,9 @@ struct RoomSpawnTests
 			move.x = 51; move.y = 50; move.z = 96;
 			Check(!room.ApplyPlayerMoveLocked(user, move, start + 1) && user.x == 50, "every skill blocks XY from cast start");
 			move.x = 50;
-			Check(room.ApplyPlayerMoveLocked(user, move, start + 2) && user.yaw == 90.f,
-				"stationary updates preserve cast facing");
+			Check(room.ApplyPlayerMoveLocked(user, move, start + 2) && user.yaw == (GameplayRules::Skills[id].rotateWhileCasting ? 0.f : 90.f),
+				"stationary updates preserve cast facing unless the skill allows turning");
+			Check(room.m_pendingAttacks.at(user.GetSlotIndex()).request.yaw == 90.f, "turning never changes the hit direction");
 			move.airborne = 1; move.velocityZ = 300;
 			Check(!room.ApplyPlayerMoveLocked(user, move, start + 3), "every skill blocks a new jump");
 			move.airborne = 0;

@@ -103,6 +103,21 @@ void ULocalMoverComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 			Move->Velocity.Z = VerticalVelocity;
 		}
 		CurrentSpeed2D = 0.f;
+		// 이동은 막혀도 허용된 스킬(E) 시전 중에는 방향키 쪽으로 몸만 돌린다. 판정 방향은 서버가 시전 순간 값으로 고정한다.
+		const UAgentSkillComponent* Skills = OwnerChar->FindComponentByClass<UAgentSkillComponent>();
+		const UAgentMovementInput* In = GetInput();
+		const UHealthComponent* Health = OwnerChar->FindComponentByClass<UHealthComponent>();
+		if (Skills && Skills->CanRotateWhileCasting() && In && !IsLandingLocked() && !(Health && Health->IsDead()))
+		{
+			const FVector2D Dir = In->GetMovementInput();
+			if (!Dir.IsNearlyZero())
+			{
+				const float Rate = OwnerChar->GetCharacterMovement()->RotationRate.Yaw;
+				FRotator Rotation = OwnerChar->GetActorRotation();
+				Rotation.Yaw = FMath::FixedTurn(Rotation.Yaw, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), Rate * DeltaTime);
+				OwnerChar->SetActorRotation(Rotation);
+			}
+		}
 		return;
 	}
 

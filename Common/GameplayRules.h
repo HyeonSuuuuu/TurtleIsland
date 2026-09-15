@@ -7,10 +7,10 @@
 
 namespace GameplayRules
 {
-	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; uint32_t movementLockMs, impactDelayMs; };
+	struct SkillDef { int32_t damage, mana; uint32_t cooldownMs; float range, facingDot; uint32_t movementLockMs, impactDelayMs; bool rotateWhileCasting; };
 	// movementLockMs matches AM_Attack / AM_SkillQ / AM_SkillE at default play rates; the server overrides the rest from Skill.lua.
 	inline std::array<SkillDef, PLAYER_SKILL_COUNT> Skills = {{
-		{20, 0, 500, 180.f, 0.2f, 1500, 300}, {40, 20, 4000, 260.f, -1.f, 1667, 500}, {60, 30, 6000, 350.f, 0.2f, 1300, 400}
+		{20, 0, 500, 180.f, 0.2f, 1500, 300, false}, {40, 20, 4000, 260.f, -1.f, 1667, 500, false}, {60, 30, 6000, 350.f, 0.2f, 1300, 400, true}
 	}};
 	inline constexpr uint16_t HealthPotion = 1, ManaPotion = 2;
 	inline constexpr uint32_t ItemCooldownMs = 1000;
@@ -32,6 +32,7 @@ namespace GameplayRules
 		bool airborne = false;
 		uint64_t landingReadyAt = 0;
 		uint64_t castReadyAt = 0;
+		uint16_t castSkillId = 0; // facing may follow input during this cast if Skills[castSkillId].rotateWhileCasting
 		uint64_t respawnReadyAt = 0;
 		uint32_t lifeId = 0;
 	};
@@ -51,6 +52,7 @@ namespace GameplayRules
 		state.mp -= Skills[id].mana;
 		state.skillReadyAt[id] = now + Skills[id].cooldownMs;
 		state.castReadyAt = now + Skills[id].movementLockMs;
+		state.castSkillId = id;
 		return ActionResult::Ok;
 	}
 	inline ActionResult UseItem(PlayerState& state, const CS_UseItem& request, uint64_t now)

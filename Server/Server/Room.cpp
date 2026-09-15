@@ -614,7 +614,7 @@ bool Room::ApplyPlayerMoveLocked(User& user, const CS_Move& request, uint64_t no
 	if (state.airborne && !request.airborne) state.landingReadyAt = now + GameplayRules::LandingRecoveryMs;
 	credit.distance -= distance;
 	user.x = request.x; user.y = request.y;
-	if (!casting) user.yaw = request.yaw;
+	if (!casting || GameplayRules::Skills[state.castSkillId].rotateWhileCasting) user.yaw = request.yaw; // hit direction stays the cast yaw
 	state.z = request.z; state.velocityZ = request.velocityZ; state.airborne = request.airborne != 0;
 	return true;
 }
