@@ -26,6 +26,7 @@
 #include "Network/NetSubsystem.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+#include "UI/ItemTooltipWidget.h"
 
 UQuickSlotButton::UQuickSlotButton() { InitIsFocusable(false); }
 
@@ -125,6 +126,7 @@ void UMainHUDWidget::SetupSlots()
 		Grid->AddChildToUniformGrid(Button, Row, Column);
 		Overlay->SetVisibility(ESlateVisibility::HitTestInvisible);
 		SlotButtons.Add(Button); SlotIcons.Add(Icon); SlotCounts.Add(Count);
+		SlotTooltips.Add(CreateWidget<UItemTooltipWidget>(this));
 		SetText(*FString::Printf(TEXT("%sKey"), Names[i]), FString::FromInt(i + 1));
 	}
 	const TCHAR* SkillNames[] = {TEXT("SkillLMB"), TEXT("SkillQ"), TEXT("SkillE")};
@@ -187,7 +189,9 @@ void UMainHUDWidget::RefreshState()
 		if (Texture) SlotIcons[i]->SetBrushFromTexture(Texture, false);
 		SlotCounts[i]->SetText(Item.count > 1 || Item.itemId == GameplayRules::HealthPotion || Item.itemId == GameplayRules::ManaPotion
 			? FText::AsNumber(Item.count) : FText::GetEmpty());
-		SlotButtons[i]->SetToolTipText(FText::FromString(Item.count ? Net->DescribeShopItem(Item.itemId) : TEXT("Empty")));
+		const bool bPotion = Item.itemId == GameplayRules::HealthPotion || Item.itemId == GameplayRules::ManaPotion;
+		if (Item.count) SlotTooltips[i]->SetItem(Net, Item.itemId, Texture, bPotion ? FString::Printf(TEXT("%d키 또는 클릭으로 사용"), i + 1) : FString());
+		SlotButtons[i]->SetToolTip(Item.count ? SlotTooltips[i] : nullptr);
 	}
 	if (!State) DamagePopups.Reset();
 }

@@ -694,25 +694,6 @@ FString UNetSubsystem::GetShopItemName(int32 ItemId) const
 	return Product ? FClientPacketCodec::DecodeFixedUtf8(Product->name, sizeof(Product->name)) : FString::Printf(TEXT("아이템 %d"), ItemId);
 }
 
-FString UNetSubsystem::DescribeShopItem(int32 ItemId) const
-{
-	FString Info = GetShopItemName(ItemId);
-	if (ItemId == GameplayRules::HealthPotion) return Info + TEXT("\nHP +50");
-	if (ItemId == GameplayRules::ManaPotion) return Info + TEXT("\nMP +50");
-	const ShopProduct* Product = FindShopProduct(ItemId);
-	if (!Product) return Info;
-	Info += TEXT("\n장비 (들고 있으면 적용)");
-	const auto AddStat = [&Info](const TCHAR* Label, int32 Value)
-	{
-		if (Value) Info += FString::Printf(TEXT("\n%s %s%d"), Label, Value > 0 ? TEXT("+") : TEXT(""), Value);
-	};
-	AddStat(TEXT("체력"), Product->hp);
-	AddStat(TEXT("공격력"), Product->attack);
-	AddStat(TEXT("방어력"), Product->defense);
-	AddStat(TEXT("이동속도"), Product->moveSpeed);
-	return Info;
-}
-
 int32 UNetSubsystem::ItemIdFromIcon(const FString& TextureName)
 {
 	if (TextureName.Contains(TEXT("PotionRed"))) return GameplayRules::HealthPotion;

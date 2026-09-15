@@ -189,8 +189,6 @@ public:
 	// Server catalog entry (price, quote, equipment stats, name). Null until SC_SHOP_PRICES arrives.
 	const ShopProduct* FindShopProduct(int32 ItemId) const;
 	FString GetShopItemName(int32 ItemId) const;
-	// "이름\n효과" for tooltips.
-	FString DescribeShopItem(int32 ItemId) const;
 	// Potion icons (PotionRed/PotionBlue) and T_UI_ShopItem_<id>_* map to item ids; 0 otherwise.
 	static int32 ItemIdFromIcon(const FString& TextureName);
 	UPROPERTY(BlueprintAssignable, Category="Shop")
