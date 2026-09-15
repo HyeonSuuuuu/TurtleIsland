@@ -120,6 +120,11 @@ private:
 	std::mutex mutex_;
 };
 
+// 31B 는 답 앞에 thought 채널을 여는데, 빈 thought 블록을 미리 넣어 두면 추론 없이 바로 답한다.
+// https://ai.google.dev/gemma/docs/capabilities/thinking
+constexpr const char* kGenerationPrefix = "<|turn>model\n<|channel>thought\n<channel|>";
+constexpr int kPrefillChunkTokens = 512; // 큰 모델의 프리필 작업 버퍼를 줄인다
+
 constexpr int kContextTokensPerSeq = 8192;
 constexpr int kMaxBatchSize = 4;
 constexpr int kTotalContextTokens = kContextTokensPerSeq * kMaxBatchSize;
@@ -258,6 +263,7 @@ std::string StripLeakedReasoning(std::string text)
 // Gemma4 control/channel 마커 정리(개별 마커 제거).
 std::string CleanGemmaControlText(std::string text)
 {
+	RemoveAllOccurrences(text, "<|think|>");
 	RemoveAllOccurrences(text, "<|channel>thought");
 	RemoveAllOccurrences(text, "<|channel|>thought");
 	RemoveAllOccurrences(text, "<channel>thought");
@@ -1096,7 +1102,7 @@ void HandleClient(
 std::string ResolveModelPath()
 {
 	namespace fs = std::filesystem;
-	constexpr auto filename = "gemma-4-E4B-it-Q4_K_M.gguf";
+	constexpr auto filename = "gemma-4-31B-it-Q8_0.gguf";
 	std::vector<fs::path> candidates;
 	auto add = [&](const fs::path& path)
 	{
@@ -1202,6 +1208,23 @@ int main(int argc, char** argv)
 
 	llama_model_params model_params = llama_model_default_params();
 	model_params.n_gpu_layers = 99;
+	// GPU 가 여러 장이면 레이어를 고르게 나눈다(31B 는 한 장에 안 들어간다). 한 장이면 기본값 그대로.
+	std::vector<ggml_backend_dev_t> gpuDevices;
+	for (size_t i = 0; i < ggml_backend_dev_count(); ++i)
+	{
+		ggml_backend_dev_t device = ggml_backend_dev_get(i);
+		if (device && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_GPU) gpuDevices.push_back(device);
+	}
+	std::vector<float> gpuSplit(llama_max_devices(), 0.f);
+	if (gpuDevices.size() > 1 && gpuSplit.size() >= gpuDevices.size())
+	{
+		gpuDevices.push_back(nullptr); // devices is a null-terminated list
+		for (size_t i = 0; i + 1 < gpuDevices.size(); ++i) gpuSplit[i] = 1.f;
+		model_params.devices = gpuDevices.data();
+		model_params.split_mode = LLAMA_SPLIT_MODE_LAYER;
+		model_params.tensor_split = gpuSplit.data();
+		Log::Info("GPU layout: {} devices, layer split evenly (weights and layer KV caches)", gpuDevices.size() - 1);
+	}
 
 	Log::Info("GGUF를 로딩중...");
 	Log::Info("Loading .gguf file...");
@@ -1224,8 +1247,14 @@ int main(int argc, char** argv)
 
 	llama_context_params ctx_params = llama_context_default_params();
 	ctx_params.n_ctx = kTotalContextTokens;
-	ctx_params.n_batch = kTotalContextTokens;
-	ctx_params.n_ubatch = 512;
+	ctx_params.n_batch = kPrefillChunkTokens;
+	ctx_params.n_ubatch = kPrefillChunkTokens;
+	// 시퀀스들이 KV 를 한 풀에서 나눠 쓴다(GPU 분할과는 무관). 나머지는 큰 모델 메모리를 아끼는 설정.
+	ctx_params.kv_unified = true;
+	ctx_params.swa_full = false;
+	ctx_params.type_k = GGML_TYPE_F16;
+	ctx_params.type_v = GGML_TYPE_F16;
+	ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
 
 	// (A) 배칭 필수: 시퀀스를 최대 kMaxBatchSize개까지 동시 보유.
 	//     이게 1(기본값)이면 배칭 2번째 시퀀스에서 invalid seq_id 크래시.
@@ -1632,7 +1661,7 @@ std::string FormatPromptForModel(
 
 			// E4B/E2B 생성 프롬프트: <|turn>model\n 으로만 끝낸다.
 			// (모델 내장 템플릿도 정확히 여기서 끝남 — 덤프로 확인됨)
-			prompt += "<|turn>model\n";
+			prompt += kGenerationPrefix;
 
 			return prompt;
 		};
@@ -1892,58 +1921,48 @@ std::vector<std::string> GenerateBatchResponses(
 
 	promptBatch.n_tokens = cursor;
 
-	if (llama_decode(ctx, promptBatch) != 0)
+	// 프롬프트를 kPrefillChunkTokens 씩 나눠 넣는다(작업 버퍼 절약). 모든 토큰은 그대로 평가된다.
+	int activeCount = 0;
+	for (int32_t offset = 0; offset < cursor; offset += kPrefillChunkTokens)
 	{
-		Log::Error("llama_decode failed on batch prompt.");
-
-		llama_batch_free(promptBatch);
-
-		for (auto& state : states)
+		llama_batch chunk = promptBatch;
+		chunk.n_tokens = std::min(kPrefillChunkTokens, cursor - offset);
+		chunk.token = promptBatch.token + offset;
+		chunk.pos = promptBatch.pos + offset;
+		chunk.n_seq_id = promptBatch.n_seq_id + offset;
+		chunk.seq_id = promptBatch.seq_id + offset;
+		chunk.logits = promptBatch.logits + offset;
+		if (llama_decode(ctx, chunk) != 0)
 		{
-			if (state.sampler != nullptr)
+			Log::Error("llama_decode failed on batch prompt chunk (offset={}).", offset);
+			llama_batch_free(promptBatch);
+			for (auto& state : states)
 			{
-				llama_sampler_free(state.sampler);
-				state.sampler = nullptr;
+				if (state.sampler != nullptr) { llama_sampler_free(state.sampler); state.sampler = nullptr; }
 			}
+			return outputs;
 		}
 
-		return outputs;
+		// 로짓은 방금 넣은 청크의 것만 살아 있다. 그 시퀀스의 마지막 프롬프트 토큰이 들어간 청크에서 첫 토큰을 뽑는다.
+		for (auto& state : states)
+		{
+			if (state.failed || state.sampler == nullptr ||
+				state.lastLogitIndex < offset || state.lastLogitIndex >= offset + chunk.n_tokens) continue;
+			const llama_token newToken = llama_sampler_sample(state.sampler, ctx, state.lastLogitIndex - offset);
+			state.active = !llama_vocab_is_eog(vocab, newToken);
+			if (!state.active) continue;
+			// 토큰을 즉시 문자열로 바꾸지 않고 ID만 모은다(디코딩은 생성이 끝난 뒤 한 번에).
+			state.genTokens.push_back(newToken);
+			++totalGenTokens;
+			state.pendingToken = newToken;
+			++activeCount;
+		}
 	}
 
 	llama_batch_free(promptBatch);
 
 	// prefill 완료 시점
 	const auto tPrefillEnd = std::chrono::high_resolution_clock::now();
-
-	int activeCount = 0;
-
-	for (int i = 0; i < batchSize; ++i)
-	{
-		auto& state = states[i];
-
-		if (state.failed || state.sampler == nullptr || state.lastLogitIndex < 0)
-		{
-			state.active = false;
-			continue;
-		}
-
-		llama_token newToken =
-			llama_sampler_sample(state.sampler, ctx, state.lastLogitIndex);
-
-		if (llama_vocab_is_eog(vocab, newToken))
-		{
-			state.active = false;
-			continue;
-		}
-
-		// 토큰을 즉시 문자열로 바꾸지 않고 ID만 모은다.
-		// (글자 깨짐 방지 — 디코딩은 생성이 끝난 뒤 TokensToString로 한 번에)
-		state.genTokens.push_back(newToken);
-		++totalGenTokens;
-		state.pendingToken = newToken;
-		state.active = true;
-		++activeCount;
-	}
 
 	llama_batch genBatch = llama_batch_init(kMaxBatchSize, 0, 1);
 
