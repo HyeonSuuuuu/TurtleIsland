@@ -19,8 +19,10 @@
 #include "TimerManager.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/Texture2D.h"
 #include "Network/NetSubsystem.h"
 #include "GameplayRules.h"
+#include "UI/ItemTooltipWidget.h"
 #include "Styling/CoreStyle.h"
 #include "TurtleIsland.h"
 
@@ -106,11 +108,15 @@ void UShopWidget::NativeOnInitialized()
 		if (!Product || Wrapped.Contains(Product)) continue;
 		int32 ItemId = 0, ItemIcons = 0;
 		UTextBlock* Price = nullptr;
+		UTexture2D* IconTexture = nullptr;
 		UWidgetTree::ForWidgetAndChildren(Product, [&](UWidget* Child)
 		{
 			if (const UImage* Icon = Cast<UImage>(Child))
-				if (const UObject* Texture = Icon->GetBrush().GetResourceObject())
-					if (const int32 Id = UNetSubsystem::ItemIdFromIcon(Texture->GetName())) { ItemId = Id; ++ItemIcons; }
+				if (UObject* Texture = Icon->GetBrush().GetResourceObject())
+					if (const int32 Id = UNetSubsystem::ItemIdFromIcon(Texture->GetName()))
+					{
+						ItemId = Id; ++ItemIcons; IconTexture = Cast<UTexture2D>(Texture);
+					}
 			if (UTextBlock* Text = Cast<UTextBlock>(Child)) Price = Text;
 		});
 		UPanelWidget* Parent = Product->GetParent();
@@ -124,6 +130,10 @@ void UShopWidget::NativeOnInitialized()
 		ProductButtons.Add(Button);
 		ProductPrices.Add(Price);
 		ProductPriceColours.Add(Price ? Price->GetColorAndOpacity() : FSlateColor());
+		UItemTooltipWidget* Tooltip = CreateWidget<UItemTooltipWidget>(this);
+		Button->SetToolTip(Tooltip);
+		ProductTooltips.Add(Tooltip);
+		ProductIcons.Add(IconTexture);
 	}
 	UE_LOG(LogTurtleIsland, Log, TEXT("[Shop] 상품 칸 %d개를 구매 버튼으로 연결"), ProductButtons.Num());
 }
@@ -498,10 +508,9 @@ void UShopWidget::RefreshProducts()
 				: Quote ? FString::Printf(TEXT("%dG x%d"), Price, Quote) : FString::Printf(TEXT("%dG"), Price)));
 			Text->SetColorAndOpacity(Quote ? QuotePriceColour : ProductPriceColours[i]);
 		}
-		const FString Info = Net ? Net->DescribeShopItem(ItemId) : FString();
-		ProductButtons[i]->SetToolTipText(FText::FromString(Quote
-			? FString::Printf(TEXT("%s\n흥정 가격 %dG, %d개 남음\n클릭하면 1개 구매"), *Info, Price, Quote)
-			: FString::Printf(TEXT("%s\n클릭하면 1개 구매"), *Info)));
+		ProductTooltips[i]->SetItem(Net, ItemId, ProductIcons[i], !Product ? FString(TEXT("상점 정보를 받는 중"))
+			: Quote ? FString::Printf(TEXT("흥정 가격 %dG · %d개 남음\n클릭하면 1개 구매"), Price, Quote)
+			: FString::Printf(TEXT("%dG · 클릭하면 1개 구매"), Price));
 		ProductButtons[i]->SetIsEnabled(Product && State && State->hp > 0 && State->gold >= Price);
 	}
 }

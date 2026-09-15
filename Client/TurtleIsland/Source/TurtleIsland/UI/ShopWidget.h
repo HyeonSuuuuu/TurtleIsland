@@ -214,4 +214,8 @@ private:
 	UPROPERTY()
 	TArray<TObjectPtr<UTextBlock>> ProductPrices;
 	TArray<FSlateColor> ProductPriceColours;
+	UPROPERTY()
+	TArray<TObjectPtr<class UItemTooltipWidget>> ProductTooltips;
+	UPROPERTY()
+	TArray<TObjectPtr<class UTexture2D>> ProductIcons;
 };
