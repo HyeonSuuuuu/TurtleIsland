@@ -57,6 +57,14 @@ namespace
 		{ETurtleVfx::Purchase, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {0, 0, 60}, 0, 0.7f, 50, 110, 1, 200, 90},
 		{ETurtleVfx::Purchase, TEXT("T_VFX_Star"), Gold, EFace::Billboard, {30, -30, 40}, 0.12f, 0.6f, 40, 90, 1, -200, 110},
 		{ETurtleVfx::Purchase, TEXT("T_VFX_Glow"), Gold * 0.4f, EFace::Billboard, {0, 0, 40}, 0, 0.5f, 80, 160},
+
+		// Level-up style charge on the caster, then a shockwave at the 0.4s impact (Skill.lua E hitDelayMs).
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple, EFace::Ground, {0, 0, -90}, 0, 0.5f, 60, 240},
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Glow"), Purple * 0.4f, EFace::Billboard, {0, 0, 40}, 0, 0.7f, 150, 200, 2.6f},
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Star"), Purple, EFace::Billboard, {0, 0, 60}, 0.05f, 0.7f, 60, 110, 1, 180, 120},
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple, EFace::Ground, {120, 0, -90}, 0.38f, 0.7f, 120, 900},
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Ring"), Purple * 0.6f, EFace::Ground, {120, 0, -90}, 0.5f, 0.7f, 100, 650},
+		{ETurtleVfx::SkillE, TEXT("T_VFX_Burst"), Purple * 0.7f, EFace::Billboard, {150, 0, 20}, 0.38f, 0.35f, 80, 300},
 	};
 }
 
