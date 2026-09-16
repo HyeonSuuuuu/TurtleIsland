@@ -2,6 +2,7 @@
 #include "../../../Common/NpcMcp.h"
 #include <functional>
 #include <algorithm>
+#include <atomic>
 #include <stdexcept>
 
 namespace NpcAgent
@@ -76,15 +77,22 @@ Do not include player IDs, NPC IDs, context tokens or extra arguments. At most s
 class Client
 {
     std::string context;
+    // Every client gets its own id space. Ids used to restart at 1 each turn, so a reply that arrived
+    // late could match a later turn's request and be handed to the wrong caller.
+    std::string idPrefix;
     int nextId=1;
     std::function<Json(const Json&)> transport;
 public:
-    Client(std::string token, std::function<Json(const Json&)> send) : context(std::move(token)),transport(std::move(send)) {}
+    Client(std::string token, std::function<Json(const Json&)> send) : context(std::move(token)),transport(std::move(send))
+    {
+        static std::atomic<uint64_t> sequence{0};
+        idPrefix=context+":"+std::to_string(sequence.fetch_add(1)+1)+":";
+    }
     Json Request(const std::string& method, Json params=Json::object(), bool notification=false)
     {
         params["_meta"]={{"turtleIsland/context",context}};
         Json request={{"jsonrpc","2.0"},{"method",method},{"params",params}};
-        const auto id=context+":"+std::to_string(nextId++);
+        const auto id=idPrefix+std::to_string(nextId++);
         if (!notification) request["id"]=id;
         if (request.dump().size()>NpcMcp::MaxMessageBytes) throw std::runtime_error("MCP request too large");
         const auto reply=transport(request);

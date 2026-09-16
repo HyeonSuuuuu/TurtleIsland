@@ -119,6 +119,7 @@ struct NpcMcpTests
             return std::string(R"({"say":"Have a rest."})");
         });
         Check(step==2 && reply=="Have a rest.","inference-tool-reinference loop");
+        chat.Begin(std::string(32,'c'),"second turn",now);
         {
             int serverCalls=0, inferences=0, sayOnlySteps=0;
             std::string lastPrompt;
@@ -136,6 +137,7 @@ struct NpcMcpTests
             Check(lastPrompt.find("You already had this result")!=std::string::npos,"a repeat gets the earlier result back, not a refusal");
             Check(lastPrompt.find(R"("arguments":{})")!=std::string::npos,"observations show the arguments used");
         }
+        chat.Begin(std::string(32,'c'),"second turn",now);
         {
             // A repeat reached no server, so it must not spend budget: a model that stumbles on a
             // preloaded list still has the steps it needs to reach an acting tool.
@@ -153,6 +155,26 @@ struct NpcMcpTests
                 return std::string(R"({"tool":"get_player_condition","arguments":{}})");
             });
             Check(stumbled=="Fine." && conditionCalls==1,"repeats leave room for a later tool call");
+        }
+        {
+            // Ids must never repeat across turns: a reply that arrives late would otherwise match a
+            // later turn's request and be handed to the wrong caller.
+            std::vector<std::string> ids;
+            const auto echo=[&](const Json& request)
+            {
+                if (!request.contains("id")) return Json{};
+                ids.push_back(request["id"].dump());
+                return Json{{"jsonrpc","2.0"},{"id",request["id"]},{"result",Json::object()}};
+            };
+            for (int turn=0;turn<2;++turn)
+            {
+                NpcAgent::Client turnClient(chat.context,echo);
+                turnClient.Request("tools/call",{{"name","get_relationship"}});
+                turnClient.Request("tools/call",{{"name","get_relationship"}});
+            }
+            auto sorted=ids;
+            std::sort(sorted.begin(),sorted.end());
+            Check(ids.size()==4 && std::unique(sorted.begin(),sorted.end())==sorted.end(),"MCP ids are unique across turns");
         }
         NpcAgent::Memory memory;
         memory.turns=Json::array({{{"customer","oldest-turn"},{"npc","a"}},{{"customer","middle-turn"},{"npc","b"}},{{"customer","newest-turn"},{"npc","c"}}});

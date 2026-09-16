@@ -921,9 +921,9 @@ private:
 class SharedAiLink
 {
 public:
-	explicit SharedAiLink(SOCKET socket) : socket_(socket) {}
+	SharedAiLink(SOCKET socket, int clientId) : socket_(socket), clientId_(clientId) {}
 	bool Closed() const { return closed_.load(); }
-	void Close()
+	void Close(const char* why = "unspecified")
 	{
 		// 끊김 신호를 놓치지 않도록 대기 조건과 같은 잠금으로 묶는다.
 		bool first;
@@ -931,7 +931,12 @@ public:
 			std::lock_guard<std::mutex> lock(replyMutex_);
 			first = !closed_.exchange(true);
 		}
-		if (first) shutdown(socket_, SD_BOTH);
+		if (first)
+		{
+			// One close kills every conversation on this link, so it must never be silent.
+			Log::Warning("[Link {}] closing: {}", clientId_, why);
+			shutdown(socket_, SD_BOTH);
+		}
 		replyCondition_.notify_all();
 	}
 	template<class Writer> bool Send(Writer writer)
@@ -939,17 +944,24 @@ public:
 		std::lock_guard<std::mutex> lock(sendMutex_);
 		if (Closed()) return false;
 		if (writer(socket_)) return true;
-		Close();
+		Close("send failed");
 		return false;
 	}
 	void Deliver(const NpcMcp::Json& response)
 	{
 		std::lock_guard<std::mutex> lock(replyMutex_);
-		if (waiting_ && !ready_ && response.is_object() && response.contains("id") && response["id"] == expectedId_)
+		const bool usable = response.is_object() && response.contains("id");
+		if (waiting_ && !ready_ && usable && response["id"] == expectedId_)
 		{
 			reply_ = response; ready_ = true;
 			replyCondition_.notify_one();
+			return;
 		}
+		// A dropped reply is how the agent silently stops working, so say exactly why it was dropped.
+		Log::Warning("[Link {}] MCP reply dropped ({}): id={} expected={}", clientId_,
+			!usable ? "not a response object" : !waiting_ ? "nobody waiting" : ready_ ? "already answered" : "id mismatch",
+			usable ? response["id"].dump() : std::string("-"),
+			waiting_ ? expectedId_.dump() : std::string("-"));
 	}
 	NpcMcp::Json Exchange(const NpcMcp::Json& request)
 	{
@@ -965,30 +977,39 @@ public:
 		std::memcpy(data.data(), &header, sizeof(header));
 		std::memcpy(data.data() + sizeof(header), body.data(), body.size());
 		const bool expectsReply = request.contains("id");
+		const auto method = request.value("method", std::string{});
+		const auto idText = expectsReply ? request["id"].dump() : std::string("-");
 		{
 			std::lock_guard<std::mutex> lock(replyMutex_);
 			waiting_ = expectsReply; ready_ = false;
 			if (expectsReply) expectedId_ = request["id"];
 		}
+		Log::Info("[Link {}] MCP -> {} id={} ({} bytes)", clientId_, method, idText, body.size());
 		if (!Send([&](SOCKET socket) { return SendAllBytes(socket, data.data(), static_cast<int>(data.size())); }))
 			throw std::runtime_error("MCP send failed");
 		if (!expectsReply) return nullptr;
+		const auto sentAt = std::chrono::steady_clock::now();
 		std::unique_lock<std::mutex> lock(replyMutex_);
 		const bool signaled = replyCondition_.wait_for(lock, std::chrono::seconds(5),
 			[this] { return ready_ || Closed(); });
 		waiting_ = false;
+		const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - sentAt).count();
 		if (!signaled)
 		{
+			// Only this turn fails. A late reply carries this request's id, which no later request
+			// reuses, so Deliver drops it instead of handing it to the wrong caller.
 			lock.unlock();
-			// 늦게 온 답이 같은 id 로 다음 호출에 붙는 일을 막는다.
-			Close();
+			Log::Error("[Link {}] MCP timeout after {} ms: {} id={} - the game server never answered", clientId_, waited, method, idText);
 			throw std::runtime_error("MCP response timeout");
 		}
 		if (Closed()) throw std::runtime_error("MCP disconnected");
+		Log::Info("[Link {}] MCP <- {} id={} in {} ms", clientId_, method, idText, waited);
 		return std::move(reply_);
 	}
 private:
 	SOCKET socket_;
+	int clientId_;
 	std::atomic<bool> closed_{false};
 	std::mutex sendMutex_, rpcMutex_, replyMutex_;
 	std::condition_variable replyCondition_;
@@ -1123,20 +1144,24 @@ void HandleClient(SOCKET clientSocket, int clientId, AiBatchWorkerQueue& aiQueue
 	} guard{clientSocket, activeClientCount};
 	const DWORD sendTimeout = 5000;
 	setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&sendTimeout), sizeof(sendTimeout));
-	SharedAiLink link(clientSocket);
+	SharedAiLink link(clientSocket, clientId);
 	try
 	{
 		ClientConversationState state;
 		ConversationWorkQueue jobs;
 		// 예외로 빠져나갈 때도 jobs/state 보다 먼저 돌아 대기 중인 작업을 깨운다.
-		struct LinkGuard { SharedAiLink& link; ~LinkGuard() { link.Close(); } } linkGuard{link};
+		struct LinkGuard { SharedAiLink& link; ~LinkGuard() { link.Close("client scope ended"); } } linkGuard{link};
 		std::string stream;
 		char buffer[kRecvBufferSize];
 		Log::Info("Client connected. clientId={}", clientId);
 		while (!link.Closed())
 		{
 			const auto received = recv(clientSocket, buffer, sizeof(buffer), 0);
-			if (received <= 0) break;
+			if (received <= 0)
+			{
+				Log::Info("[Link {}] recv ended ({})", clientId, received == 0 ? "peer closed" : "socket error");
+				break;
+			}
 			stream.append(buffer, received);
 			while (!link.Closed() && stream.size() >= sizeof(PacketHeader))
 			{
@@ -1149,7 +1174,11 @@ void HandleClient(SOCKET clientSocket, int clientId, AiBatchWorkerQueue& aiQueue
 				stream.erase(0, header.size);
 				if (header.id == static_cast<uint16_t>(PACKET_ID::SA_MCP))
 				{
-					link.Deliver(NpcMcp::Json::parse(packet.substr(sizeof(PacketHeader)), nullptr, false));
+					const auto payload = packet.substr(sizeof(PacketHeader));
+					auto response = NpcMcp::Json::parse(payload, nullptr, false);
+					if (response.is_discarded())
+						Log::Warning("[Link {}] SA_MCP payload is not JSON ({} bytes)", clientId, payload.size());
+					link.Deliver(response);
 					continue;
 				}
 				if (header.id != static_cast<uint16_t>(PACKET_ID::SA_AI) &&
@@ -1172,10 +1201,15 @@ void HandleClient(SOCKET clientSocket, int clientId, AiBatchWorkerQueue& aiQueue
 					if (conversation.size() != 32) throw std::runtime_error("Invalid conversation id");
 					key = "agent:" + conversation;
 				}
-				if (!jobs.Submit(key, [&, request, text]
+				Log::Info("[Link {}] frame id={} -> lane {} ({} byte body)", clientId, header.id, key, text.size());
+				if (!jobs.Submit(key, [&, request, text, key]
 				{
+					const auto started = std::chrono::steady_clock::now();
 					try { ProcessClientRequest(link, state, aiQueue, clientId, request, text); }
-					catch (...) { link.Close(); throw; }
+					catch (...) { link.Close("request handler threw"); throw; }
+					Log::Info("[Link {}] lane {} done in {} ms", clientId, key,
+						std::chrono::duration_cast<std::chrono::milliseconds>(
+							std::chrono::steady_clock::now() - started).count());
 				}))
 					throw std::runtime_error("AI connection queue full (128 outstanding requests)");
 			}
@@ -1183,7 +1217,7 @@ void HandleClient(SOCKET clientSocket, int clientId, AiBatchWorkerQueue& aiQueue
 	}
 	catch (const std::exception& e) { Log::Warning("Client {} stopped: {}", clientId, e.what()); }
 	catch (...) { Log::Warning("Client {} stopped after an unexpected error", clientId); }
-	link.Close();
+	link.Close("client thread ending");
 	Log::Info("Client thread ended. clientId={}", clientId);
 }
 
