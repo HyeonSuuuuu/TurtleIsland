@@ -19,6 +19,7 @@ public:
 	void Stop();
 
 	// AI 서버로 아웃바운드 연결(완료키 = AI_ID). 실패해도 서버는 계속(NpcChat만 비활성).
+	// 한 번 주소를 받으면 끊길 때마다 배경에서 다시 붙는다.
 	bool ConnectToAIServer(const std::string& ip, uint16_t port);
 
 	virtual void OnConnect(const uint32_t slotIndex) = 0;
@@ -37,6 +38,7 @@ public:
 private:
 	bool CreateWorkerThread();
 	void WorkerThread(int tid);
+	void AiReconnectThread();
 	void Disconnect(uint32_t index, bool isForce = false);
 
 	SOCKET          m_listenSocket = INVALID_SOCKET;
@@ -51,4 +53,11 @@ private:
 	OverlappedEx m_acceptOverlappeds[ACCEPT_COUNT]{};
 
 	std::unique_ptr<Session> m_aiSession;   // AI 서버 아웃바운드 세션(완료키 AI_ID)
+	// 끊긴 세션은 지우지 않고 보관한다. 워커가 아직 들고 있을 수 있어서, 포인터는 살아 있어야 한다.
+	std::vector<std::unique_ptr<Session>> m_retiredAiSessions;
+	std::mutex       m_aiMutex;             // 워커의 끊김 처리와 재연결 스레드가 같은 세션을 건드린다
+	std::string      m_aiIp;
+	uint16_t         m_aiPort = 0;
+	std::thread      m_aiReconnectThread;
+	std::atomic_bool m_aiReconnectRun = false;
 };
