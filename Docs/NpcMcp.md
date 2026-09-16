@@ -135,7 +135,7 @@ then `models` in the working directory, then the source project's and solution's
 `models`, `x64/Release/models`, and `x64/Debug/models` directories discovered
 through both the executable's and working directory's parent directories.
 The default filename remains
-`gemma-4-31B-it-Q8_0.gguf`; model files are not downloaded or copied by the build.
+`gemma-4-E4B-it-Q4_K_M.gguf`; model files are not downloaded or copied by the build.
 
 Run `Server.exe --check-model-path` to print the resolved file without loading
 the model or opening a listening port. A missing file and a model load failure
