@@ -155,6 +155,19 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
     // The product list is short and needed for most questions, so every turn starts with it (uses one server tool call).
     const auto catalog=client.Request("tools/call",{{"name","get_shop_catalog"},{"arguments",Json::object()}});
     Json observations=Json::array({{{"tool","get_shop_catalog"},{"arguments",Json::object()},{"result",catalog}}});
+    // Read-only lookups the customer's words plainly call for. Fetching them up front costs no inference
+    // step and leaves the model only the acting tools to choose, which small models pick far more reliably.
+    const auto mentions=[&](std::initializer_list<const char*> words)
+    { return std::any_of(words.begin(),words.end(),[&](const char* w){ return speech.find(w)!=std::string::npos; }); };
+    const auto prefetch=[&](const char* name)
+    {
+        observations.push_back({{"tool",name},{"arguments",Json::object()},
+            {"result",client.Request("tools/call",{{"name",name},{"arguments",Json::object()}})}});
+    };
+    if (mentions({"퀘스트","의뢰","임무","부탁","일거리","할 일","사냥","토벌","보상","도와","잡았","처치","끝냈","완료","quest"}))
+        prefetch("get_quests");
+    if (mentions({"몬스터","괴물","마물","사냥","토벌","서식","위험","monster"}))
+        prefetch("get_monster_info");
     const size_t budget=NpcMcp::MaxToolCalls-1;
     Json dialogue=memory.turns;
     for (size_t step=0;step<=budget;++step)
