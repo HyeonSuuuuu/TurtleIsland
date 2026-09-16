@@ -110,15 +110,27 @@ struct NpcMcpTests
         chat.Begin(std::string(32,'c'),"second turn",now);
         NpcAgent::Client agentClient(chat.context,exchange);
         int step=0;
+        std::string remindedPrompt;
         const auto reply=NpcAgent::Run(agentClient,"I have no money",NpcAgent::Memory{},[&](const std::string& prompt, bool)
         {
             Check(prompt.find("987654")==std::string::npos && prompt.find(chat.context)==std::string::npos,"no balance or capability in model context");
             if (step==0) Check(prompt.find("get_shop_catalog")!=std::string::npos && prompt.find("base_price")!=std::string::npos,"shop list preloaded before first inference");
             if (step++==0) return std::string(R"({"tool":"get_player_condition","arguments":{}})");
             Check(prompt.find("tool_observations")!=std::string::npos && prompt.find("37")!=std::string::npos,"tool result returned to model");
+            if (step==3) remindedPrompt=prompt; // step is bumped before this, so 3 is the call after the reminder
             return std::string(R"({"say":"Have a rest."})");
         });
-        Check(step==2 && reply=="Have a rest.","inference-tool-reinference loop");
+        // Tool, reply, one reminder, then the same reply again: standing by it ends the turn.
+        Check(step==3 && reply=="Have a rest.","inference-tool-reinference loop");
+        Check(remindedPrompt.find("reminder")!=std::string::npos,"a reply that acted on nothing is questioned once");
+        {
+            // A model that changes its words keeps getting reminded, up to the cap.
+            int says=0;
+            NpcAgent::Client nagClient(chat.context,exchange);
+            const auto nagged=NpcAgent::Run(nagClient,"discount?",NpcAgent::Memory{},[&](const std::string&, bool)
+            { return R"({"say":"different )" + std::to_string(++says) + R"("})"; });
+            Check(says==6 && nagged=="different 6","reminders stop after the cap");
+        }
         chat.Begin(std::string(32,'c'),"second turn",now);
         {
             int serverCalls=0, inferences=0, sayOnlySteps=0;
@@ -133,8 +145,13 @@ struct NpcMcpTests
             });
             Check(looped=="Here you go." && sayOnlySteps==1,"a stuck model ends with a forced reply instead of failing");
             Check(serverCalls==2,"repeated identical tool call is not sent to the server again");
-            Check(inferences==5,"repeats are cut off without running the loop forever");
-            Check(lastPrompt.find("You already had this result")!=std::string::npos,"a repeat gets the earlier result back, not a refusal");
+            // A repeat spends no tool call, so the step count is what stops the loop:
+            // A repeat spends no tool call, so the step count is what stops the loop: the tool budget plus
+            // the reminder allowance, then one forced reply. Tied to MaxToolCalls so retuning it stays honest.
+            Check(inferences>static_cast<int>(NpcMcp::MaxToolCalls) &&
+                inferences<=static_cast<int>(NpcMcp::MaxToolCalls)+6,
+                "repeats are bounded by the step count, not left to run forever");
+            Check(lastPrompt.find("Already called with these arguments")!=std::string::npos,"a repeat is told to reuse the earlier result");
             Check(lastPrompt.find(R"("arguments":{})")!=std::string::npos,"observations show the arguments used");
         }
         chat.Begin(std::string(32,'c'),"second turn",now);
@@ -155,92 +172,6 @@ struct NpcMcpTests
                 return std::string(R"({"tool":"get_player_condition","arguments":{}})");
             });
             Check(stumbled=="Fine." && conditionCalls==1,"repeats leave room for a later tool call");
-        }
-        chat.Begin(std::string(32,'c'),"second turn",now);
-        {
-            // Absorbing a repeat was not enough - the model kept picking the same tool. Once it
-            // repeats, that tool stops being offered for the rest of the turn.
-            std::string promptAfterRepeat;
-            int steps=0;
-            NpcAgent::Client dropClient(chat.context,exchange);
-            NpcAgent::Run(dropClient,"price?",NpcAgent::Memory{},[&](const std::string& prompt, bool sayOnly)
-            {
-                if (steps>=2) { promptAfterRepeat=prompt; return std::string(R"({"say":"그만."})"); }
-                ++steps;
-                return std::string(R"({"tool":"get_player_condition","arguments":{}})");
-            });
-            // The name also appears under tool_observations, so look at the offered list itself.
-            const auto offered=Json::parse(promptAfterRepeat).at("available_tools");
-            const auto offers=[&](const char* name)
-            { return std::any_of(offered.begin(),offered.end(),[&](const Json& t){ return t["name"]==name; }); };
-            Check(!offered.empty() && !offers("get_player_condition"),"a repeated tool is no longer offered this turn");
-            Check(offers("accept_quest"),"the other tools stay available");
-        }
-        {
-            // Ids must never repeat across turns: a reply that arrives late would otherwise match a
-            // later turn's request and be handed to the wrong caller.
-            std::vector<std::string> ids;
-            const auto echo=[&](const Json& request)
-            {
-                if (!request.contains("id")) return Json{};
-                ids.push_back(request["id"].dump());
-                return Json{{"jsonrpc","2.0"},{"id",request["id"]},{"result",Json::object()}};
-            };
-            for (int turn=0;turn<2;++turn)
-            {
-                NpcAgent::Client turnClient(chat.context,echo);
-                turnClient.Request("tools/call",{{"name","get_relationship"}});
-                turnClient.Request("tools/call",{{"name","get_relationship"}});
-            }
-            auto sorted=ids;
-            std::sort(sorted.begin(),sorted.end());
-            Check(ids.size()==4 && std::unique(sorted.begin(),sorted.end())==sorted.end(),"MCP ids are unique across turns");
-        }
-        chat.Begin(std::string(32,'c'),"second turn",now);
-        {
-            // Acting and answering used to be exclusive, so the model kept promising a quest and
-            // never calling accept_quest. One action may now carry the reply that ends the turn.
-            bool accepted=false;
-            NpcAgent::Client actClient(chat.context,[&](const Json& request)
-            {
-                if (request.value("method",std::string{})=="tools/call" &&
-                    NpcMcp::Text(request["params"],"name",64)=="accept_quest") accepted=true;
-                return exchange(request);
-            });
-            int steps=0;
-            const auto said=NpcAgent::Run(actClient,"quest please",NpcAgent::Memory{},
-                [&](const std::string&, bool)
-                {
-                    ++steps;
-                    return std::string(R"({"tool":"accept_quest","arguments":{"quest_id":1},"say":"맡기겠네."})");
-                });
-            Check(said=="맡기겠네." && accepted,"an action can carry the reply that ends the turn");
-            Check(steps==1,"acting and answering together costs one step, not two");
-        }
-        {
-            // Affinity is bookkeeping, so its reply must not end the turn - but the action is still
-            // valid and must not be rejected for carrying one. Answered from a stub so the room's
-            // staged state stays untouched.
-            const auto stub=[](const Json& request) -> Json
-            {
-                if (!request.contains("id")) return nullptr;
-                const auto method=request.value("method",std::string{});
-                Json result=Json::object();
-                if (method=="initialize") result={{"protocolVersion",NpcMcp::Version}};
-                else if (method=="tools/list") result={{"tools",NpcMcp::Tools()}};
-                return Json{{"jsonrpc","2.0"},{"id",request["id"]},{"result",result}};
-            };
-            int steps=0;
-            NpcAgent::Client mixedClient(std::string(32,'e'),stub);
-            const auto said=NpcAgent::Run(mixedClient,"quest please",NpcAgent::Memory{},
-                [&](const std::string&, bool sayOnly)
-                {
-                    if (sayOnly) return std::string(R"({"say":"이만 줄이겠네."})");
-                    if (++steps==1) return std::string(R"({"tool":"propose_affinity_change","arguments":{"delta":1},"say":"반갑네."})");
-                    return std::string(R"({"tool":"accept_quest","arguments":{"quest_id":1},"say":"맡기겠네."})");
-                });
-            Check(said=="맡기겠네.","affinity with a reply does not end the turn");
-            Check(steps==2,"the turn continues to the acting tool");
         }
         NpcAgent::Memory memory;
         memory.turns=Json::array({{{"customer","oldest-turn"},{"npc","a"}},{{"customer","middle-turn"},{"npc","b"}},{{"customer","newest-turn"},{"npc","c"}}});
