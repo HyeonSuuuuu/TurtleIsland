@@ -130,9 +130,29 @@ struct NpcMcpTests
                 if (sayOnly) { ++sayOnlySteps; return std::string(R"({"say":"Here you go."})"); }
                 return std::string(R"({"tool":"get_player_condition","arguments":{}})");
             });
-            Check(looped=="Here you go." && inferences==NpcMcp::MaxToolCalls && sayOnlySteps==1,"tool budget ends with a forced reply instead of failing");
-            Check(serverCalls==2 && lastPrompt.find("Already called")!=std::string::npos,"repeated identical tool call is not sent to the server again");
+            Check(looped=="Here you go." && sayOnlySteps==1,"a stuck model ends with a forced reply instead of failing");
+            Check(serverCalls==2,"repeated identical tool call is not sent to the server again");
+            Check(inferences==5,"repeats are cut off without running the loop forever");
+            Check(lastPrompt.find("You already had this result")!=std::string::npos,"a repeat gets the earlier result back, not a refusal");
             Check(lastPrompt.find(R"("arguments":{})")!=std::string::npos,"observations show the arguments used");
+        }
+        {
+            // A repeat reached no server, so it must not spend budget: a model that stumbles on a
+            // preloaded list still has the steps it needs to reach an acting tool.
+            int scripted=0, conditionCalls=0;
+            NpcAgent::Client stumbleClient(chat.context,[&](const Json& request)
+            {
+                if (request.value("method",std::string{})=="tools/call" &&
+                    NpcMcp::Text(request["params"],"name",64)=="get_player_condition") ++conditionCalls;
+                return exchange(request);
+            });
+            const auto stumbled=NpcAgent::Run(stumbleClient,"price?",NpcAgent::Memory{},[&](const std::string&, bool sayOnly)
+            {
+                if (sayOnly) return std::string(R"({"say":"Fine."})");
+                if (++scripted<=2) return std::string(R"({"tool":"get_shop_catalog","arguments":{}})"); // already preloaded
+                return std::string(R"({"tool":"get_player_condition","arguments":{}})");
+            });
+            Check(stumbled=="Fine." && conditionCalls==1,"repeats leave room for a later tool call");
         }
         NpcAgent::Memory memory;
         memory.turns=Json::array({{{"customer","oldest-turn"},{"npc","a"}},{{"customer","middle-turn"},{"npc","b"}},{{"customer","newest-turn"},{"npc","c"}}});

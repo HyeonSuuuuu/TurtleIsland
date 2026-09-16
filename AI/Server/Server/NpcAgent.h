@@ -45,6 +45,8 @@ what they know. Describe danger_for_customer in words for this customer, and men
 helps. Never make up monster facts that are not in the result.
 Each tool_observation shows the tool, its arguments and its result. Never call a tool again with the same arguments;
 reuse that result. Never call get_shop_catalog without item_id, the full list is already the first observation.
+When a tool_observation already holds the quest list (get_quests) or the monster list (get_monster_info), that list
+is yours to read: never call those without arguments, only with a quest_id or monster_id you still need details for.
 When the customer asks for a discount, a cheaper price or a deal, do not just refuse:
 1. Find the item_id in the shop list (use 1 if unclear), then call get_shop_catalog with that item_id
    to read minimum_price and base_price.
@@ -170,17 +172,22 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
         prefetch("get_monster_info");
     const size_t budget=NpcMcp::MaxToolCalls-1;
     Json dialogue=memory.turns;
-    for (size_t step=0;step<=budget;++step)
+    // A repeat costs no budget: it reached no server. It still has to be bounded, but the allowance
+    // has to outlast a couple of stumbles or the model never gets to its acting tool.
+    constexpr size_t maxRepeats=3;
+    size_t used=0, repeats=0;
+    for (;;)
     {
+        const bool last=used>=budget || repeats>=maxRepeats;
         Json prompt={{"available_tools",tools},{"previous_dialogue",dialogue},{"customer_speech",speech},
-            {"tool_observations",observations},{"remaining_tool_calls",budget-step}};
+            {"tool_observations",observations},{"remaining_tool_calls",budget-used}};
         if (!memory.notes.empty()) prompt["memory_notes"]=memory.notes;
         while (!dialogue.empty() && !fits(prompt.dump()))
         {
             dialogue.erase(dialogue.begin());
             prompt["previous_dialogue"]=dialogue;
         }
-        const auto output=infer(prompt.dump(),step==budget);
+        const auto output=infer(prompt.dump(),last);
         auto action=Json::parse(output,nullptr,false);
         if (!action.is_object())
         {
@@ -198,7 +205,7 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
             if (!say.empty()) return say;
             throw std::runtime_error("Invalid model dialogue");
         }
-        if (step==budget) break;
+        if (last) break;
         const auto name=NpcMcp::Text(action,"tool",64);
         const bool known=std::any_of(tools.begin(),tools.end(),[&](const auto& t){return t["name"]==name;});
         if (action.size()!=2 || !known || !action.contains("arguments") || !action["arguments"].is_object())
@@ -206,10 +213,20 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
         const Json& arguments=action["arguments"];
         const bool repeated=std::any_of(observations.begin(),observations.end(),
             [&](const auto& o){ return o["tool"]==name && o["arguments"]==arguments; });
-        // A small model may loop on a call it already made; answer from memory instead of spending the server call.
-        const Json result=repeated ? Json("Already called with these arguments. Use the earlier result above; do not call it again.")
-            : client.Request("tools/call",{{"name",name},{"arguments",arguments}});
-        observations.push_back({{"tool",name},{"arguments",arguments},{"result",result}});
+        if (repeated)
+        {
+            ++repeats;
+            // Give back the result it asked for, not a scolding note: a model that gets told off
+            // without its data just asks again, and that is what burned whole turns on get_quests.
+            const auto earlier=std::find_if(observations.begin(),observations.end(),
+                [&](const auto& o){ return o["tool"]==name && o["arguments"]==arguments; });
+            observations.push_back({{"tool",name},{"arguments",arguments},{"result",(*earlier)["result"]},
+                {"note","You already had this result. Do not ask again: act on it, call a different tool, or reply."}});
+            continue;
+        }
+        ++used;
+        observations.push_back({{"tool",name},{"arguments",arguments},
+            {"result",client.Request("tools/call",{{"name",name},{"arguments",arguments}})}});
     }
     throw std::runtime_error("Agent tool limit");
 }
