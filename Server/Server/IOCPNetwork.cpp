@@ -102,6 +102,9 @@ void IOCPNetwork::Stop()
 	for (auto& th : m_IOWorkerThreads)
 		if (th.joinable()) th.join();
 
+	m_aiReconnectRun = false;
+	if (m_aiReconnectThread.joinable()) m_aiReconnectThread.join();
+
 	CloseHandle(m_iocpHandle);
 	closesocket(m_listenSocket);
 }
@@ -114,6 +117,10 @@ PooledSession* IOCPNetwork::GetSession(uint32_t index)
 
 bool IOCPNetwork::ConnectToAIServer(const std::string& ip, uint16_t port)
 {
+	m_aiIp = ip; m_aiPort = port;
+	if (!m_aiReconnectRun.exchange(true))
+		m_aiReconnectThread = std::thread([this] { AiReconnectThread(); });
+
 	SOCKET aiSock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (aiSock == INVALID_SOCKET)
 	{
@@ -134,18 +141,33 @@ bool IOCPNetwork::ConnectToAIServer(const std::string& ip, uint16_t port)
 	}
 
 	// 아웃바운드 세션: 완료키 = AI_ID 로 IOCP 등록 + recv 게시
-	m_aiSession = std::make_unique<Session>();
-	m_aiSession->Init(AI_ID);
-	if (!m_aiSession->RegisterSocket(m_iocpHandle, aiSock, AI_ID))
+	auto session = std::make_unique<Session>();
+	session->Init(AI_ID);
+	if (!session->RegisterSocket(m_iocpHandle, aiSock, AI_ID))
 	{
 		Log::Error("[AI] RegisterSocket 실패");
-		m_aiSession.reset();
 		return false;
 	}
 
-	g_aiSession = m_aiSession.get();
+	{
+		std::lock_guard lock(m_aiMutex);
+		if (m_aiSession) m_retiredAiSessions.push_back(std::move(m_aiSession));
+		m_aiSession = std::move(session);
+		g_aiSession = m_aiSession.get();
+	}
 	Log::Success("[AI] AI 서버 연결 {}:{}", ip, port);
 	return true;
+}
+
+// 끊겨 있는 동안만 조용히 재시도한다. AI 서버만 재시작해도 게임 서버는 그대로 둔다.
+void IOCPNetwork::AiReconnectThread()
+{
+	while (m_aiReconnectRun)
+	{
+		std::this_thread::sleep_for(std::chrono::seconds(3));
+		if (!m_aiReconnectRun || g_aiSession != nullptr) continue;
+		if (ConnectToAIServer(m_aiIp, m_aiPort)) Log::Success("[AI] 재연결 성공");
+	}
 }
 
 bool IOCPNetwork::CreateWorkerThread()
@@ -214,7 +236,17 @@ void IOCPNetwork::WorkerThread(int tid)
 			if (!isSuccess || dwIoSize == 0)
 			{
 				if (slotIdx < MAX_CLIENTS) Disconnect(slotIdx);
-				// AI 연결 종료는 무시(재연결 미구현)
+				else if (slotIdx == AI_ID)
+				{
+					std::lock_guard lock(m_aiMutex);
+					if (m_aiSession)
+					{
+						// 워커가 아직 이 세션을 들고 있을 수 있으므로 해제하지 않고 물려 둔다.
+						Log::Warning("[AI] 연결 끊김 - 재연결을 시도한다");
+						g_aiSession = nullptr;
+						m_retiredAiSessions.push_back(std::move(m_aiSession));
+					}
+				}
 			}
 			else if (slotIdx == AI_ID)
 			{

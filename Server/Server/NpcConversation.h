@@ -138,7 +138,11 @@ struct NpcConversation
                 for (const auto& quest:g_questDefs)
                     if (const auto status=staged.Status(quest,player.level); status!=QuestStatus::Locked && status!=QuestStatus::Done)
                     {
-                        Json entry={{"quest_id",quest.id},{"title",quest.title},{"status",QuestStatusName(status)}};
+                        // The chief offers quests straight from this list, so it has to carry the numbers
+                        // he quotes. Without them he made up goals and rewards.
+                        Json entry={{"quest_id",quest.id},{"title",quest.title},{"status",QuestStatusName(status)},
+                            {"goal",quest.count},{"reward_gold",quest.gold},{"reward_exp",quest.exp}};
+                        if (g_monsterDefs.size()>quest.monsterType) entry["target"]=g_monsterDefs[quest.monsterType].name;
                         if (const auto kills=staged.active.find(quest.id); kills!=staged.active.end()) entry["progress"]=std::to_string(kills->second)+"/"+std::to_string(quest.count);
                         list.push_back(entry);
                     }
