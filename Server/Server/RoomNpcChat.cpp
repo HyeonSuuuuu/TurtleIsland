@@ -16,9 +16,19 @@ namespace
         for (const auto b:bytes) { result+=hex[b>>4]; result+=hex[b&15]; }
         return result;
     }
-    void Say(User& user, const std::string& text)
+    // notices are the trailing markers the client parses for quest banners. A reply that does not
+    // fit one packet used to be dropped whole, markers and all, so trim the dialogue and keep them.
+    void Say(User& user, std::string text, const std::string& notices={})
     {
-        if (text.size()>MAX_SOCKBUF-sizeof(SC_NpcChat)) return;
+        constexpr size_t limit=MAX_SOCKBUF-sizeof(SC_NpcChat);
+        if (notices.size()>limit) return;
+        if (text.size()+notices.size()>limit)
+        {
+            text.resize(limit-notices.size());
+            while (!text.empty() && (static_cast<unsigned char>(text.back())&0xC0)==0x80) text.pop_back();
+            if (!text.empty()) text.pop_back(); // drop the lead byte of the split character
+        }
+        text+=notices;
         std::vector<uint8_t> data(sizeof(SC_NpcChat)+text.size());
         auto* header=reinterpret_cast<SC_NpcChat*>(data.data());
         header->size=static_cast<uint16_t>(data.size()); header->id=static_cast<uint16_t>(PACKET_ID::SC_NPC_CHAT);
@@ -172,9 +182,10 @@ bool Room::CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response)
         if (completed) chat.relationship=chat.proposedRelationship;
         else chat.quote=chat.previousQuote;
         std::string text=say.empty()?"상인이 대답을 정리하지 못했습니다. 다시 말씀해주세요.":say;
+        std::string notices; // kept even when the dialogue has to be trimmed to fit the packet
         const auto* quoted=chat.quote.is_null() ? nullptr : g_npcShopConfig.Find(chat.quote["item_id"].get<int>());
         if (quoted && chat.quote!=chat.previousQuote)
-            text += "\n[흥정 가격] " + quoted->name + " " +
+            notices += "\n[흥정 가격] " + quoted->name + " " +
                 std::to_string(chat.quote["quantity"].get<int>()) + "개까지 개당 " + std::to_string(chat.quote["unit_price"].get<int>()) +
                 "G - 상점 목록에서 구매하세요";
         chat.previousQuote=chat.quote;
@@ -186,16 +197,16 @@ bool Room::CompleteNpcChat(uint32_t playerId, const NpcMcp::Json& response)
                 const auto* quest=FindQuest(id);
                 if (!quest) continue;
                 if (complete && log.Complete(*quest,player->second))
-                    text += "\n[퀘스트 완료] " + quest->title + " - 보상 " + std::to_string(quest->gold) + "G, 경험치 " + std::to_string(quest->exp);
+                    notices += "\n[퀘스트 완료] " + quest->title + " - 보상 " + std::to_string(quest->gold) + "G, 경험치 " + std::to_string(quest->exp);
                 else if (!complete && log.Accept(*quest,player->second.level))
-                    text += "\n[퀘스트 수락] " + quest->title + " (" + (g_monsterDefs.size()>quest->monsterType ? g_monsterDefs[quest->monsterType].name : std::string{}) +
+                    notices += "\n[퀘스트 수락] " + quest->title + " (" + (g_monsterDefs.size()>quest->monsterType ? g_monsterDefs[quest->monsterType].name : std::string{}) +
                         " 0/" + std::to_string(quest->count) + ")";
             }
             SendQuestStateLocked(*user);
             SendStateLocked(*user,player->second,GetTickCount64());
         }
         chat.questActions.clear();
-        Say(*user,text);
+        Say(*user,text,notices);
         SendShopPricesLocked(*user);
         return true;
     }
