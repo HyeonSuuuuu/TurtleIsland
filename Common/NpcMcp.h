@@ -8,7 +8,7 @@ namespace NpcMcp
 using Json = nlohmann::json;
 inline constexpr const char* Version = "2025-11-25";
 inline constexpr size_t MaxMessageBytes = 1020;
-inline constexpr size_t MaxToolCalls = 6;
+inline constexpr size_t MaxToolCalls = 10;
 inline constexpr uint64_t TurnLifetimeMs = 120000;
 
 inline Json Error(const Json& id, int code, const std::string& message)
