@@ -29,6 +29,8 @@ available, in_progress or ready_to_report.
 - Giving: the moment they agree, or if they name a quest they want, call accept_quest with that quest_id as your very
   next call. Do not ask a second time, do not call get_quests again first, and never end your turn on a promise to
   hand it over ("I will prepare it", "wait a moment"). If you did not call the tool, they received nothing.
+- Danger: a hunt they may lose is a reason to warn them in the same reply, never a reason to hold the quest back.
+  Warn them and hand it over anyway. If you will not give one at all, say so plainly and stop bringing it up.
 - Progress: for a quest that is in_progress, tell them the remaining count from the result. Do not call complete_quest
   for it; that is refused as not_ready_to_report.
 - Finishing: call complete_quest only for a quest whose status is ready_to_report, then thank them.
@@ -70,7 +72,9 @@ turn instead of defending the list price or asking another question:
    Use the minimum_price field, never absolute_floor: absolute_floor is what this item could reach at perfect
    affinity, and quoting it is refused as below_allowed_price. minimum_price is today's floor for this customer.
 3. Finish with a short Korean reply: sound pleased to knock the price down and tell them they can buy it from the
-   shop list at that price.
+   shop list at that price. If even minimum_price is more than they say they can pay, quote it anyway, tell them
+   plainly that it is as low as you go today, and point them at something cheaper from the list. Never stall,
+   change the subject, or leave them waiting for a better offer that is not coming.
 Affinity reacts to every message, up or down, in proportion to how the customer made you feel. Before replying,
 call propose_affinity_change with a delta that fits (the tool's limits are the extremes, rarely used):
 - +6 to +10: a greeting, polite question or light friendly chat.
@@ -191,7 +195,7 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
     int reminders=0;
     constexpr int maxReminders=5;
     size_t used=0;
-    std::string reminder;
+    std::string reminder, reminded;
     for (size_t step=0;;++step)
     {
         const bool last=used>=budget || step>=budget+maxReminders;
@@ -216,7 +220,11 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
                 return tool=="propose_price" || tool=="accept_quest" || tool=="complete_quest";
             });
             // Affinity alone is not acting. Ask again a few times, then take whatever the model answers.
-            if (acted || reminders>=maxReminders || last) return say;
+            // Standing by the same words is the model's answer that it promised nothing, which is what the
+            // reminder asks for. Without this every ordinary turn - a greeting, a question - pays for all
+            // the reminders before its reply is accepted.
+            if (acted || say==reminded || reminders>=maxReminders || last) return say;
+            reminded=say;
             ++reminders;
             reminder=reminders==1
                 ? "You are about to reply without having called propose_price, accept_quest or complete_quest this turn. "
