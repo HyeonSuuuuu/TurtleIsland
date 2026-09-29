@@ -19,7 +19,9 @@ struct NpcShopConfig
         {GameplayRules::HealthPotion,"회복 포션"},
         {GameplayRules::ManaPotion,"마나 포션"}};
     // Shop.lua ShopAffinity. Defaults are the strict rules; the booth config relaxes them.
-    struct AffinityRules { int start=25, maxStep=2, cooldownMs=60000, windowGain=10, windowMs=300000; } affinity;
+    // gainPercent/lossPercent scale the change the model proposes; a proposal smaller than neutralBelow moves nothing.
+    struct AffinityRules { int start=25, maxStep=2, cooldownMs=60000, windowGain=10, windowMs=300000,
+        gainPercent=100, lossPercent=100, neutralBelow=0; } affinity;
     bool enabled=true;
     bool Load(const char* path); // 실패하면 상점을 끈다
     const Product* Find(int itemId) const

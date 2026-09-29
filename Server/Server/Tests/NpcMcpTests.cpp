@@ -287,6 +287,24 @@ struct NpcMcpTests
                     "Shop.lua cooldown allows the next friendly turn");
                 Check(Tools(rules.maxStep)[4].dump().find(std::to_string(rules.maxStep))!=std::string::npos,"tool schema advertises the step");
             }
+            {
+                const auto saved=g_npcShopConfig.affinity;
+                auto& rules=g_npcShopConfig.affinity;
+                rules.gainPercent=50; rules.lossPercent=200; rules.neutralBelow=5; rules.cooldownMs=0; rules.windowGain=100;
+                NpcConversation mood;
+                auto change=[&](int judged,const char* message,uint64_t at)
+                {
+                    mood.Begin(std::string(32,'k'),message,at);
+                    mood.Call("propose_affinity_change",{{"delta",judged}},wallet,at);
+                    mood.relationship=mood.proposedRelationship; mood.context.clear();
+                    return mood.relationship.affinity;
+                };
+                const int start=mood.relationship.affinity;
+                Check(change(10,"nice",1)==start+5,"gainPercent scales a rise");
+                Check(change(-4,"meh",2)==start+5,"a feeling below neutralBelow moves nothing");
+                Check(change(-6,"rude",3)==start+5-12,"lossPercent scales a fall");
+                g_npcShopConfig.affinity=saved;
+            }
             deal.Begin(std::string(32,'g'),"catalog",0);
             const Json list={{"jsonrpc","2.0"},{"id",1},{"method","tools/call"},{"params",{{"name","get_shop_catalog"},{"arguments",Json::object()}}}};
             deal.ready=true;

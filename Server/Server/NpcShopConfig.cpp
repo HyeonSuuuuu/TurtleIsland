@@ -83,17 +83,19 @@ bool NpcShopConfig::Load(const char* path)
             int cooldownSeconds=nextAffinity.cooldownMs/1000, windowSeconds=nextAffinity.windowMs/1000;
             valid=ReadInt(L,"start",nextAffinity.start,0,100,false) && ReadInt(L,"maxStep",nextAffinity.maxStep,1,100,false) &&
                 ReadInt(L,"cooldownSeconds",cooldownSeconds,0,3600,false) && ReadInt(L,"maxGainPerWindow",nextAffinity.windowGain,1,100,false) &&
-                ReadInt(L,"windowSeconds",windowSeconds,1,3600,false);
+                ReadInt(L,"windowSeconds",windowSeconds,1,3600,false) && ReadInt(L,"gainPercent",nextAffinity.gainPercent,0,1000,false) &&
+                ReadInt(L,"lossPercent",nextAffinity.lossPercent,0,1000,false) && ReadInt(L,"neutralBelow",nextAffinity.neutralBelow,0,100,false);
             nextAffinity.cooldownMs=cooldownSeconds*1000; nextAffinity.windowMs=windowSeconds*1000;
-            if (!valid) Log::Warning("[LUA] invalid ShopAffinity in '{}' (start 0..100, maxStep 1..100, cooldownSeconds 0..3600, maxGainPerWindow 1..100, windowSeconds 1..3600)",path);
+            if (!valid) Log::Warning("[LUA] invalid ShopAffinity in '{}' (start 0..100, maxStep 1..100, cooldownSeconds 0..3600, maxGainPerWindow 1..100, windowSeconds 1..3600, gainPercent 0..1000, lossPercent 0..1000, neutralBelow 0..100)",path);
         }
         lua_pop(L,1);
     }
     lua_close(L);
     if (!valid) return false;
     products=std::move(next); affinity=nextAffinity; enabled=true;
-    Log::Info("[LUA] shop affinity: start {}, step up to {}, cooldown {}s, +{} per {}s",
-        affinity.start,affinity.maxStep,affinity.cooldownMs/1000,affinity.windowGain,affinity.windowMs/1000);
+    Log::Info("[LUA] shop affinity: start {}, step up to {}, cooldown {}s, +{} per {}s, gain {}%, loss {}%, neutral below {}",
+        affinity.start,affinity.maxStep,affinity.cooldownMs/1000,affinity.windowGain,affinity.windowMs/1000,
+        affinity.gainPercent,affinity.lossPercent,affinity.neutralBelow);
     Log::Success("[LUA] shop loaded: {} products (HP potion {}G, MP potion {}G, {} equipment)",
         products.size(),products[0].basePrice,products[1].basePrice,products.size()-2);
     return true;

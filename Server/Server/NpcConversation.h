@@ -192,7 +192,10 @@ struct NpcConversation
         {
             const auto& rules = g_npcShopConfig.affinity;
             if (args.size()!=1 || !Integer(args,"delta",-rules.maxStep,rules.maxStep)) return ToolError("invalid_arguments");
-            const int delta = args["delta"].get<int>();
+            // The model judges the feeling; Shop.lua decides how far that moves affinity.
+            const int judged = args["delta"].get<int>();
+            const int delta = std::abs(judged) < rules.neutralBelow ? 0 :
+                static_cast<int>(std::lround(judged * (judged > 0 ? rules.gainPercent : rules.lossPercent) / 100.0));
             if (delta == 0) return ToolResult({{"affinity",affinity},{"applied_delta",0}});
             if (changedAffinity || (lastAffinityAt && now-lastAffinityAt < static_cast<uint64_t>(rules.cooldownMs))) return ToolError("relationship_cooldown");
             if (now-windowAt >= static_cast<uint64_t>(rules.windowMs)) { windowAt=now; windowGain=0; }
