@@ -60,19 +60,24 @@ struct NpcConversation
         if (left > 0) quote["quantity"] = left; else quote = nullptr;
         previousQuote = quote;
     }
-    // The full list stays short so it fits one MCP frame; prices per item come from Offer.
+    // This customer's floor today; it moves with affinity.
+    int MinimumPrice(const NpcShopConfig::Product& p) const
+    {
+        return p.basePrice-(p.basePrice-p.minimumPrice)*proposedRelationship.affinity/100;
+    }
+    // The full list stays short so it fits one MCP frame. It carries this customer's floor so a quote needs no
+    // per-item lookup; stats and the other limits come from Offer.
     NpcMcp::Json Catalog() const
     {
         auto products=NpcMcp::Json::array();
         for (const auto& p:g_npcShopConfig.products)
-            products.push_back({{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice}});
+            products.push_back({{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice},{"minimum_price",MinimumPrice(p)}});
         return products;
     }
     NpcMcp::Json Offer(const NpcShopConfig::Product& p) const
     {
-        const int minimum=p.basePrice-(p.basePrice-p.minimumPrice)*proposedRelationship.affinity/100;
         NpcMcp::Json offer={{"item_id",p.itemId},{"name",p.name},{"base_price",p.basePrice},{"absolute_floor",p.minimumPrice},
-            {"minimum_price",minimum},{"maximum_price",p.maximumPrice}};
+            {"minimum_price",MinimumPrice(p)},{"maximum_price",p.maximumPrice}};
         if (p.equipment)
             offer["stats"]={{"hp",p.stats.hp},{"attack",p.stats.attack},{"defense",p.stats.defense},{"move_speed",p.stats.moveSpeed}};
         else
@@ -176,7 +181,9 @@ struct NpcConversation
             const auto* item = g_npcShopConfig.Find(args["item_id"].get<int>());
             if (!item) return ToolError("unknown_item");
             const auto product = Offer(*item);
-            if (args["unit_price"].get<int>() < product["minimum_price"].get<int>()) return ToolError("below_allowed_price");
+            // The floor moves with affinity, so a refusal says where it is now instead of leaving the model to guess.
+            if (args["unit_price"].get<int>() < product["minimum_price"].get<int>())
+                return ToolResult({{"error","below_allowed_price"},{"minimum_price",product["minimum_price"]}},true);
             if (args["unit_price"].get<int>() > product["maximum_price"].get<int>()) return ToolError("above_allowed_price");
             quote = args;
             return ToolResult({{"accepted",true},{"quote",quote},{"purchase_executed",false}});
@@ -185,7 +192,10 @@ struct NpcConversation
         {
             const auto& rules = g_npcShopConfig.affinity;
             if (args.size()!=1 || !Integer(args,"delta",-rules.maxStep,rules.maxStep)) return ToolError("invalid_arguments");
-            const int delta = args["delta"].get<int>();
+            // The model judges the feeling; Shop.lua decides how far that moves affinity.
+            const int judged = args["delta"].get<int>();
+            const int delta = std::abs(judged) < rules.neutralBelow ? 0 :
+                static_cast<int>(std::lround(judged * (judged > 0 ? rules.gainPercent : rules.lossPercent) / 100.0));
             if (delta == 0) return ToolResult({{"affinity",affinity},{"applied_delta",0}});
             if (changedAffinity || (lastAffinityAt && now-lastAffinityAt < static_cast<uint64_t>(rules.cooldownMs))) return ToolError("relationship_cooldown");
             if (now-windowAt >= static_cast<uint64_t>(rules.windowMs)) { windowAt=now; windowGain=0; }
@@ -202,7 +212,10 @@ struct NpcConversation
             if (!quote.is_null())
                 if (const auto* item = g_npcShopConfig.Find(quote["item_id"].get<int>());
                     !item || quote["unit_price"].get<int>() < Offer(*item)["minimum_price"].get<int>()) quote=nullptr;
-            return ToolResult({{"affinity",affinity},{"applied_delta",affinity-before}});
+            // Floors in the shop list were computed before this change; these replace them.
+            Json floors=Json::object();
+            for (const auto& p:g_npcShopConfig.products) floors[std::to_string(p.itemId)]=MinimumPrice(p);
+            return ToolResult({{"affinity",affinity},{"applied_delta",affinity-before},{"minimum_prices",floors}});
         }
         return ToolError("unknown_tool_or_arguments");
     }

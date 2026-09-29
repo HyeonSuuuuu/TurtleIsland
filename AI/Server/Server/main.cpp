@@ -38,6 +38,7 @@
 // #pragma comment(lib, "../../lib/ggml-cuda.lib")
 // #pragma comment(lib, "../../lib/ggml-vulkan.lib")
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -977,14 +978,17 @@ void HandleClient(
 								rpc["params"].value("arguments",NpcMcp::Json::object()).dump(), response.value("result",response).dump());
 						return response;
 					});
+					NpcMcp::Json offered;
 					say=NpcAgent::Run(mcp,speech,memory,[&](const std::string& prompt, bool sayOnly)
 					{
 						std::vector<ChatTurn> scratch;
 						auto output=aiQueue.Submit(clientId,prompt,scratch,true,nullptr,sayOnly).get();
 						Log::Info("[Agent] model: {}", output);
 						return output;
-					},[&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); });
-					memory.turns.push_back({{"customer",speech},{"npc",say}});
+					},[&](const std::string& prompt) { return aiQueue.FitsAgentPrompt(prompt); },&offered);
+					NpcMcp::Json turn={{"customer",speech},{"npc",say}};
+					if (!offered.empty()) turn["offered_quest_ids"]=offered;
+					memory.turns.push_back(turn);
 					// Keep plenty; each prompt includes as many recent turns as its token budget allows.
 					if (memory.turns.size()>200) memory.turns.erase(memory.turns.begin());
 					completed=true;
@@ -1799,7 +1803,15 @@ std::vector<std::string> GenerateBatchResponses(
 		return outputs;
 	}
 
-	llama_memory_clear(llama_get_memory(ctx), true);
+	// Each sequence keeps its last prompt in the KV cache. The system prompt, tools and shop list lead every prompt,
+	// so the next call decodes only what differs instead of all ~3000 tokens again.
+	static std::array<std::vector<llama_token>, kMaxBatchSize> cachedPrompts;
+	llama_memory_t memory = llama_get_memory(ctx);
+	const auto forgetAll = [&]()
+	{
+		llama_memory_clear(memory, true);
+		for (auto& cached : cachedPrompts) cached.clear();
+	};
 
 	std::vector<BatchGenerationState> states;
 	states.resize(batchSize);
@@ -1886,7 +1898,33 @@ std::vector<std::string> GenerateBatchResponses(
 	int totalGenTokens = 0;
 	const auto tStart = std::chrono::high_resolution_clock::now();
 
-	llama_batch promptBatch = llama_batch_init(totalPromptTokens, 0, 1);
+	std::vector<int32_t> reused(batchSize, 0);
+	int32_t decodeTokens = 0;
+	for (int i = 0; i < batchSize; ++i)
+	{
+		auto& state = states[i];
+		auto& cached = cachedPrompts[i];
+		const llama_seq_id seq = state.seqId;
+		// The cache is trusted only if it still holds exactly the remembered prompt from position 0
+		// (a clear elsewhere, or a sliding-window layer that dropped old positions, fails this).
+		const bool intact = !cached.empty() && llama_memory_seq_pos_min(memory, seq) == 0 &&
+			llama_memory_seq_pos_max(memory, seq) + 1 == static_cast<llama_pos>(cached.size());
+		size_t same = 0;
+		if (intact && !state.failed)
+			while (same < cached.size() && same + 1 < state.promptTokens.size() && cached[same] == state.promptTokens[same]) ++same;
+		if (!llama_memory_seq_rm(memory, seq, static_cast<llama_pos>(same), -1))
+		{
+			llama_memory_seq_rm(memory, seq, -1, -1);
+			same = 0;
+		}
+		cached.clear();
+		if (state.failed || state.promptTokens.empty())
+			continue;
+		reused[i] = static_cast<int32_t>(same);
+		decodeTokens += static_cast<int32_t>(state.promptTokens.size() - same);
+	}
+
+	llama_batch promptBatch = llama_batch_init(decodeTokens, 0, 1);
 
 	int32_t cursor = 0;
 
@@ -1900,7 +1938,7 @@ std::vector<std::string> GenerateBatchResponses(
 		const int32_t promptCount =
 			static_cast<int32_t>(state.promptTokens.size());
 
-		for (int32_t j = 0; j < promptCount; ++j)
+		for (int32_t j = reused[i]; j < promptCount; ++j)
 		{
 			promptBatch.token[cursor] = state.promptTokens[j];
 			promptBatch.pos[cursor] = j;
@@ -1924,6 +1962,7 @@ std::vector<std::string> GenerateBatchResponses(
 		Log::Error("llama_decode failed on batch prompt.");
 
 		llama_batch_free(promptBatch);
+		forgetAll();
 
 		for (auto& state : states)
 		{
@@ -2056,14 +2095,21 @@ std::vector<std::string> GenerateBatchResponses(
 	const double aggTokPerSec = (genSec > 0.0) ? (totalGenTokens / genSec) : 0.0;
 
 	printf(
-		"[batch timing] %d seqs | prefill %.2f s (%d prompt tokens) | "
+		"[batch timing] %d seqs | prefill %.2f s (%d prompt tokens, %d decoded) | "
 		"generation %.2f s (%d gen tokens) | aggregate %.2f tok/s\n",
-		batchSize, prefillSec, totalPromptTokens,
+		batchSize, prefillSec, totalPromptTokens, decodeTokens,
 		genSec, totalGenTokens, aggTokPerSec);
 
 	for (int i = 0; i < batchSize; ++i)
 	{
 		auto& state = states[i];
+
+		// Keep only the prompt for the next call; the reply is not part of it.
+		if (!state.failed && !state.promptTokens.empty() &&
+			llama_memory_seq_rm(memory, state.seqId, static_cast<llama_pos>(state.promptTokens.size()), -1))
+			cachedPrompts[i] = state.promptTokens;
+		else
+			llama_memory_seq_rm(memory, state.seqId, -1, -1);
 
 		if (state.sampler != nullptr)
 		{
