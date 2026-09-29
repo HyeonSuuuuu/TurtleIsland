@@ -131,6 +131,18 @@ struct NpcMcpTests
             { return R"({"say":"different )" + std::to_string(++says) + R"("})"; });
             Check(says==6 && nagged=="different 6","reminders stop after the cap");
         }
+        {
+            // A refused quote is not acting: the model is asked again and can retry at the floor it was told.
+            int step=0;
+            chat.Begin(std::string(32,'c'),"cheaper?",now);
+            NpcAgent::Client refusedClient(chat.context,exchange);
+            NpcAgent::Run(refusedClient,"cheaper?",NpcAgent::Memory{},[&](const std::string&, bool)
+            {
+                if (step++==0) return std::string(R"({"tool":"propose_price","arguments":{"item_id":1,"quantity":1,"unit_price":1}})");
+                return std::string(R"({"say":"sorry"})");
+            });
+            Check(step==3,"a refused quote is questioned like no quote at all");
+        }
         chat.Begin(std::string(32,'c'),"second turn",now);
         {
             int serverCalls=0, inferences=0, sayOnlySteps=0;
@@ -264,8 +276,11 @@ struct NpcMcpTests
                 NpcConversation friendly;
                 Check(friendly.relationship.affinity==rules.start,"Shop.lua sets starting affinity");
                 friendly.Begin(std::string(32,'h'),"hello",1000);
-                Check(friendly.Call("propose_affinity_change",{{"delta",rules.maxStep}},wallet,1000)["isError"]==false &&
+                const auto raised=friendly.Call("propose_affinity_change",{{"delta",rules.maxStep}},wallet,1000);
+                Check(raised["isError"]==false &&
                     friendly.proposedRelationship.affinity==std::min(100,rules.start+rules.maxStep),"Shop.lua allows the full step");
+                Check(Json::parse(raised["content"][0]["text"].get<std::string>())["minimum_prices"]["1008"]==
+                    friendly.MinimumPrice(*g_npcShopConfig.Find(1008)),"an affinity change reports the new floors");
                 friendly.relationship=friendly.proposedRelationship; friendly.context.clear();
                 friendly.Begin(std::string(32,'i'),"thank you",1000+rules.cooldownMs);
                 Check(friendly.Call("propose_affinity_change",{{"delta",rules.maxStep}},wallet,1000+rules.cooldownMs)["isError"]==false,
@@ -276,6 +291,15 @@ struct NpcMcpTests
             const Json list={{"jsonrpc","2.0"},{"id",1},{"method","tools/call"},{"params",{{"name","get_shop_catalog"},{"arguments",Json::object()}}}};
             deal.ready=true;
             Check(deal.Dispatch(list,wallet,1).dump().size()<=MaxMessageBytes,"full catalog fits one MCP frame");
+            {
+                const auto listed=Json::parse(deal.Call("get_shop_catalog",Json::object(),wallet,1)["content"][0]["text"].get<std::string>());
+                const auto offer=Json::parse(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1)["content"][0]["text"].get<std::string>());
+                const auto item=std::find_if(listed["products"].begin(),listed["products"].end(),[](const Json& p){ return p["item_id"]==1008; });
+                Check(item!=listed["products"].end() && (*item)["minimum_price"]==offer["minimum_price"],"the list carries this customer's floor");
+                const auto refused=deal.Call("propose_price",{{"item_id",1008},{"quantity",1},{"unit_price",1}},wallet,1);
+                Check(refused["isError"]==true && Json::parse(refused["content"][0]["text"].get<std::string>())["minimum_price"]==offer["minimum_price"],
+                    "a refused quote tells the current floor");
+            }
             Check(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1).dump().find("minimum_price")!=std::string::npos,"per-item offer");
             Check(deal.Call("get_shop_catalog",{{"item_id",1008}},wallet,1).dump().find("move_speed")!=std::string::npos,"equipment offer includes stats");
             Check(deal.Call("get_shop_catalog",{{"item_id",999}},wallet,1)["isError"]==true,"unknown item rejected");
@@ -316,6 +340,25 @@ struct NpcMcpTests
             Check(turn('s',"thanks",true) && log.done.contains(1) && player.gold==gold+100,"delivered reply pays the reward");
             Check(view()["quests"][0]["quest_id"]==2 && chat.Call("complete_quest",{{"quest_id",1}},player,now,&log)["isError"]==true,
                 "a finished quest unlocks the next one and cannot pay twice");
+            Json observations=Json::array({{{"tool","get_quests"},{"arguments",Json::object()},{"result",chat.Call("get_quests",Json::object(),player,now,&log)}}});
+            Check(NpcAgent::OfferedQuests(observations)==Json::array({2}),"an offered quest id is kept with the turn");
+            observations.push_back({{"tool","accept_quest"},{"arguments",{{"quest_id",2}}},{"result",chat.Call("accept_quest",{{"quest_id",2}},player,now,&log)}});
+            Check(NpcAgent::OfferedQuests(observations).empty(),"a quest given this turn is not offered again");
+            chat.questActions.clear();
+            {
+                chat.Begin(std::string(32,'t'),"yes, I'll take it",now);
+                NpcAgent::Client questClient(chat.context,exchange);
+                std::string afterAccept;
+                int step=0;
+                NpcAgent::Run(questClient,"yes, I'll take it",NpcAgent::Memory{},[&](const std::string& prompt, bool)
+                {
+                    if (step++==0) return std::string(R"({"tool":"accept_quest","arguments":{"quest_id":2}})");
+                    afterAccept=prompt;
+                    return std::string(R"({"say":"ok"})");
+                });
+                Check(afterAccept.find("The quest is theirs now")!=std::string::npos,"a given quest is marked so the reply does not offer it again");
+                chat.context.clear(); chat.questActions.clear();
+            }
             SC_QuestState packet{};
             Check(sizeof(packet)<=MAX_SOCKBUF,"quest packet fits a socket frame");
         }

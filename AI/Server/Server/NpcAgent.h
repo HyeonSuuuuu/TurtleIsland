@@ -24,14 +24,17 @@ inline constexpr const char* SystemPrompt = R"(You are the Korean-speaking villa
 As chief you hand out hunting quests. Quests are handled only through get_quests, accept_quest and complete_quest.
 Reading the list costs you nothing, so when the customer asks for work, a request, how to help the village, mentions
 hunting or monsters, or reports what they killed, call get_quests first (no arguments) and read the status of each:
-available, in_progress or ready_to_report.
+available, active or ready_to_report.
 - Offering: describe one fitting available quest in your own words (target, count, reward) and ask if they will take it.
 - Giving: the moment they agree, or if they name a quest they want, call accept_quest with that quest_id as your very
-  next call. Do not ask a second time, do not call get_quests again first, and never end your turn on a promise to
-  hand it over ("I will prepare it", "wait a moment"). If you did not call the tool, they received nothing.
+  next call. A previous_dialogue turn with offered_quest_ids is one where you offered those quests: when the customer
+  now agrees, call accept_quest with that id right away. Do not ask a second time, do not call get_quests again first,
+  and never end your turn on a promise to hand it over ("I will prepare it", "wait a moment"). If you did not call the
+  tool, they received nothing. Once accept_quest shows accepted true, the quest is already theirs: never ask again
+  whether they will take it.
 - Danger: a hunt they may lose is a reason to warn them in the same reply, never a reason to hold the quest back.
   Warn them and hand it over anyway. If you will not give one at all, say so plainly and stop bringing it up.
-- Progress: for a quest that is in_progress, tell them the remaining count from the result. Do not call complete_quest
+- Progress: for a quest that is active, tell them the remaining count from the result. Do not call complete_quest
   for it; that is refused as not_ready_to_report.
 - Finishing: call complete_quest only for a quest whose status is ready_to_report, then thank them.
 A quest is given or finished only when a tool result shows accepted or completed true. Never say you handed one over,
@@ -49,8 +52,9 @@ Never claim a purchase, payment, item grant or permanent relationship save occur
 The first tool_observation is always the full shop list (get_shop_catalog). It is everything you sell:
 item_id 1 = health/HP potion, 2 = mana/MP potion, item_id 1000 or above = equipment (weapons and gear, held in the
 6 inventory slots, stats apply while held). Answer "what do you sell / do you have weapons" from that list by name.
-Never invent items that are not in the list. For equipment stats (hp, attack, defense, move_speed), recommendations
-or allowed prices, call get_shop_catalog with that item_id first.
+Never invent items that are not in the list. The list already has each item's base_price and this customer's
+minimum_price. For equipment stats (hp, attack, defense, move_speed) or recommendations, call get_shop_catalog with
+that item_id first.
 You are also a long-time islander. When asked about monsters (where they live, what they look like, how dangerous,
 what hunters earn), call get_monster_info (the list first, then with monster_id) and answer like a local passing on
 what they know. Describe danger_for_customer in words for this customer, and mention matching gear you sell when it
@@ -60,15 +64,18 @@ reuse that result. Never call get_shop_catalog without item_id, the full list is
 You are softhearted about money and proud of how cheap you are. Whenever the customer asks for a discount or a
 cheaper price, haggles, asks what something costs, or says they want to buy something, give them a deal in that same
 turn instead of defending the list price or asking another question:
-1. Find the item_id in the shop list, then call get_shop_catalog with that item_id to read minimum_price and
-   base_price. Pick the item they described; if they only said a category (weapon, armor, potion), choose the one
-   from the list that fits them best and quote that one. Only fall back to item_id 1 when nothing fits at all.
+1. Find the item in the shop list and read its item_id, minimum_price and base_price there; no lookup is needed.
+   If you called propose_affinity_change this turn, its minimum_prices (by item_id) replace the list's floors.
+   Copy the number exactly; never round it or make one up.
+   Pick the item they described; if they only said a category (weapon, armor, potion), choose the one from the list
+   that fits them best and quote that one. Only fall back to item_id 1 when nothing fits at all.
 2. Call propose_price. quantity = the amount they asked for, otherwise 1 (always 1 for equipment).
    Quote minimum_price. That is your default for anyone who asks: a greeting, a polite word, thanks, haggling, being
    in a hurry, low HP or a good story is more than reason enough. unit_price must stay between minimum_price and
    base_price, so never go below minimum_price, and never quote base_price to someone who asked for a discount.
-   If they name a price at or above minimum_price, take their price gladly. If the tool rejects it, retry once with
-   exactly minimum_price. An expensive item is not a reason to skip this: quote it and let them decide.
+   If they name a price at or above minimum_price, take their price gladly. If the tool rejects it as
+   below_allowed_price, retry once with exactly the minimum_price in that refusal (affinity moves the floor).
+   An expensive item is not a reason to skip this: quote it and let them decide.
    Use the minimum_price field, never absolute_floor: absolute_floor is what this item could reach at perfect
    affinity, and quoting it is refused as below_allowed_price. minimum_price is today's floor for this customer.
 3. Finish with a short Korean reply: sound pleased to knock the price down and tell them they can buy it from the
@@ -176,11 +183,39 @@ inline bool Compress(Memory& memory, const std::function<std::string(const std::
     return true;
 }
 
+// Available quests this turn looked up and did not give. A turn only keeps its words, so without these ids a later
+// "yes" sent the chief back to get_quests, where he offered the same quest again instead of giving it.
+inline Json OfferedQuests(const Json& observations)
+{
+    auto offered=Json::array();
+    const auto add=[&](const Json& quest)
+    {
+        if (quest.is_object() && quest.value("status","")=="available" && quest.contains("quest_id") &&
+            std::find(offered.begin(),offered.end(),quest["quest_id"])==offered.end()) offered.push_back(quest["quest_id"]);
+    };
+    for (const auto& o:observations)
+    {
+        const auto& result=o["result"];
+        if (o["tool"]!="get_quests" || !result.is_object() || !result.contains("content") || !result["content"].is_array() ||
+            result["content"].empty()) continue; // a repeat has only a note as its result
+        const auto data=Json::parse(result["content"][0].value("text",""),nullptr,false);
+        if (!data.is_object()) continue;
+        if (data.contains("quests") && data["quests"].is_array()) for (const auto& quest:data["quests"]) add(quest);
+        else add(data);
+    }
+    for (const auto& o:observations)
+        if (o["tool"]=="accept_quest" && o["result"].is_object() && !o["result"].value("isError",true))
+            offered.erase(std::remove(offered.begin(),offered.end(),o["arguments"].value("quest_id",Json{})),offered.end());
+    return offered;
+}
+
 // fits reports whether a prompt still fits the model context; the oldest dialogue is dropped until it does.
 // infer's second argument asks for a final spoken reply only (SayGrammar), so a turn always ends with dialogue.
+// offered, when given, receives OfferedQuests for the caller to keep with this turn.
 inline std::string Run(Client& client, const std::string& speech, const Memory& memory,
     const std::function<std::string(const std::string&, bool)>& infer,
-    const std::function<bool(const std::string&)>& fits = [](const std::string&) { return true; })
+    const std::function<bool(const std::string&)>& fits = [](const std::string&) { return true; },
+    Json* offered = nullptr)
 {
     const auto tools=client.Initialize();
     // The product list is short and needed for most questions, so every turn starts with it (uses one server tool call).
@@ -214,16 +249,23 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
         {
             const auto say=NpcMcp::Text(action,"say",700);
             if (say.empty()) throw std::runtime_error("Invalid model dialogue");
+            // A refused quote gave nothing, and its refusal names the floor to retry with. A refused quest is an
+            // answer the chief can pass on as it is.
             const bool acted=std::any_of(observations.begin(),observations.end(),[](const auto& o)
             {
                 const auto tool=o["tool"].get<std::string>();
-                return tool=="propose_price" || tool=="accept_quest" || tool=="complete_quest";
+                if (tool=="propose_price") return o["result"].is_object() && !o["result"].value("isError",true);
+                return tool=="accept_quest" || tool=="complete_quest";
             });
             // Affinity alone is not acting. Ask again a few times, then take whatever the model answers.
             // Standing by the same words is the model's answer that it promised nothing, which is what the
             // reminder asks for. Without this every ordinary turn - a greeting, a question - pays for all
             // the reminders before its reply is accepted.
-            if (acted || say==reminded || reminders>=maxReminders || last) return say;
+            if (acted || say==reminded || reminders>=maxReminders || last)
+            {
+                if (offered) *offered=OfferedQuests(observations);
+                return say;
+            }
             reminded=say;
             ++reminders;
             reminder=reminders==1
@@ -231,7 +273,7 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
                   "Words give the customer nothing. If your reply offers a discount, a price, a quest or a reward, call that "
                   "tool now with the ids and numbers from the observations above. If it truly promises none of those, reply again unchanged."
                 : "Still nothing done. The customer asked you for something you can act on: quote it now with propose_price at "
-                  "minimum_price for the item you just looked up, or give the quest with accept_quest. Do not ask them another "
+                  "minimum_price from the shop list, or give the quest with accept_quest. Do not ask them another "
                   "question instead of acting; haggling is your job, and a quote can always be adjusted next turn.";
             continue;
         }
@@ -247,7 +289,12 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
         Json result;
         if (repeated) result="Already called with these arguments. Use the earlier result above; do not call it again.";
         else { result=client.Request("tools/call",{{"name",name},{"arguments",arguments}}); ++used; }
-        observations.push_back({{"tool",name},{"arguments",arguments},{"result",result}});
+        Json observation={{"tool",name},{"arguments",arguments},{"result",result}};
+        // The chief sometimes gave the quest and still asked "will you take it?". A note beside the result is
+        // followed far more reliably than the rule at the top of the prompt.
+        if (name=="accept_quest" && result.is_object() && !result.value("isError",true))
+            observation["note"]="The quest is theirs now. Reply by handing it over and wishing them luck; do not ask whether they will take it.";
+        observations.push_back(observation);
     }
     throw std::runtime_error("Agent tool limit");
 }

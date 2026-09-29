@@ -45,7 +45,7 @@ inline Json Tools(int maxAffinityStep = 2)
     const auto number = [](int low, int high) -> Json { return {{"type", "integer"}, {"minimum", low}, {"maximum", high}}; };
     return Json::array({
         {{"name", "get_player_condition"}, {"description", "Read this customer's HP, maximum HP and level. Wealth is unknown."}, {"inputSchema", empty}},
-        {{"name", "get_shop_catalog"}, {"description", "Without arguments: list item_id, name and base_price. With item_id: that item's allowed minimum_price and maximum_price."},
+        {{"name", "get_shop_catalog"}, {"description", "Without arguments: list item_id, name, base_price and this customer's minimum_price. With item_id: that item's stats or effect and its allowed minimum_price and maximum_price."},
             {"inputSchema", {{"type", "object"}, {"properties", {{"item_id", number(1,65535)}}}, {"additionalProperties", false}}}},
         {{"name", "get_relationship"}, {"description", "Read this customer's relationship with this NPC."}, {"inputSchema", empty}},
         {{"name", "propose_price"}, {"description", "Propose a personal quote. Does not purchase; the customer buys from the shop list."},
