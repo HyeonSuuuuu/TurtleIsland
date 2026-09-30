@@ -234,10 +234,15 @@ inline std::string Run(Client& client, const std::string& speech, const Memory& 
     for (size_t step=0;;++step)
     {
         const bool last=used>=budget || step>=budget+maxReminders;
-        Json prompt={{"available_tools",tools},{"previous_dialogue",dialogue},{"customer_speech",speech},
-            {"tool_observations",observations},{"remaining_tool_calls",budget-used}};
-        if (!reminder.empty()) prompt["reminder"]=reminder;
+        // Kept in this order, most stable first, so the model server's prompt cache reuses the longest prefix.
+        // A plain Json object would sort the keys and put the new speech ahead of the whole dialogue.
+        nlohmann::ordered_json prompt={{"available_tools",tools}};
         if (!memory.notes.empty()) prompt["memory_notes"]=memory.notes;
+        prompt["previous_dialogue"]=dialogue;
+        prompt["customer_speech"]=speech;
+        prompt["tool_observations"]=observations;
+        if (!reminder.empty()) prompt["reminder"]=reminder;
+        prompt["remaining_tool_calls"]=budget-used;
         while (!dialogue.empty() && !fits(prompt.dump()))
         {
             dialogue.erase(dialogue.begin());
