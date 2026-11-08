@@ -333,6 +333,10 @@ void ConnectNewClient()
 	SOCKET sock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (sock == INVALID_SOCKET) return;
 
+	// 네이글 비활성화: 서버와 동일하게 소형 패킷 지연을 막는다
+	BOOL noDelay = TRUE;
+	setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char*)&noDelay, sizeof(noDelay));
+
 	SOCKADDR_IN addr{};
 	addr.sin_family           = AF_INET;
 	addr.sin_port             = htons(NetConfig::GAME_SERVER_PORT);
