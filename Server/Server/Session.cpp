@@ -114,6 +114,10 @@ bool Session::RegisterSocket(HANDLE iocpHandle, SOCKET socket, uint32_t slotInde
 	m_id           = s_nextId.fetch_add(1);
 	m_sessionState = SessionState::Connected;
 
+	// 네이글 비활성화: 소형 패킷이 지연 ACK와 맞물려 RTT가 늘어나는 것을 막는다
+	BOOL noDelay = TRUE;
+	setsockopt(m_socket, IPPROTO_TCP, TCP_NODELAY, (char*)&noDelay, sizeof(noDelay));
+
 	if (!RegisterIOCP(iocpHandle, slotIndex))
 	{
 		Log::Error("IOCP bind failed (Id: {})", m_id);
